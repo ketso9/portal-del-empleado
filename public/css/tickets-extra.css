@@ -1,0 +1,63 @@
+/* Ticket System Specific Styles
+ * Use global .ep-table, .ep-modal-unified, .ep-badge-unified for common elements.
+ */
+
+/* List Items (Specific to Ticket lists) */
+.ep-ticket-list {
+    list-style: none;
+    padding: 0;
+}
+
+.ep-ticket-list .ticket-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid var(--ep-border);
+}
+
+.ep-ticket-list .ticket-item:last-child {
+    border-bottom: none;
+}
+
+.ep-ticket-list .ticket-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.ep-ticket-list .ticket-meta {
+    font-size: 0.85rem;
+    color: var(--ep-text-muted);
+}
+
+/* Queue Widget */
+.queue-stat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    background: var(--ep-surface);
+    border-radius: var(--ep-radius-sm);
+    border: 1px solid var(--ep-border);
+}
+
+.queue-stat strong {
+    font-size: 0.9rem;
+    color: var(--ep-text);
+}
+
+/* Queue Widget Badge overrides handled by global .ep-badge-unified if needed,
+   or specific layout adjustments here */
+.status-badge,
+.prio-badge {
+    /* Deprecated, mapped to .ep-badge-unified in PHP */
+}
+
+/* Mobile Responsiveness for Tickets */
+@media screen and (max-width: 768px) {
+    .ep-ticket-list .ticket-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+}

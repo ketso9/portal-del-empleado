@@ -1,0 +1,258 @@
+/* Staff Directory Mini-App Styles */
+
+.ep-directory-container {
+    padding: 24px;
+    background: transparent;
+    /* Unified background handled by global app container usually, or transparent */
+    min-height: calc(100vh - 100px);
+}
+
+.ep-directory-header {
+    margin-bottom: 32px;
+}
+
+.ep-directory-header h1 {
+    /* Use Global Title Style */
+    font-size: var(--ep-font-size-title);
+    font-weight: 700;
+    color: var(--ep-text);
+    margin: 0;
+}
+
+.ep-directory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 32px;
+}
+
+.ep-employee-card {
+    /* Extending Global Card */
+    background: var(--ep-surface);
+    border-radius: var(--ep-radius);
+    padding: 24px;
+    text-align: center;
+    box-shadow: var(--ep-shadow);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid var(--ep-border);
+}
+
+.ep-employee-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--ep-shadow-lg);
+}
+
+.ep-employee-photo-frame {
+    width: 200px;
+    height: 200px;
+    margin: 0 auto 16px;
+    border: 3px solid var(--ep-border);
+    padding: 4px;
+    background: var(--ep-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 50%;
+    transition: border-color 0.3s ease;
+}
+
+/* Presence status footer */
+.ep-presence-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: #f8f9fa;
+    font-size: 0.78rem;
+    color: #555;
+    font-weight: 500;
+}
+
+.ep-presence-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #95a5a6;
+    flex-shrink: 0;
+}
+
+/* ... (img styles remain same or simplified) ... */
+.ep-employee-photo-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: grayscale(100%);
+    transition: filter 0.3s ease;
+    border-radius: 50%;
+}
+
+.ep-employee-card:hover .ep-employee-photo-frame img {
+    filter: grayscale(0%);
+}
+
+
+.ep-employee-name {
+    color: var(--ep-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 12px;
+}
+
+.ep-employee-info {
+    font-size: 0.9rem;
+    color: var(--ep-text-muted);
+    margin-bottom: 12px;
+}
+
+.ep-employee-contact {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 1px solid #edf2f7;
+}
+
+.ep-contact-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--ep-text-muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.ep-contact-item:hover {
+    color: var(--ep-primary);
+    transform: translateX(3px);
+}
+
+.ep-contact-item i {
+    font-size: 0.9rem;
+    color: var(--ep-primary);
+}
+
+#ep-app-root.dark-mode .ep-employee-contact {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--ep-border);
+}
+
+.ep-employee-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+/* Use Global Icon Button instead of custom */
+.ep-action-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--ep-border);
+    background: var(--ep-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ep-text-muted);
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.ep-action-icon:hover {
+    background: var(--ep-primary);
+    color: #fff;
+    border-color: var(--ep-primary);
+}
+
+.ep-vcard-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #a51227;
+    /* Maroon from screenshot */
+    color: #fff;
+    padding: 10px 24px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: background 0.2s;
+    width: 100%;
+    border: none;
+    cursor: pointer;
+}
+
+.ep-vcard-btn:hover {
+    background: #8e1022;
+}
+
+.ep-vcard-btn i {
+    font-size: 1.1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .ep-directory-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dark Mode Overrides for Directory */
+#ep-app-root.dark-mode .ep-directory-container {
+    background: transparent;
+    /* Use main background */
+}
+
+#ep-app-root.dark-mode .ep-directory-header h1 {
+    color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-employee-card {
+    background: var(--ep-surface);
+    border-color: var(--ep-border);
+}
+
+#ep-app-root.dark-mode .ep-employee-photo-frame {
+    background: var(--ep-surface-hover);
+    border-color: var(--ep-border);
+}
+
+#ep-app-root.dark-mode .ep-employee-info {
+    color: var(--ep-text-muted);
+}
+
+#ep-app-root.dark-mode .ep-action-icon {
+    color: var(--ep-primary);
+    border-color: var(--ep-primary);
+}
+
+#ep-app-root.dark-mode .ep-action-icon:hover {
+    background: var(--ep-primary-hover);
+    color: #ffffff;
+    border-color: var(--ep-primary-hover);
+}
+
+#ep-app-root.dark-mode .ep-vcard-btn {
+    background: #ffffff;
+    color: #9e1c2e;
+}
+
+#ep-app-root.dark-mode .ep-vcard-btn:hover {
+    background: #9e1c2e;
+    color: #ffffff;
+}
+
+#ep-app-root.dark-mode .ep-presence-footer {
+    background: rgba(255, 255, 255, 0.08);
+    color: #aaa;
+}

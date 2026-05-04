@@ -1,0 +1,330 @@
+/* M365 Header Widgets - Premium Aesthetics */
+
+/* Teleprompter */
+.ep-teleprompter {
+    flex: 1;
+    margin: 0 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 50px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    overflow: hidden;
+    position: relative;
+}
+
+.dark-mode .ep-teleprompter {
+    background: rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.ep-tp-label {
+    background: var(--ep-primary);
+    color: white;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 20px;
+    margin-right: 15px;
+    white-space: nowrap;
+    z-index: 2;
+    box-shadow: 0 2px 10px rgba(var(--ep-primary-rgb), 0.3);
+}
+
+.ep-tp-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.ep-tp-scroll {
+    white-space: nowrap;
+    position: absolute;
+    padding-left: 100%;
+    animation: ep-tp-scroll 20s linear infinite;
+    font-size: 14px;
+    font-weight: 500;
+    color: #444;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+.ep-tp-scroll:hover {
+    color: var(--ep-primary);
+}
+
+.dark-mode .ep-tp-scroll {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+@keyframes ep-tp-scroll {
+    0% {
+        transform: translate(0, 0);
+    }
+
+    100% {
+        transform: translate(-100%, 0);
+    }
+}
+
+/* Presence Widget */
+.ep-presence-container {
+    position: relative;
+    margin-right: 10px;
+}
+
+.ep-presence-trigger {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 18px;
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.dark-mode .ep-presence-trigger {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.ep-presence-trigger:hover {
+    background: rgba(var(--ep-primary-rgb), 0.1);
+    color: var(--ep-primary);
+    transform: translateY(-2px);
+}
+
+.ep-presence-active-dot {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 8px;
+    height: 8px;
+    background: #00ca4e;
+    border-radius: 50%;
+    border: 2px solid white;
+}
+
+.dark-mode .ep-presence-active-dot {
+    border-color: #1e1e2d;
+}
+
+/* Dropdown Presence */
+.ep-presence-dropdown {
+    position: absolute;
+    top: calc(100% + 15px);
+    right: 0;
+    width: 440px;
+    /* Ancho para las 2 columnas */
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    display: none;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark-mode .ep-presence-dropdown {
+    background: #1e1e2d;
+    border-color: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+.ep-presence-dropdown.active {
+    display: block;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.ep-presence-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    font-weight: 700;
+    font-size: 15px;
+    background: rgba(var(--ep-primary-rgb), 0.02);
+}
+
+.dark-mode .ep-presence-header {
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.ep-presence-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    padding: 15px;
+    max-height: 450px;
+    overflow-y: auto;
+    min-height: 120px;
+}
+
+.ep-presence-item-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(var(--ep-primary-rgb), 0.03);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    cursor: default;
+}
+
+.ep-presence-item-card:hover {
+    background: rgba(var(--ep-primary-rgb), 0.08);
+    transform: translateY(-2px);
+    border-color: rgba(var(--ep-primary-rgb), 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.dark-mode .ep-presence-item-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .ep-presence-item-card:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ep-comp-avatar-mini {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+}
+
+.ep-comp-avatar-mini img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid white;
+}
+
+.dark-mode .ep-comp-avatar-mini img {
+    border-color: #1e293b;
+}
+
+.ep-status-ring {
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+}
+
+.ep-comp-details-mini {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.ep-comp-name-mini {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ep-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ep-comp-status-mini {
+    font-size: 10px;
+    color: var(--ep-text-muted);
+    text-transform: capitalize;
+}
+
+.ep-btn-teams-inline {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #545bba;
+    color: white !important;
+    text-decoration: none;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.ep-btn-teams-inline:hover {
+    transform: scale(1.15);
+    background: #444a9b;
+}
+
+/* Status Colors */
+.ep-presence-item-card[data-status="Available"] .ep-status-ring {
+    border-color: #00ca4e;
+}
+
+.ep-presence-item-card[data-status="Busy"] .ep-status-ring {
+    border-color: #ff5f56;
+}
+
+.ep-presence-item-card[data-status="Away"] .ep-status-ring {
+    border-color: #ffbd2e;
+}
+
+.ep-presence-item-card[data-status="Offline"] .ep-status-ring {
+    border-color: #666;
+}
+
+.ep-presence-footer {
+    padding: 12px 20px;
+    text-align: center;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.ep-presence-footer a {
+    font-size: 13px;
+    color: var(--ep-primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.ep-presence-loading {
+    grid-column: span 2;
+    padding: 40px 20px;
+    text-align: center;
+    color: #888;
+    font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .ep-teleprompter {
+        display: none;
+    }
+
+    .ep-presence-dropdown {
+        width: 90vw;
+        position: fixed;
+        left: 5vw;
+        right: 5vw;
+        top: 80px;
+    }
+
+    .ep-presence-list {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 10px;
+    }
+}

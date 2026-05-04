@@ -1,0 +1,2308 @@
+/* --- Modern Design Tokens --- */
+:root {
+	/* Light Mode (Default) */
+	--ep-primary: #9e1c2e;
+	--ep-primary-rgb: 158, 28, 46;
+	--ep-primary-hover: #7d1625;
+	--ep-bg: #f8fafc;
+	--ep-sidebar-bg: #ffffff;
+	--ep-surface: #ffffff;
+	--ep-surface-hover: #f1f5f9;
+	--ep-text: #1e293b;
+	--ep-text-muted: #64748b;
+	--ep-border: #e2e8f0;
+	--ep-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+	--ep-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+	--ep-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+	--ep-glass-bg: rgba(255, 255, 255, 0.7);
+	--ep-glass-border: rgba(255, 255, 255, 0.3);
+	--ep-radius: 16px;
+	--ep-radius-sm: 8px;
+	--ep-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+:root.dark-mode {
+	/* Dark Mode */
+	--ep-bg: #0f172a;
+	--ep-sidebar-bg: #1e293b;
+	--ep-surface: #1e293b;
+	--ep-surface-hover: #334155;
+	--ep-text: #f1f5f9;
+	--ep-text-muted: #94a3b8;
+	--ep-border: #334155;
+	--ep-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+	--ep-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+	--ep-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+	--ep-secondary: #64748b;
+	--ep-glass-bg: rgba(30, 41, 59, 0.85);
+	--ep-glass-border: rgba(255, 255, 255, 0.1);
+
+	/* Dark Mode Specific Overrides per User Request */
+	--ep-primary: #ffffff;
+	/* Uniforme Blanco */
+	--ep-primary-rgb: 255, 255, 255;
+	--ep-primary-hover: #9e1c2e;
+	/* Corporativo en Hover */
+}
+
+/* Ensure Corporate Red is still used for specific elements if needed, or strictly strictly follow the override */
+
+/* App Icon Color Utilities */
+#ep-app-root .color-gray {
+	background: #f1f5f9;
+	color: #64748b;
+}
+
+#ep-app-root .color-blue {
+	background: #eff6ff;
+	color: #3b82f6;
+}
+
+#ep-app-root .color-purple {
+	background: #faf5ff;
+	color: #a855f7;
+}
+
+#ep-app-root .color-orange {
+	background: #fff7ed;
+	color: #f97316;
+}
+
+#ep-app-root .color-green {
+	background: #f0fdf4;
+	color: #22c55e;
+}
+
+#ep-app-root.dark-mode .color-gray {
+	background: rgba(100, 116, 139, 0.1);
+	color: #94a3b8;
+}
+
+#ep-app-root.dark-mode .color-blue {
+	background: rgba(59, 130, 246, 0.1);
+	color: #60a5fa;
+}
+
+#ep-app-root.dark-mode .color-purple {
+	background: rgba(168, 85, 247, 0.1);
+	color: #c084fc;
+}
+
+#ep-app-root.dark-mode .color-orange {
+	background: rgba(249, 115, 22, 0.1);
+	color: #fb923c;
+}
+
+#ep-app-root.dark-mode .color-green {
+	background: rgba(34, 197, 94, 0.1);
+	color: #4ade80;
+}
+
+/* Reset & Base Styles */
+#ep-app-root {
+	box-sizing: border-box;
+	font-family: var(--ep-font-sans);
+	line-height: 1.6;
+	font-size: 16px;
+	color: var(--ep-text);
+	text-align: left;
+	transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#ep-app-root *,
+#ep-app-root *::before,
+#ep-app-root *::after {
+	box-sizing: border-box;
+}
+
+#ep-app-root a {
+	text-decoration: none;
+	color: inherit;
+	transition: all 0.2s ease;
+}
+
+#ep-app-root.dark-mode a:hover {
+	color: #9e1c2e !important;
+	/* Force Corporate Maroon on Hover in Dark Mode to ensure contrast against white backgrounds */
+}
+
+#ep-app-root ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+#ep-app-root button {
+	cursor: pointer;
+	font-family: inherit;
+	border: none;
+	background: none;
+	padding: 0;
+}
+
+/* Main Container */
+#ep-app-root.ep-dashboard-container {
+	display: flex;
+	min-height: 100vh;
+	background-color: var(--ep-bg);
+	position: relative;
+}
+
+/* Sidebar */
+#ep-app-root .ep-sidebar {
+	position: fixed;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 280px;
+	background-color: var(--ep-sidebar-bg);
+	padding: 45px 20px 80px 20px;
+	display: flex;
+	flex-direction: column;
+	border-right: 1px solid var(--ep-border);
+	transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+	z-index: 999999;
+	overflow-y: auto;
+	overflow-x: hidden;
+	transform: translateX(-100%);
+}
+
+#ep-app-root .ep-sidebar.active {
+	transform: translateX(0);
+}
+
+#ep-app-root .ep-logo {
+	margin-bottom: 50px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+#ep-app-root .ep-logo-brand {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	color: var(--ep-primary);
+}
+
+#ep-app-root .ep-logo-brand img {
+	height: 45px;
+	width: auto;
+	object-fit: contain;
+}
+
+#ep-app-root .ep-logo-brand span {
+	font-weight: 800;
+	font-size: 1.1rem;
+	line-height: 1.2;
+	letter-spacing: -0.5px;
+}
+
+#ep-app-root .ep-sidebar-close {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	background: var(--ep-surface-hover);
+	color: var(--ep-text-muted);
+	border-radius: var(--ep-radius-sm);
+	cursor: pointer;
+	transition: all 0.2s ease;
+	font-size: 1.1rem;
+}
+
+#ep-app-root .ep-sidebar-close:hover {
+	background: var(--ep-primary);
+	color: white;
+}
+
+#ep-app-root .ep-logo i {
+	font-size: 1.8rem;
+	filter: drop-shadow(0 4px 6px rgba(var(--ep-primary-rgb), 0.3));
+}
+
+#ep-app-root .ep-nav li {
+	margin-bottom: 8px;
+}
+
+#ep-app-root .ep-nav a {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 18px;
+	color: var(--ep-text-muted);
+	border-radius: var(--ep-radius-sm);
+	font-weight: 500;
+}
+
+#ep-app-root .ep-nav li.active a {
+	background-color: rgba(var(--ep-primary-rgb), 0.1);
+	color: var(--ep-primary);
+}
+
+#ep-app-root .ep-nav a:hover:not(.active a) {
+	background-color: var(--ep-surface-hover);
+	color: var(--ep-text);
+}
+
+/* Dark Mode Navigation Fixes */
+#ep-app-root.dark-mode .ep-nav a:hover:not(.active a) {
+	background-color: #ffffff;
+	color: var(--ep-primary-hover);
+	/* Red Text on White BG for max contrast on hover */
+	font-weight: 700;
+}
+
+#ep-app-root.dark-mode .ep-nav li.active a {
+	background-color: rgba(255, 255, 255, 0.15);
+	color: #ffffff;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#ep-app-root .ep-nav a i {
+	width: 20px;
+	font-size: 1.1rem;
+}
+
+/* Main Content */
+#ep-app-root .ep-main {
+	flex: 1;
+	padding: 30px 50px;
+	overflow-y: auto;
+	width: 100%;
+	transition: all 0.3s ease;
+}
+
+/* Header */
+#ep-app-root .ep-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 40px;
+	padding: 15px 25px;
+	background: var(--ep-glass-bg);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	border: 1px solid var(--ep-glass-border);
+	border-radius: var(--ep-radius);
+	box-shadow: var(--ep-shadow);
+	position: relative;
+	z-index: 10002;
+}
+
+#ep-app-root .ep-header-left {
+	display: flex;
+	align-items: center;
+	gap: 20px;
+	flex: 1;
+}
+
+#ep-app-root .ep-menu-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 10px;
+	font-size: 1.2rem;
+	color: var(--ep-text);
+	background: var(--ep-surface);
+	border: 1px solid var(--ep-border);
+	border-radius: var(--ep-radius-sm);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+#ep-app-root .ep-menu-toggle:hover {
+	background: var(--ep-surface-hover);
+	color: var(--ep-primary);
+	border-color: var(--ep-primary);
+}
+
+/* Search Bar */
+#ep-app-root .ep-search {
+	display: flex;
+	align-items: center;
+	background: var(--ep-bg);
+	padding: 10px 20px;
+	border-radius: 50px;
+	border: 1px solid var(--ep-border);
+	width: 100%;
+	max-width: 400px;
+	gap: 12px;
+	transition: all 0.2s ease;
+}
+
+#ep-app-root .ep-search:focus-within {
+	border-color: var(--ep-primary);
+	box-shadow: 0 0 0 4px rgba(var(--ep-primary-rgb), 0.1);
+}
+
+#ep-app-root .ep-search input {
+	border: none;
+	outline: none;
+	background: transparent;
+	width: 100%;
+	font-size: 0.95rem;
+	color: var(--ep-text);
+}
+
+#ep-app-root .ep-search i {
+	color: var(--ep-text-muted);
+}
+
+/* User Menu & Avatar */
+#ep-app-root .ep-user-menu {
+	display: flex;
+	align-items: center;
+	gap: 20px;
+}
+
+#ep-app-root .ep-dark-mode-toggle {
+	width: 40px;
+	height: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	color: var(--ep-text-muted);
+	background: var(--ep-bg);
+	border: 1px solid var(--ep-border);
+	font-size: 1.1rem;
+	transition: all 0.2s ease;
+	cursor: pointer;
+	z-index: 100;
+	/* Ensure visibility */
+	position: relative;
+	background-color: var(--ep-surface);
+	/* Ensure background exists */
+}
+
+#ep-app-root .ep-dark-mode-toggle:hover {
+	color: var(--ep-text);
+	border-color: var(--ep-text);
+	transform: rotate(15deg);
+}
+
+#ep-app-root .notification-icon {
+	color: var(--ep-text-muted);
+	font-size: 1.3rem;
+	transition: color 0.2s ease;
+}
+
+#ep-app-root .user-avatar-container {
+	cursor: pointer;
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+#ep-app-root .user-avatar img {
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	object-fit: cover;
+	display: block;
+	border: 2px solid var(--ep-surface);
+	box-shadow: var(--ep-shadow-sm);
+}
+
+#ep-app-root .notification-icon .badge {
+	position: absolute;
+	top: -5px;
+	right: -5px;
+	background: var(--ep-primary);
+	color: white;
+	font-size: 0.7rem;
+	padding: 2px 6px;
+	border-radius: 50px;
+	font-weight: 700;
+	border: 2px solid var(--ep-surface);
+}
+
+#ep-app-root.dark-mode .notification-icon .badge {
+	background: #ffffff;
+	color: #9e1c2e;
+	/* Maroon Text on White Badge */
+}
+
+#ep-app-root .ep-user-dropdown {
+	display: none;
+	position: absolute;
+	top: 100%;
+	right: 0;
+	width: 220px;
+	background: var(--ep-surface);
+	border-radius: var(--ep-radius-sm);
+	box-shadow: var(--ep-shadow-lg);
+	padding: 8px;
+	z-index: 1001;
+	margin-top: 15px;
+	border: 1px solid var(--ep-border);
+}
+
+#ep-app-root .ep-user-dropdown.active {
+	display: block;
+	animation: epFadeDown 0.2s ease;
+}
+
+@keyframes epFadeDown {
+	from {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+#ep-app-root .ep-user-dropdown a {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 15px;
+	color: var(--ep-text);
+	border-radius: 6px;
+	font-weight: 500;
+}
+
+#ep-app-root .ep-user-dropdown a:hover {
+	background: var(--ep-surface-hover);
+	color: var(--ep-primary);
+}
+
+/* Dashboard Layout */
+#ep-app-root .ep-content-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 40px;
+}
+
+#ep-app-root .ep-top-row {
+	display: grid;
+	grid-template-columns: 2fr 1fr;
+	gap: 30px;
+}
+
+/* Cards & Announcements */
+#ep-app-root .ep-card {
+	background: var(--ep-surface);
+	border-radius: var(--ep-radius);
+	padding: 30px;
+	box-shadow: var(--ep-shadow);
+	border: 1px solid var(--ep-border);
+	transition: all 0.3s ease;
+}
+
+#ep-app-root .ep-card:hover {
+	box-shadow: var(--ep-shadow-lg);
+	transform: translateY(-2px);
+}
+
+/* Unified Tables */
+.ep-table {
+	width: 100%;
+	border-collapse: collapse;
+	margin-top: 15px;
+	background: var(--ep-surface);
+	border-radius: var(--ep-radius-sm);
+	overflow: hidden;
+	border: 1px solid var(--ep-border);
+}
+
+.ep-table th,
+.ep-table td {
+	padding: 12px 15px;
+	text-align: left;
+	border-bottom: 1px solid var(--ep-border);
+}
+
+.ep-table th {
+	background-color: var(--ep-surface-hover);
+	font-weight: 600;
+	color: var(--ep-text-muted);
+	font-size: 0.9rem;
+}
+
+.ep-table td {
+	color: var(--ep-text);
+	font-size: 0.9rem;
+}
+
+.ep-table tr:last-child td {
+	border-bottom: none;
+}
+
+#ep-app-root .ep-cards-row {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+}
+
+#ep-app-root .announcement-card h3 {
+	margin-top: 0;
+	color: var(--ep-primary);
+	font-size: 1.25rem;
+	font-weight: 700;
+	margin-bottom: 10px;
+}
+
+#ep-app-root .announcement-card p {
+	color: var(--ep-text-muted);
+	font-size: 0.95rem;
+	line-height: 1.6;
+}
+
+#ep-app-root .ep-link {
+	color: var(--ep-primary);
+	font-weight: 700;
+	font-size: 0.9rem;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+#ep-app-root .ep-link:hover {
+	text-decoration: none;
+	gap: 8px;
+}
+
+/* Calendar Section */
+#ep-app-root .ep-calendar-section h3 {
+	margin-top: 0;
+	margin-bottom: 25px;
+	font-weight: 800;
+}
+
+#ep-app-root .calendar-header {
+	text-align: center;
+	font-weight: 700;
+	margin-bottom: 20px;
+	color: var(--ep-primary);
+	font-size: 1.1rem;
+}
+
+#ep-app-root .calendar-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 10px;
+}
+
+#ep-app-root .calendar-grid span {
+	padding: 8px;
+	font-size: 0.85rem;
+	text-align: center;
+	border-radius: 8px;
+	color: var(--ep-text-muted);
+}
+
+#ep-app-root .calendar-grid .today {
+	background: var(--ep-primary);
+	color: white;
+	font-weight: 700;
+	box-shadow: 0 4px 10px rgba(var(--ep-primary-rgb), 0.3);
+}
+
+#ep-app-root .calendar-grid span:not(.faded):not(.today):hover {
+	background: var(--ep-surface-hover);
+	color: var(--ep-text);
+}
+
+#ep-app-root .calendar-grid span.has-events::after {
+	content: '';
+	position: absolute;
+	bottom: 4px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 4px;
+	height: 4px;
+	background: var(--ep-primary);
+	border-radius: 50%;
+}
+
+#ep-app-root .calendar-grid span.today.has-events::after {
+	background: white;
+}
+
+/* Dark Mode Calendar Fixes */
+#ep-app-root.dark-mode .calendar-grid .today {
+	background: #ffffff;
+	color: #9e1c2e;
+	box-shadow: 0 4px 10px rgba(255, 255, 255, 0.2);
+}
+
+#ep-app-root.dark-mode .calendar-grid span.today.has-events::after {
+	background: #9e1c2e;
+	/* Maroon dot on White Today circle */
+}
+
+#ep-app-root.dark-mode .calendar-grid span:not(.faded):not(.today):hover {
+	background: #ffffff;
+	color: #9e1c2e;
+}
+
+#ep-app-root .calendar-grid span {
+	position: relative;
+}
+
+#ep-app-root .faded {
+	opacity: 0.3;
+}
+
+/* Apps Grid (Mini Apps) */
+#ep-app-root .ep-apps-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 25px;
+	margin-top: 30px;
+}
+
+#ep-app-root .ep-app-card {
+	background: var(--ep-surface);
+	border-radius: var(--ep-radius);
+	padding: 40px 30px;
+	box-shadow: var(--ep-shadow);
+	text-align: center;
+	cursor: pointer;
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	border: 1px solid var(--ep-border);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+#ep-app-root .ep-app-card:hover {
+	transform: translateY(-8px);
+	box-shadow: var(--ep-shadow-lg);
+	border-color: var(--ep-primary);
+}
+
+#ep-app-root .app-icon-container {
+	width: 70px;
+	height: 70px;
+	border-radius: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 2rem;
+	margin-bottom: 20px;
+	color: white;
+	box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.2);
+}
+
+#ep-app-root .ep-app-card h3 {
+	margin: 0 0 8px 0;
+	font-size: 1.2rem;
+	font-weight: 700;
+	color: var(--ep-text);
+}
+
+#ep-app-root .ep-app-card p {
+	margin: 0;
+	font-size: 0.9rem;
+	color: var(--ep-text-muted);
+}
+
+/* App Icon Colors */
+#ep-app-root .color-blue {
+	background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+#ep-app-root .color-green {
+	background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+#ep-app-root .color-orange {
+	background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+#ep-app-root .color-red {
+	background: linear-gradient(135deg, #ff0844 0%, #ffb199 100%);
+}
+
+#ep-app-root .color-purple {
+	background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Login Page Styles - Glassmorphism & Modern Branding */
+.ep-login-page-wrapper {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	z-index: 99999;
+	overflow: hidden;
+}
+
+.ep-login-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-size: cover;
+	background-position: center;
+	filter: blur(4px);
+	transform: scale(1.05);
+	z-index: 1;
+}
+
+.ep-login-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: radial-gradient(circle at center, rgba(var(--ep-primary-rgb), 0.2) 0%, rgba(15, 23, 42, 0.8) 100%);
+	z-index: 2;
+}
+
+#ep-app-root.ep-login-container {
+	position: relative;
+	z-index: 3;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	width: 100%;
+	height: 100%;
+	background: transparent;
+	padding: 20px;
+}
+
+#ep-app-root .ep-login-card {
+	background: rgba(255, 255, 255, 0.1);
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	padding: 60px 50px;
+	border-radius: 24px;
+	box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+	text-align: center;
+	width: 100%;
+	max-width: 440px;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s ease;
+}
+
+#ep-app-root .ep-login-card:hover {
+	transform: translateY(-8px);
+	box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.6);
+	border-color: rgba(255, 255, 255, 0.3);
+}
+
+#ep-app-root .ep-login-logo img {
+	max-width: 220px;
+	height: auto;
+	margin-bottom: 30px;
+	filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+#ep-app-root .ep-login-title {
+	font-size: 2rem;
+	color: #ffffff;
+	margin-bottom: 12px;
+	font-weight: 800;
+	letter-spacing: -0.5px;
+	text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+#ep-app-root .ep-login-subtitle {
+	color: rgba(255, 255, 255, 0.8);
+	margin-bottom: 45px;
+	font-size: 1.1rem;
+	font-weight: 500;
+	line-height: 1.5;
+}
+
+/* Microsoft Login Button - Premium Style */
+#ep-app-root .ep-ms-login-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: #ffffff;
+	color: #1e293b;
+	border: none;
+	padding: 16px 28px;
+	font-size: 1.05rem;
+	font-weight: 600;
+	text-decoration: none !important;
+	cursor: pointer;
+	transition: all 0.3s ease;
+	width: 100%;
+	box-sizing: border-box;
+	border-radius: 12px;
+	box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+	gap: 14px;
+}
+
+#ep-app-root .ep-ms-login-btn:hover {
+	background-color: #f8fafc;
+	box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+	transform: translateY(-2px);
+	color: var(--ep-primary) !important;
+}
+
+#ep-app-root .ep-ms-icon {
+	display: flex;
+	align-items: center;
+	margin-right: 15px;
+	justify-content: center;
+}
+
+#ep-app-root .ep-ms-icon svg {
+	display: block;
+}
+
+/* Profile Page Styles */
+#ep-app-root .ep-profile-container {
+	display: flex;
+	flex-direction: column;
+	gap: 30px;
+}
+
+#ep-app-root .ep-profile-header-card {
+	position: relative;
+	padding: 0;
+	overflow: hidden;
+	border: none;
+}
+
+#ep-app-root .ep-profile-cover {
+	height: 180px;
+	background: linear-gradient(135deg, var(--ep-primary) 0%, #ff6b6b 100%);
+	width: 100%;
+}
+
+#ep-app-root .ep-profile-info-main {
+	padding: 0 40px 40px;
+	display: flex;
+	align-items: flex-end;
+	gap: 25px;
+	margin-top: -60px;
+	position: relative;
+	z-index: 2;
+}
+
+#ep-app-root .ep-profile-avatar-large img {
+	width: 140px;
+	height: 140px;
+	border-radius: 50%;
+	border: 6px solid var(--ep-surface);
+	box-shadow: var(--ep-shadow-lg);
+	background: var(--ep-surface);
+}
+
+#ep-app-root .ep-profile-text {
+	padding-bottom: 10px;
+}
+
+#ep-app-root .ep-profile-text h2 {
+	margin: 0;
+	font-size: 2rem;
+	font-weight: 800;
+	color: var(--ep-text);
+}
+
+#ep-app-root .ep-role-badge {
+	display: inline-block;
+	background: rgba(var(--ep-primary-rgb), 0.1);
+	padding: 6px 14px;
+	border-radius: 50px;
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: var(--ep-primary);
+	margin-top: 8px;
+}
+
+/* Profile Form */
+#ep-app-root .ep-profile-details-card h3 {
+	margin-top: 0;
+	margin-bottom: 25px;
+	color: var(--ep-text);
+	font-weight: 800;
+	border-bottom: 1px solid var(--ep-border);
+	padding-bottom: 15px;
+}
+
+#ep-app-root .ep-form-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+	gap: 25px;
+}
+
+#ep-app-root .form-group label {
+	display: block;
+	margin-bottom: 8px;
+	font-weight: 600;
+	font-size: 0.9rem;
+	color: var(--ep-text-muted);
+}
+
+#ep-app-root .form-group input,
+#ep-app-root .form-group textarea,
+#ep-app-root .form-group select {
+	width: 100%;
+	padding: 12px 16px;
+	background: var(--ep-bg);
+	border: 1px solid var(--ep-border);
+	border-radius: var(--ep-radius-sm);
+	color: var(--ep-text);
+	font-weight: 500;
+	transition: all 0.2s ease;
+}
+
+#ep-app-root.dark-mode .form-group input,
+#ep-app-root.dark-mode .form-group textarea,
+#ep-app-root.dark-mode .form-group select {
+	background-color: var(--ep-surface);
+	/* Ensure dark background */
+	color: #ffffff !important;
+	/* Force white text */
+	border-color: var(--ep-border);
+}
+
+#ep-app-root.dark-mode .form-group input:focus,
+#ep-app-root.dark-mode .form-group textarea:focus {
+	background-color: var(--ep-surface-hover);
+	border-color: #ffffff;
+}
+
+#ep-app-root .form-group textarea,
+#ep-app-root .form-group select {
+	width: 100%;
+	padding: 12px 16px;
+	background: var(--ep-bg);
+	border: 1px solid var(--ep-border);
+	border-radius: var(--ep-radius-sm);
+	color: var(--ep-text);
+	font-weight: 500;
+	transition: all 0.2s ease;
+}
+
+#ep-app-root .form-group input:focus {
+	border-color: var(--ep-primary);
+	background: var(--ep-surface);
+	box-shadow: 0 0 0 4px rgba(var(--ep-primary-rgb), 0.1);
+	outline: none;
+}
+
+#ep-app-root .form-group input:read-only:not([type="checkbox"]):not([type="radio"]) {
+	opacity: 0.7;
+	cursor: not-allowed;
+	background: var(--ep-surface-hover);
+}
+
+/* Fix for switches and toggles */
+.switch-label, .slider {
+    cursor: pointer !important;
+}
+
+.switch-label input {
+    cursor: pointer !important;
+}
+
+#ep-app-root .ep-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 12px 24px;
+	border: none;
+	border-radius: var(--ep-radius-sm);
+	font-weight: 700;
+	font-size: 0.95rem;
+	cursor: pointer;
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	text-align: center;
+	background: var(--ep-surface-hover);
+	color: var(--ep-text);
+	border: 1px solid var(--ep-border);
+}
+
+#ep-app-root .ep-btn:hover {
+	transform: translateY(-2px);
+	box-shadow: var(--ep-shadow);
+	background: var(--ep-surface);
+}
+
+#ep-app-root .ep-btn-primary {
+	background-color: var(--ep-primary);
+	color: #ffffff !important;
+}
+
+#ep-app-root .ep-btn-primary:hover {
+	background-color: var(--ep-primary-hover);
+	transform: translateY(-2px);
+	box-shadow: 0 4px 12px rgba(var(--ep-primary-rgb), 0.3);
+	color: #ffffff !important;
+}
+
+#ep-app-root .ep-btn-danger {
+	background-color: #ef4444;
+	color: #ffffff !important;
+}
+
+#ep-app-root .ep-btn-danger:hover {
+	background-color: #dc2626;
+	transform: translateY(-2px);
+	box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+	color: #ffffff !important;
+}
+
+#ep-app-root .ep-btn-secondary {
+	background-color: var(--ep-surface-hover);
+	color: var(--ep-text);
+	border: 1px solid var(--ep-border);
+}
+
+#ep-app-root .ep-btn-secondary:hover {
+	background-color: var(--ep-border);
+	color: var(--ep-text);
+}
+
+/* Dark Mode Specific Button Refinements */
+#ep-app-root.dark-mode .ep-btn-primary {
+	background-color: var(--ep-primary, #ffffff);
+	color: #0f172a !important;
+	/* Dark text for visibility on white primary background */
+}
+
+#ep-app-root.dark-mode .ep-btn-primary:hover {
+	background-color: var(--ep-primary);
+	color: #ffffff !important;
+}
+
+#ep-app-root.dark-mode .ep-btn-danger {
+	background-color: #fca5a5;
+	color: #991b1b !important;
+}
+
+#ep-app-root.dark-mode .ep-btn-danger:hover {
+	background-color: #ef4444;
+	color: #ffffff !important;
+}
+
+/* Modal */
+#ep-app-root .ep-modal {
+	display: none;
+	position: fixed;
+	z-index: 2000000;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	background-color: rgba(15, 23, 42, 0.7);
+	backdrop-filter: blur(8px);
+}
+
+#ep-app-root .ep-modal-content {
+	background-color: var(--ep-surface);
+	margin: 5% auto;
+	padding: 40px;
+	border-radius: var(--ep-radius);
+	width: 90%;
+	max-width: 600px;
+	box-shadow: var(--ep-shadow-lg);
+	position: relative;
+	border: 1px solid var(--ep-glass-border);
+	max-height: 85vh;
+	overflow-y: auto;
+	animation: epModalSlideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes epModalSlideUp {
+	from {
+		transform: translateY(30px);
+		opacity: 0;
+	}
+
+	to {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}
+
+#ep-app-root .ep-close {
+	position: absolute;
+	top: 25px;
+	right: 25px;
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: var(--ep-surface-hover);
+	font-size: 20px;
+	font-weight: 400;
+	color: var(--ep-text-muted);
+	cursor: pointer;
+	transition: all 0.2s;
+}
+
+#ep-app-root .ep-close:hover {
+	color: var(--ep-text);
+	transform: rotate(90deg);
+}
+
+/* Upload Form */
+#ep-app-root .ep-file-input-wrapper {
+	position: relative;
+	margin-top: 15px;
+}
+
+#ep-app-root .ep-file-input-wrapper input[type="file"] {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+	opacity: 0;
+	cursor: pointer;
+	z-index: 2;
+}
+
+#ep-app-root .ep-file-drop-zone {
+	border: 2px dashed var(--ep-border);
+	border-radius: var(--ep-radius);
+	padding: 60px 30px;
+	text-align: center;
+	transition: all 0.3s ease;
+	background: var(--ep-bg);
+}
+
+#ep-app-root .ep-file-input-wrapper:hover .ep-file-drop-zone {
+	border-color: var(--ep-primary);
+	background: rgba(var(--ep-primary-rgb), 0.05);
+}
+
+#ep-app-root .ep-file-drop-zone i {
+	font-size: 3.5rem;
+	color: var(--ep-text-muted);
+	margin-bottom: 20px;
+	opacity: 0.5;
+}
+
+#ep-app-root .ep-file-drop-zone p {
+	margin: 0 0 8px 0;
+	font-weight: 700;
+	color: var(--ep-text);
+	font-size: 1.1rem;
+}
+
+#ep-app-root .ep-file-drop-zone small {
+	display: block;
+	color: var(--ep-text-muted);
+	margin-top: 5px;
+}
+
+/* Documents Grid */
+#ep-app-root .ep-documents-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 25px;
+}
+
+#ep-app-root .ep-document-card {
+	background: var(--ep-surface);
+	border-radius: var(--ep-radius);
+	padding: 25px;
+	display: flex;
+	align-items: center;
+	gap: 20px;
+	box-shadow: var(--ep-shadow);
+	transition: all 0.3s ease;
+	border: 1px solid var(--ep-border);
+}
+
+#ep-app-root .ep-document-card:hover {
+	transform: translateY(-5px);
+	box-shadow: var(--ep-shadow-lg);
+}
+
+#ep-app-root .ep-document-icon {
+	font-size: 2.8rem;
+	color: var(--ep-primary);
+	opacity: 0.8;
+}
+
+#ep-app-root .ep-document-info {
+	flex: 1;
+	min-width: 0;
+}
+
+#ep-app-root .ep-document-info h3 {
+	margin: 0 0 5px 0;
+	font-size: 1.1rem;
+	font-weight: 700;
+	color: var(--ep-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+#ep-app-root .ep-document-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 0.8rem;
+	color: var(--ep-text-muted);
+}
+
+#ep-app-root .ep-document-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+#ep-app-root .ep-btn-icon {
+	width: 38px;
+	height: 38px;
+	border-radius: 12px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--ep-bg);
+	color: var(--ep-text-muted);
+	transition: all 0.2s;
+	border: 1px solid var(--ep-border);
+}
+
+#ep-app-root .ep-btn-icon:hover {
+	background: var(--ep-primary);
+	color: white;
+	border-color: var(--ep-primary);
+}
+
+/* Empty States */
+#ep-app-root .ep-empty-state {
+	grid-column: 1 / -1;
+	text-align: center;
+	padding: 80px 40px;
+	background: var(--ep-surface);
+	border-radius: var(--ep-radius);
+	border: 2px dashed var(--ep-border);
+	color: var(--ep-text-muted);
+}
+
+#ep-app-root .ep-empty-state i {
+	font-size: 4rem;
+	margin-bottom: 25px;
+	opacity: 0.3;
+}
+
+/* View Toggles */
+#ep-app-root .ep-view-toggles {
+	display: flex;
+	gap: 10px;
+}
+
+#ep-app-root .ep-view-toggles .ep-btn-icon {
+	background: transparent;
+	border: 1px solid #ddd;
+	color: var(--ep-gray);
+}
+
+#ep-app-root .ep-view-toggles .ep-btn-icon.active,
+#ep-app-root .ep-view-toggles .ep-btn-icon:hover {
+	background: var(--ep-primary);
+	color: white;
+	border-color: var(--ep-primary);
+}
+
+#ep-app-root.dark-mode .ep-view-toggles .ep-btn-icon.active,
+#ep-app-root.dark-mode .ep-view-toggles .ep-btn-icon:hover {
+	background: #ffffff;
+	color: #9e1c2e;
+	border-color: #ffffff;
+}
+
+/* Drag & Drop Zone */
+#ep-app-root .ep-upload-zone {
+	background: var(--ep-white);
+	border: 2px dashed #ddd;
+	border-radius: 16px;
+	padding: 40px;
+	text-align: center;
+	margin-bottom: 30px;
+	transition: all 0.3s;
+	position: relative;
+}
+
+#ep-app-root .ep-upload-zone.highlight {
+	border-color: var(--ep-primary);
+	background: #fff5f6;
+	transform: scale(1.01);
+}
+
+#ep-app-root .ep-upload-content i {
+	font-size: 4rem;
+	color: #ddd;
+	margin-bottom: 15px;
+	transition: color 0.3s;
+}
+
+#ep-app-root .ep-upload-zone.highlight .ep-upload-content i {
+	color: var(--ep-primary);
+}
+
+#ep-app-root .ep-upload-content h3 {
+	margin: 0 0 10px 0;
+	color: var(--ep-text);
+}
+
+#ep-app-root .ep-upload-content p {
+	color: var(--ep-gray);
+	margin: 10px 0;
+}
+
+#ep-app-root .ep-upload-info {
+	font-size: 0.85rem;
+	margin-top: 15px !important;
+}
+
+/* Progress Bar */
+#ep-app-root .ep-upload-progress {
+	margin-top: 20px;
+	max-width: 400px;
+	margin-left: auto;
+	margin-right: auto;
+}
+
+#ep-app-root .ep-progress-bar {
+	height: 8px;
+	background: #eee;
+	border-radius: 4px;
+	overflow: hidden;
+	margin-bottom: 5px;
+}
+
+#ep-app-root.dark-mode .ep-progress-bar {
+	background: #334155;
+	/* Darker background for progress bar path */
+}
+
+#ep-app-root .ep-progress-fill {
+	height: 100%;
+	background: var(--ep-primary);
+	transition: width 0.3s ease;
+}
+
+#ep-app-root .ep-progress-text {
+	font-size: 0.85rem;
+	color: var(--ep-gray);
+}
+
+#ep-app-root #epUploadMessage {
+	margin-top: 15px;
+	font-weight: 500;
+}
+
+#ep-app-root #epUploadMessage.success {
+	color: #28a745;
+}
+
+#ep-app-root #epUploadMessage.error {
+	color: #dc3545;
+}
+
+/* List View Styles */
+#ep-app-root .list-view {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+#ep-app-root .list-view .ep-document-card {
+	flex-direction: row;
+	padding: 15px 20px;
+}
+
+#ep-app-root .list-view .ep-document-icon {
+	font-size: 1.8rem;
+}
+
+#ep-app-root .list-view .ep-document-info {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding-right: 20px;
+}
+
+#ep-app-root .list-view .ep-document-info h3 {
+	margin: 0;
+	width: 40%;
+}
+
+#ep-app-root .list-view .ep-document-meta {
+	flex-direction: row;
+	gap: 20px;
+	width: 60%;
+	justify-content: flex-end;
+}
+
+#ep-app-root .list-view .ep-document-actions {
+	flex-direction: row;
+}
+
+/* Notifications System */
+.ep-notifications-container {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+/* Notifications Dropdown */
+.ep-notifications-dropdown {
+	display: none;
+	position: absolute;
+	top: 100%;
+	right: 0;
+	width: 420px;
+	background: var(--ep-surface);
+	border-radius: var(--ep-radius);
+	box-shadow: var(--ep-shadow-lg);
+	z-index: 10001;
+	/* Higher than dark-mode-toggle and other elements */
+	margin-top: 15px;
+	border: 1px solid var(--ep-border);
+	overflow: hidden;
+}
+
+/* --- Dashboard Calendar Interactive Improvements (Bocadillo style) --- */
+.calendar-day-interactive {
+	cursor: pointer;
+	position: relative;
+	transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+	border-radius: 8px;
+	z-index: 10;
+}
+
+.calendar-day-interactive:hover {
+	background: rgba(var(--ep-primary-rgb), 0.15);
+	color: var(--ep-primary);
+	transform: scale(1.2);
+	font-weight: 700;
+	box-shadow: 0 4px 12px rgba(var(--ep-primary-rgb), 0.1);
+}
+
+.event-indicator {
+	width: 5px;
+	height: 5px;
+	background: var(--ep-primary);
+	border-radius: 50%;
+	margin: 2px auto 0;
+	opacity: 0;
+	transition: all 0.3s ease;
+}
+
+.calendar-day-interactive.has-events .event-indicator {
+	opacity: 1;
+}
+
+.ep-calendar-tooltip {
+	position: fixed;
+	display: none;
+	z-index: 2000000;
+	width: 280px;
+	background: rgba(255, 255, 255, 0.98);
+	backdrop-filter: blur(20px);
+	border: 1px solid rgba(255, 255, 255, 0.5);
+	border-radius: 16px;
+	box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+	padding: 20px;
+	pointer-events: none;
+	transform: translate(-50%, -100%);
+	margin-top: -15px;
+	animation: epTooltipPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Smart Placement Styles */
+.ep-calendar-tooltip.placement-bottom {
+	transform: translate(-50%, 0);
+	margin-top: 15px;
+	animation: epTooltipPopBottom 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes epTooltipPop {
+	from {
+		opacity: 0;
+		transform: translate(-50%, -90%) scale(0.9);
+	}
+
+	to {
+		opacity: 1;
+		transform: translate(-50%, -100%) scale(1);
+	}
+}
+
+@keyframes epTooltipPopBottom {
+	from {
+		opacity: 0;
+		transform: translate(-50%, -10%) scale(0.9);
+	}
+
+	to {
+		opacity: 1;
+		transform: translate(-50%, 0) scale(1);
+	}
+}
+
+/* Bocadillo Arrow */
+.ep-calendar-tooltip::after {
+	content: '';
+	position: absolute;
+	bottom: -10px;
+	left: 50%;
+	transform: translateX(-50%);
+	border-left: 10px solid transparent;
+	border-right: 10px solid transparent;
+	border-top: 10px solid rgba(255, 255, 255, 0.98);
+}
+
+.ep-calendar-tooltip.placement-bottom::after {
+	bottom: auto;
+	top: -10px;
+	border-top: none;
+	border-bottom: 10px solid rgba(255, 255, 255, 0.98);
+}
+
+.dark-mode .ep-calendar-tooltip {
+	background: rgba(15, 23, 42, 0.95);
+	border-color: rgba(255, 255, 255, 0.1);
+	color: #f1f5f9;
+}
+
+.dark-mode .ep-calendar-tooltip::after {
+	border-top-color: rgba(15, 23, 42, 0.95);
+}
+
+.dark-mode .ep-calendar-tooltip.placement-bottom::after {
+	border-bottom-color: rgba(15, 23, 42, 0.95);
+	border-top-color: transparent;
+}
+
+.ep-calendar-tooltip .tooltip-header {
+	font-size: 0.75rem;
+	font-weight: 800;
+	text-transform: uppercase;
+	color: var(--ep-primary);
+	margin-bottom: 15px;
+	border-bottom: 2px solid rgba(var(--ep-primary-rgb), 0.1);
+	padding-bottom: 10px;
+	letter-spacing: 0.1em;
+}
+
+.ep-calendar-tooltip .tooltip-body {
+	max-height: 300px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--ep-primary) transparent;
+}
+
+.ep-calendar-tooltip .tooltip-event {
+	margin-bottom: 15px;
+	padding-left: 20px;
+	position: relative;
+}
+
+.ep-calendar-tooltip .tooltip-event:last-child {
+	margin-bottom: 0;
+}
+
+.ep-calendar-tooltip .tooltip-event::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 7px;
+	width: 8px;
+	height: 8px;
+	background: var(--ep-primary);
+	border-radius: 50%;
+	box-shadow: 0 0 10px rgba(var(--ep-primary-rgb), 0.5);
+}
+
+.ep-calendar-tooltip .event-time {
+	display: block;
+	font-size: 0.8rem;
+	color: var(--ep-primary);
+	font-weight: 800;
+	margin-bottom: 5px;
+}
+
+.ep-calendar-tooltip .event-title {
+	display: block;
+	font-size: 0.95rem;
+	font-weight: 600;
+	line-height: 1.5;
+	color: var(--ep-text);
+}
+
+.dark-mode .ep-calendar-tooltip .event-title {
+	color: #f1f5f9;
+}
+
+.ep-calendar-tooltip .no-events {
+	font-size: 0.9rem;
+	color: #94a3b8;
+	text-align: center;
+	font-style: italic;
+	padding: 15px 0;
+}
+
+/* Toast Notifications */
+.ep-toast-container {
+	position: fixed;
+	bottom: 20px;
+	right: 20px;
+	z-index: 10000;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	pointer-events: none;
+}
+
+.ep-toast {
+	background: #fff;
+	color: #333;
+	padding: 20px 25px;
+	/* Larger padding */
+	border-radius: 12px;
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+	display: flex;
+	align-items: center;
+	gap: 20px;
+	min-width: 400px;
+	/* Wider as requested */
+	max-width: 550px;
+	border-left: 6px solid #a81c24;
+	animation: toast-in 0.5s ease-out forwards;
+	pointer-events: auto;
+	cursor: pointer;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+#ep-app-root.dark-mode .ep-toast {
+	background: #1e293b;
+	color: #f1f5f9;
+	border-left-color: #ffffff;
+	/* White in dark mode for contrast */
+}
+
+#ep-app-root.dark-mode .ep-toast-content p {
+	color: #94a3b8;
+}
+
+.ep-toast.toast-out {
+	animation: toast-out 0.5s ease-in forwards;
+}
+
+.ep-toast-icon {
+	font-size: 24px;
+	color: #a81c24;
+}
+
+.ep-toast-content h4 {
+	margin: 0 0 5px 0;
+	font-size: 18px;
+	/* Slightly larger */
+	font-weight: 700;
+}
+
+.ep-toast-content p {
+	margin: 0;
+	font-size: 15px;
+	/* Slightly larger */
+	color: #475569;
+}
+
+.ep-toast-close {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	font-size: 20px;
+	color: #94a3b8;
+	cursor: pointer;
+	line-height: 1;
+	transition: color 0.2s;
+	padding: 5px;
+}
+
+.ep-toast-close:hover {
+	color: #a81c24;
+}
+
+#ep-app-root.dark-mode .ep-toast-close:hover {
+	color: #ffffff;
+}
+
+@keyframes toast-in {
+	from {
+		transform: translateX(100%);
+		opacity: 0;
+	}
+
+	to {
+		transform: translateX(0);
+		opacity: 1;
+	}
+}
+
+@keyframes toast-out {
+	from {
+		transform: translateX(0);
+		opacity: 1;
+	}
+
+	to {
+		transform: translateX(100%);
+		opacity: 0;
+	}
+}
+
+.ep-notifications-dropdown.active {
+	display: block;
+	animation: epFadeDown 0.2s ease;
+}
+
+.ep-notifications-dropdown .dropdown-header {
+	padding: 20px 25px;
+	border-bottom: 1px solid var(--ep-border);
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	background: var(--ep-surface);
+}
+
+.ep-notifications-dropdown .dropdown-header span {
+	font-weight: 800;
+	font-size: 1.1rem;
+	color: var(--ep-text);
+}
+
+.ep-notifications-dropdown .dropdown-header a {
+	font-size: 0.85rem;
+	color: var(--ep-primary);
+	font-weight: 700;
+}
+
+.ep-notifications-dropdown .notifications-list {
+	max-height: 450px;
+	overflow-y: auto;
+}
+
+.ep-notifications-dropdown .notification-item {
+	padding: 20px 25px;
+	border-bottom: 1px solid var(--ep-border);
+	display: flex;
+	gap: 18px;
+	transition: all 0.2s;
+	position: relative;
+}
+
+.ep-notifications-dropdown .notification-item:hover {
+	background: var(--ep-surface-hover);
+}
+
+.ep-notifications-dropdown .notification-item.unread {
+	background: rgba(var(--ep-primary-rgb), 0.03);
+}
+
+.ep-notifications-dropdown .notification-item.unread::before {
+	content: '';
+	position: absolute;
+	left: 10px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 8px;
+	height: 8px;
+	background: var(--ep-primary);
+	border-radius: 50%;
+}
+
+.ep-notifications-dropdown .notification-icon-small {
+	width: 44px;
+	height: 44px;
+	border-radius: 14px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	font-size: 1.2rem;
+}
+
+.ep-notifications-dropdown .notification-content h4 {
+	margin: 0 0 6px 0;
+	font-size: 1rem;
+	font-weight: 700;
+	color: var(--ep-text);
+}
+
+.ep-notifications-dropdown .notification-content p {
+	margin: 0 0 8px 0;
+	font-size: 0.9rem;
+	color: var(--ep-text-muted);
+	line-height: 1.5;
+}
+
+.ep-notifications-dropdown .notification-content .time {
+	font-size: 0.8rem;
+	font-weight: 500;
+	color: #94a3b8;
+}
+
+/* Notification Types */
+.notification-info {
+	background: #e3f2fd;
+	color: #1976d2;
+}
+
+.notification-success {
+	background: #e8f5e9;
+	color: #388e3c;
+}
+
+.notification-warning {
+	background: #fff3e0;
+	color: #f57c00;
+}
+
+.notification-error {
+	background: #ffebee;
+	color: #d32f2f;
+}
+
+.ep-notifications-dropdown .dropdown-footer {
+	padding: 15px;
+	text-align: center;
+	background: var(--ep-surface-hover);
+	border-top: 1px solid var(--ep-border);
+}
+
+.ep-notifications-dropdown .dropdown-footer a {
+	font-size: 0.9rem;
+	font-weight: 700;
+	color: var(--ep-text-muted);
+}
+
+.ep-notifications-dropdown .loading-notifications,
+.ep-notifications-dropdown .empty-notifications {
+	padding: 30px;
+	text-align: center;
+	color: var(--ep-gray);
+	font-size: 0.9rem;
+}
+
+/* Unified Modals */
+.ep-modal-unified {
+	display: none;
+	position: fixed;
+	z-index: 2000000;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0, 0, 0, 0.6);
+	backdrop-filter: blur(4px);
+	align-items: center;
+	justify-content: center;
+}
+
+.ep-modal-unified.show,
+.ep-modal-unified.is-visible {
+	display: flex !important;
+}
+
+.ep-modal-unified .ep-modal-content {
+	background-color: var(--ep-surface);
+	border: 1px solid var(--ep-border);
+	color: var(--ep-text);
+	border-radius: var(--ep-radius);
+	padding: 30px;
+	width: 90%;
+	max-width: 600px;
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+	position: relative;
+	max-height: 85vh;
+	overflow-y: auto;
+	animation: epFadeDown 0.3s ease;
+}
+
+.ep-modal-body {
+	margin-top: 15px;
+	font-size: 0.95rem;
+	line-height: 1.6;
+}
+
+.ep-modal-body p {
+	margin-bottom: 10px;
+}
+
+.ep-modal-actions {
+	border-top: 1px solid var(--ep-border);
+	padding-top: 20px;
+	margin-top: 20px;
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+}
+
+.ep-close-modal-trigger {
+	cursor: pointer;
+}
+
+/* Base Utility for Widgets (like Carga de Trabajo) */
+.ep-widget-unified {
+	background-color: var(--ep-surface);
+	border: 1px solid var(--ep-border);
+	padding: 20px;
+	border-radius: var(--ep-radius);
+	box-shadow: var(--ep-shadow-sm);
+	color: var(--ep-text);
+}
+
+/* Content box within modals or details */
+.ep-content-box-unified {
+	background-color: var(--ep-surface-hover);
+	padding: 15px;
+	border-radius: var(--ep-radius-sm);
+	margin-bottom: 15px;
+	border: 1px solid var(--ep-border);
+	color: var(--ep-text);
+}
+
+/* Unified Badges */
+.ep-badge-unified {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.25em 0.7em;
+	font-size: 0.75em;
+	font-weight: 600;
+	line-height: 1;
+	border-radius: 999px;
+	white-space: nowrap;
+	vertical-align: baseline;
+	transition: all 0.2s;
+}
+
+/* Badge Variants (mapped to standard colors and specific statuses) */
+/* Primary / Blue / Normal */
+.ep-badge-unified.primary,
+.ep-badge-unified.normal,
+.ep-badge-unified.open,
+.ep-badge-unified.it,
+.ep-badge-unified.support {
+	background-color: rgba(var(--ep-primary-rgb), 0.1);
+	color: var(--ep-primary);
+}
+
+/* Success / Green / Low Prio */
+.ep-badge-unified.success,
+.ep-badge-unified.baja,
+.ep-badge-unified.low {
+	background-color: #dcfce7;
+	color: #166534;
+}
+
+/* Warning / Yellow / Medium / In Progress */
+.ep-badge-unified.warning,
+.ep-badge-unified.in_progress,
+.ep-badge-unified.medium,
+.ep-badge-unified.communication {
+	background-color: #fef9c3;
+	color: #854d0e;
+}
+
+/* Danger / Red / High Prio */
+.ep-badge-unified.danger,
+.ep-badge-unified.alta,
+.ep-badge-unified.high {
+	background-color: #fee2e2;
+	color: #991b1b;
+}
+
+/* Secondary / Gray / Closed */
+.ep-badge-unified.secondary,
+.ep-badge-unified.closed,
+.ep-badge-unified.web {
+	background-color: #f1f5f9;
+	color: #64748b;
+}
+
+/* Dark Mode Overrides for Badges */
+#ep-app-root.dark-mode .ep-badge-unified.success,
+#ep-app-root.dark-mode .ep-badge-unified.baja {
+	background-color: rgba(22, 101, 52, 0.2);
+	color: #86efac;
+}
+
+#ep-app-root.dark-mode .ep-badge-unified.warning,
+#ep-app-root.dark-mode .ep-badge-unified.in_progress {
+	background-color: rgba(133, 77, 14, 0.2);
+	color: #fde047;
+}
+
+#ep-app-root.dark-mode .ep-badge-unified.danger,
+#ep-app-root.dark-mode .ep-badge-unified.alta {
+	background-color: rgba(153, 27, 27, 0.2);
+	color: #fca5a5;
+}
+
+#ep-app-root.dark-mode .ep-badge-unified.secondary,
+#ep-app-root.dark-mode .ep-badge-unified.closed {
+	background-color: rgba(100, 116, 139, 0.2);
+	color: #94a3b8;
+}
+
+/* --- Responsive Layout --- */
+
+/* Downloads Plugin Overrides */
+#ep-app-root.dark-mode .ep-upload-zone {
+	background: rgba(255, 255, 255, 0.05);
+	border-color: var(--ep-border);
+}
+
+#ep-app-root.dark-mode .ep-upload-zone p {
+	color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-upload-content i {
+	color: var(--ep-text-muted);
+}
+
+/* Avisos / Announcements Plugin Overrides */
+#ep-app-root.dark-mode .ep-modal-content {
+	background: var(--ep-surface);
+	color: var(--ep-text);
+	border: 1px solid var(--ep-border);
+}
+
+#ep-app-root.dark-mode .ep-modal-header h2 {
+	color: var(--ep-text);
+}
+
+/* Fix Attachments Input Visibility in Modals */
+#ep-app-root.dark-mode input[type="file"] {
+	color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode ::file-selector-button {
+	background-color: var(--ep-surface-hover);
+	color: var(--ep-text);
+	border: 1px solid var(--ep-border);
+}
+
+/* Tablets & Small Desktops (max-width: 1024px) */
+@media screen and (max-width: 1024px) {
+	#ep-app-root .ep-sidebar {
+		position: fixed;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 280px;
+		transform: translateX(-100%);
+		z-index: 999999;
+		box-shadow: 10px 0 30px rgba(0, 0, 0, 0.1);
+		overflow-y: auto;
+		padding-top: 60px;
+		/* Leave space for admin bar if present */
+	}
+
+	#ep-app-root .ep-sidebar.active {
+		transform: translateX(0);
+	}
+
+	#ep-app-root .ep-mobile-menu-toggle {
+		display: flex;
+	}
+
+	#ep-app-root .ep-main {
+		padding: 20px;
+	}
+
+	#ep-app-root .ep-top-row {
+		grid-template-columns: 1fr;
+	}
+
+	#ep-app-root .ep-search {
+		max-width: none;
+	}
+}
+
+/* Mobile Phones (max-width: 768px) */
+@media screen and (max-width: 768px) {
+	#ep-app-root .ep-header {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 20px;
+		padding: 20px;
+	}
+
+	#ep-app-root .ep-header-left {
+		width: 100%;
+		justify-content: space-between;
+	}
+
+	#ep-app-root .ep-user-menu {
+		width: 100%;
+		justify-content: space-between;
+		padding-top: 15px;
+		border-top: 1px solid var(--ep-border);
+	}
+
+	#ep-app-root .ep-search {
+		order: 2;
+	}
+
+	#ep-app-root .ep-profile-info-main {
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		padding: 0 20px 30px;
+	}
+
+	#ep-app-root .ep-apps-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.ep-notifications-dropdown {
+		width: 90vw;
+		position: fixed;
+		left: 5vw;
+		right: 5vw;
+		top: 80px;
+	}
+
+	#ep-app-root .ep-modal-content,
+	#ep-app-root .ep-viewer-content {
+		width: 95% !important;
+		padding: 15px;
+		max-height: 90vh;
+		overflow-y: auto;
+	}
+
+	/* Responsive Tables */
+	.ep-table,
+	#ep-app-root .ep-table {
+		display: block;
+		width: 100%;
+		overflow-x: auto;
+		white-space: nowrap;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	/* Common elements like app headers, drive headers */
+	.ep-app-header,
+	.ep-drive-header,
+	.ep-section-header {
+		flex-direction: column !important;
+		align-items: stretch !important;
+		gap: 15px;
+	}
+
+	.ep-filter-group {
+		flex-direction: column;
+		width: 100%;
+	}
+
+	.ep-drive-main-actions {
+		flex-direction: column;
+		width: 100%;
+	}
+
+	.ep-section-title {
+		text-align: center;
+	}
+
+	#ep-app-root .ep-main {
+		padding: 15px 10px;
+	}
+}
+
+/* Global Dark Mode Fixes - Ensuring Headers and Buttons are visible */
+#ep-app-root.dark-mode h1,
+#ep-app-root.dark-mode h2,
+#ep-app-root.dark-mode h3,
+#ep-app-root.dark-mode h4,
+#ep-app-root.dark-mode h5,
+#ep-app-root.dark-mode h6 {
+	color: var(--ep-text) !important;
+}
+
+#ep-app-root.dark-mode .ep-btn-outline {
+	background-color: var(--ep-surface);
+	color: #e2e8f0;
+	border-color: #64748b;
+}
+
+#ep-app-root.dark-mode .ep-btn-outline:hover {
+	background-color: var(--ep-primary-hover);
+	color: #ffffff;
+	border-color: var(--ep-primary-hover);
+}
+
+
+/* Sidebar Overlay */
+.ep-sidebar-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 10004;
+	display: none;
+	backdrop-filter: blur(2px);
+}
+
+.ep-sidebar-overlay.active {
+	display: block;
+}
+
+/* Mobile Scroll Lock */
+body.ep-menu-open {
+	overflow: hidden;
+}
+
+/* OneDrive Sync Badge */
+#ep-app-root .ep-badge-onedrive {
+	background: rgba(0, 120, 212, 0.1);
+	color: #0078d4;
+	border: 1px solid rgba(0, 120, 212, 0.2);
+	font-size: 0.75rem;
+	padding: 2px 8px;
+	border-radius: 50px;
+	font-weight: 600;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+#ep-app-root .ep-badge-onedrive i {
+	color: #0078d4;
+	font-size: 0.8rem;
+}
+
+#ep-app-root.dark-mode .ep-badge-onedrive {
+	background: rgba(255, 255, 255, 0.1);
+	color: #ffffff;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#ep-app-root.dark-mode .ep-badge-onedrive i {
+	color: #ffffff;
+}
+
+/* --- Teams Mode Specific Overrides --- */
+body.ep-teams-mode #ep-app-root .ep-sidebar { display: block !important; }
+body.ep-teams-mode #ep-app-root .ep-main { padding: 20px !important; margin-left: auto !important; }
+body.ep-teams-mode #ep-app-root .ep-header { display: flex !important; }
+body.ep-teams-mode #ep-app-root .ep-content-area { margin-top: 20px !important; }

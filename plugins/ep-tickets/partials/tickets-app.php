@@ -1,0 +1,605 @@
+<?php
+$current_user = wp_get_current_user();
+$tickets = EP_Tickets::get_user_tickets();
+global $ep_app_manager;
+$manageable_tickets = EP_Tickets::get_manageable_tickets_for_user($current_user->ID, 'open');
+$closed_manageable_tickets = EP_Tickets::get_manageable_tickets_for_user($current_user->ID, 'closed');
+$permission = $ep_app_manager->get_user_permission('tickets');
+$department = (string) ($current_user->ep_department ?? '');
+$is_manager = ($permission === 'write') || !empty($manageable_tickets) || !empty($closed_manageable_tickets) || (strpos($department, 'TRANSFORMACI') !== false || strpos($department, 'Comunicaci') !== false);
+$queues = EP_Tickets::get_department_queues();
+$stats = EP_Tickets::get_stats();
+?>
+
+
+
+
+<div class="ep-content-grid">
+
+    <!-- Stats & Workload Container -->
+    <section class="ep-tickets-section full-width">
+        <div class="ep-stats-dashboard">
+            <!-- Workload Card -->
+            <div class="ep-card ep-stat-card">
+                <div class="ep-stat-header">
+                    <div class="ep-stat-icon workload"><i class="fa-solid fa-layer-group"></i></div>
+                    <div class="ep-stat-info">
+                        <h3>Carga de Trabajo</h3>
+                        <p>Tickets abiertos por departamento</p>
+                    </div>
+                </div>
+                <div class="ep-stat-content workload-grid">
+                    <?php foreach ($queues as $q): ?>
+                        <div class="queue-stat-item ep-queue-trigger" 
+                            data-label="<?php echo esc_attr($q['label']); ?>"
+                            data-high="<?php echo intval($q['breakdown']['high']); ?>"
+                            data-normal="<?php echo intval($q['breakdown']['normal']); ?>"
+                            data-low="<?php echo intval($q['breakdown']['low']); ?>">
+                            <span class="queue-label"><?php echo esc_html($q['label']); ?></span>
+                            <span class="ep-badge-unified <?php echo $q['count'] > 5 ? 'high' : 'normal'; ?>">
+                                <?php echo intval($q['count']); ?>
+                            </span>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- Time-based Stats Card -->
+            <div class="ep-card ep-stat-card">
+                <div class="ep-stat-header">
+                    <div class="ep-stat-icon analytics"><i class="fa-solid fa-chart-line"></i></div>
+                    <div class="ep-stat-info">
+                        <h3>Rendimiento</h3>
+                        <p>Histórico de resolución</p>
+                    </div>
+                </div>
+                <div class="ep-stat-content stats-flex">
+                    <div class="stat-period-box">
+                        <span class="period-label">Este Mes</span>
+                        <div class="period-values">
+                            <div class="val-item" title="Creados">
+                                <i class="fa-solid fa-plus-circle text-blue"></i>
+                                <strong><?php echo $stats['month']['created']; ?></strong>
+                            </div>
+                            <div class="val-item" title="Resueltos">
+                                <i class="fa-solid fa-check-circle text-green"></i>
+                                <strong><?php echo $stats['month']['resolved']; ?></strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-period-box">
+                        <span class="period-label">Este Año</span>
+                        <div class="period-values">
+                            <div class="val-item" title="Creados">
+                                <i class="fa-solid fa-plus-circle text-blue"></i>
+                                <strong><?php echo $stats['year']['created']; ?></strong>
+                            </div>
+                            <div class="val-item" title="Resueltos">
+                                <i class="fa-solid fa-check-circle text-green"></i>
+                                <strong><?php echo $stats['year']['resolved']; ?></strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <style>
+        .ep-stats-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        .ep-stat-card {
+            padding: 20px !important;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 180px;
+        }
+        .ep-stat-header {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .ep-stat-icon {
+            width: 45px;
+            height: 45px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+        .ep-stat-icon.workload { background: rgba(var(--ep-primary-rgb), 0.1); color: var(--ep-primary); }
+        .ep-stat-icon.analytics { background: rgba(40, 167, 69, 0.1); color: #28a745; }
+        
+        .ep-stat-info h3 { margin: 0; font-size: 1.1rem; color: var(--ep-text-main); }
+        .ep-stat-info p { margin: 0; font-size: 0.85rem; color: var(--ep-text-muted); }
+
+        .workload-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+        }
+        .queue-stat-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            transition: transform 0.2s;
+            cursor: pointer;
+            text-align: center;
+        }
+        .queue-stat-item:hover { transform: translateY(-2px); background: #f0f2f5; }
+        .queue-label { font-size: 0.75rem; font-weight: 600; color: var(--ep-text-muted); line-height: 1.2; }
+
+        .stats-flex {
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            padding: 10px 0;
+        }
+        .stat-period-box {
+            text-align: center;
+            flex: 1;
+        }
+        .period-label {
+            display: block;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+            color: var(--ep-text-muted);
+            margin-bottom: 10px;
+        }
+        .period-values {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        .val-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .val-item i { font-size: 1.1rem; }
+        .val-item strong { font-size: 1.3rem; color: var(--ep-text-main); }
+        .text-blue { color: var(--ep-primary); }
+        .text-green { color: #28a745; }
+        .stat-divider {
+            width: 1px;
+            height: 40px;
+            background: #eee;
+            margin: 0 15px;
+        }
+
+        @media (max-width: 768px) {
+            .ep-stats-dashboard { grid-template-columns: 1fr; }
+            .stats-flex { flex-direction: column; gap: 20px; }
+            .stat-divider { display: none; }
+        }
+    </style>
+
+    <!-- Management Section -->
+    <?php if ($is_manager): ?>
+        <section class="ep-tickets-section full-width">
+            <div class="ep-card ticket-list-card">
+                <h3><i class="fa-solid fa-briefcase"></i> Gestión de Tickets (<?php echo count($manageable_tickets); ?>)
+                </h3>
+                <table class="ep-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Asunto</th>
+                            <th>Categoría</th>
+                            <th>Prio</th>
+                            <th>Solicitante</th>
+                            <th>Fecha</th>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($manageable_tickets)): ?>
+                            <tr>
+                                <td colspan="8">No hay tickets pendientes para tu departamento.</td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($manageable_tickets as $ticket):
+                                $priority = get_post_meta($ticket->ID, '_ep_ticket_priority', true) ?: 'Normal';
+                                $ticket_type = get_post_meta($ticket->ID, '_ep_ticket_type', true) ?: 'IT';
+                                $type_labels = ['IT' => 'Soporte Informático', 'Communication' => 'Comunicación', 'Web' => 'Desarrollo/Soporte Web'];
+                                $type_label = isset($type_labels[$ticket_type]) ? $type_labels[$ticket_type] : $ticket_type;
+                                $type_css = strtolower($ticket_type);
+                                $attach_id = get_post_meta($ticket->ID, '_ep_ticket_attachment_id', true);
+                                $attach_url = $attach_id ? wp_get_attachment_url($attach_id) : '';
+                                $status = get_post_meta($ticket->ID, '_ep_ticket_status', true);
+                                ?>
+                                <tr class="ticket-row" data-id="<?php echo $ticket->ID; ?>">
+                                    <td>#<?php echo $ticket->ID; ?></td>
+                                    <td><?php echo esc_html($ticket->post_title); ?></td>
+                                    <td><span class="ep-badge-unified <?php echo $type_css; ?>"><?php echo esc_html($type_label); ?></span></td>
+                                    <td><span
+                                            class="ep-badge-unified <?php echo strtolower($priority); ?>"><?php echo $priority; ?></span>
+                                    </td>
+                                    <td><?php echo get_the_author_meta('display_name', $ticket->post_author); ?></td>
+                                    <td><?php echo get_the_date('d/m/Y', $ticket->ID); ?></td>
+                                    <td><span
+                                            class="ep-badge-unified <?php echo strtolower($status); ?>"><?php echo $status; ?></span>
+                                    </td>
+                                    <td>
+                                        <button type="button" class="ep-btn ep-btn-sm ep-btn-primary ep-open-ticket-modal"
+                                            data-id="<?php echo $ticket->ID; ?>"
+                                            data-title="<?php echo esc_attr($ticket->post_title); ?>"
+                                            data-user="<?php echo esc_attr(get_the_author_meta('display_name', $ticket->post_author)); ?>"
+                                            data-content="<?php echo esc_attr($ticket->post_content); ?>"
+                                            data-priority="<?php echo esc_attr($priority); ?>"
+                                            data-attachment="<?php echo esc_url($attach_url); ?>"
+                                            data-status="<?php echo esc_attr($status); ?>" data-view="manager"
+                                            data-nonce="<?php echo wp_create_nonce('ep_ticket_action_' . $ticket->ID); ?>">
+                                            Ver / Gestionar
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- History Section for Managers -->
+        <?php if (!empty($closed_manageable_tickets)): ?>
+        <section class="ep-tickets-section full-width">
+            <div class="ep-card ticket-list-card" style="border-top: 3px solid var(--ep-success);">
+                <h3><i class="fa-solid fa-history"></i> Historial de Tickets Cerrados (<?php echo count($closed_manageable_tickets); ?>)</h3>
+                <div style="max-height: 300px; overflow-y: auto;">
+                    <table class="ep-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Asunto</th>
+                                <th>Categoría</th>
+                                <th>Solicitante</th>
+                                <th class="ep-sortable" data-type="date" style="cursor:pointer;" title="Haz clic para ordenar">Cerrado el <i class="fa-solid fa-sort"></i></th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="epClosedTicketsBody">
+                            <?php foreach ($closed_manageable_tickets as $ticket):
+                                $ticket_type = get_post_meta($ticket->ID, '_ep_ticket_type', true) ?: 'IT';
+                                $closed_date = get_post_meta($ticket->ID, '_ep_ticket_closed_date', true);
+                                $priority = get_post_meta($ticket->ID, '_ep_ticket_priority', true) ?: 'Normal';
+                                $attach_id = get_post_meta($ticket->ID, '_ep_ticket_attachment_id', true);
+                                $attach_url = $attach_id ? wp_get_attachment_url($attach_id) : '';
+                                ?>
+                                <tr class="ticket-row" data-timestamp="<?php echo $closed_date ? strtotime($closed_date) : 0; ?>">
+                                    <td>#<?php echo $ticket->ID; ?></td>
+                                    <td><?php echo esc_html($ticket->post_title); ?></td>
+                                    <td><span class="ep-badge-unified <?php echo strtolower($ticket_type); ?>"><?php echo $ticket_type; ?></span></td>
+                                    <td><?php echo get_the_author_meta('display_name', $ticket->post_author); ?></td>
+                                    <td><?php echo $closed_date ? date('d/m/Y H:i', strtotime($closed_date)) : 'N/A'; ?></td>
+                                    <td>
+                                        <button type="button" class="ep-btn ep-btn-sm ep-open-ticket-modal"
+                                            data-id="<?php echo $ticket->ID; ?>"
+                                            data-title="<?php echo esc_attr($ticket->post_title); ?>"
+                                            data-user="<?php echo esc_attr(get_the_author_meta('display_name', $ticket->post_author)); ?>"
+                                            data-content="<?php echo esc_attr($ticket->post_content); ?>"
+                                            data-priority="<?php echo esc_attr($priority); ?>"
+                                            data-attachment="<?php echo esc_url($attach_url); ?>"
+                                            data-status="closed" data-view="user">
+                                            Ver Detalle
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+        <?php endif; ?>
+    <?php endif; ?>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const header = document.querySelector('.ep-sortable');
+        if (!header) return;
+
+        header.addEventListener('click', function() {
+            const tbody = document.getElementById('epClosedTicketsBody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const isAsc = this.classList.contains('sort-asc');
+            
+            rows.sort((a, b) => {
+                const valA = parseInt(a.getAttribute('data-timestamp'));
+                const valB = parseInt(b.getAttribute('data-timestamp'));
+                return isAsc ? valA - valB : valB - valA;
+            });
+
+            this.classList.toggle('sort-asc', !isAsc);
+            rows.forEach(row => tbody.appendChild(row));
+            
+            // Update icon
+            const icon = this.querySelector('i');
+            if (icon) {
+                icon.className = isAsc ? 'fa-solid fa-sort-up' : 'fa-solid fa-sort-down';
+            }
+        });
+    });
+    </script>
+
+    <!-- User Section -->
+    <section class="ep-tickets-section full-width">
+        <div class="ep-cards-row">
+            <!-- Form -->
+            <div class="ep-card ticket-form-card">
+                <h3>Crear Nuevo Ticket</h3>
+                <form method="post" enctype="multipart/form-data" onsubmit="this.querySelector('button[type=submit]').disabled = true; this.querySelector('button[type=submit]').innerText = 'Enviando...';">
+                    <?php wp_nonce_field('ep_new_ticket', 'ep_ticket_nonce'); ?>
+
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:15px;">
+                        <div>
+                            <label>Asunto</label>
+                            <input type="text" name="ticket_subject" required style="width:100%; margin-bottom: 1rem;">
+                        </div>
+                        <div>
+                            <label>Prioridad</label>
+                            <select name="ticket_priority" style="width:100%; margin-bottom: 1rem;">
+                                <option value="Baja">Baja</option>
+                                <option value="Normal" selected>Normal</option>
+                                <option value="Alta">Alta</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <label>Tipo de Incidencia</label>
+                    <select name="ticket_type" style="width:100%; margin-bottom: 1rem;">
+                        <option value="IT">Soporte Informático</option>
+                        <option value="Web">Desarrollo/Soporte Web</option>
+                        <option value="Communication">Comunicación</option>
+                    </select>
+
+                    <label>Mensaje / Descripción</label>
+                    <textarea name="ticket_message" required rows="5"
+                        style="width:100%; margin-bottom: 1rem;"></textarea>
+
+                    <label>Adjuntar Archivo (Captura/Log)</label>
+                    <input type="file" name="ticket_file" style="margin-bottom: 1rem;">
+
+                    <button type="submit" id="epSubmitTicketBtn" name="ep_submit_ticket" class="ep-btn ep-btn-primary">Enviar Ticket</button>
+                    <!-- Campos ocultos requeridos para que PHP reciba 'ep_submit_ticket' aunque el boton esté deshabilitado -->
+                    <input type="hidden" name="ep_submit_ticket" value="1">
+                </form>
+            </div>
+        </div>
+
+        <!-- My Tickets -->
+        <div class="ep-card ticket-list-card" style="margin-top: 2rem;">
+            <h3>Mis Tickets Recientes</h3>
+            <ul class="ep-ticket-list">
+                <?php if (!empty($tickets)): ?>
+                    <?php foreach ($tickets as $ticket):
+                        $status = get_post_meta($ticket->ID, '_ep_ticket_status', true);
+                        $priority = get_post_meta($ticket->ID, '_ep_ticket_priority', true) ?: 'Normal';
+                        $handler_id = get_post_meta($ticket->ID, '_ep_ticket_handler_id', true);
+                        $handler_name = $handler_id ? get_the_author_meta('display_name', $handler_id) : 'Sin asignar';
+                        $attach_id = get_post_meta($ticket->ID, '_ep_ticket_attachment_id', true);
+                        $attach_url = $attach_id ? wp_get_attachment_url($attach_id) : '';
+                        ?>
+                        <li class="ticket-item">
+                            <div class="ticket-info">
+                                <strong>#<?php echo $ticket->ID; ?>         <?php echo esc_html($ticket->post_title); ?>
+                                    <span class="ep-badge-unified <?php echo strtolower($priority); ?>"
+                                        style="margin-left:5px;"><?php echo $priority; ?></span>
+                                </strong>
+                                <span class="ticket-meta">
+                                    <?php
+                                    $t_type = get_post_meta($ticket->ID, '_ep_ticket_type', true) ?: 'IT';
+                                    $t_type_labels = ['IT' => 'Soporte Informático', 'Communication' => 'Comunicación', 'Web' => 'Desarrollo/Soporte Web'];
+                                    $t_type_label = isset($t_type_labels[$t_type]) ? $t_type_labels[$t_type] : $t_type;
+                                    ?>
+                                    <small><?php echo get_the_date('d/m/Y', $ticket->ID); ?></small> |
+                                    <small><?php echo esc_html($t_type_label); ?></small> |
+                                    <small>Gestionado por: <?php echo $handler_name; ?></small>
+                                </span>
+                            </div>
+                            <div style="display:flex; gap:10px; align-items:center;">
+                                <span
+                                    class="ep-badge-unified <?php echo strtolower($status); ?>"><?php echo ucfirst($status); ?></span>
+                                <button type="button" class="ep-btn ep-btn-sm ep-open-ticket-modal"
+                                    data-id="<?php echo $ticket->ID; ?>"
+                                    data-title="<?php echo esc_attr($ticket->post_title); ?>"
+                                    data-user="Mí (<?php echo $current_user->display_name; ?>)"
+                                    data-content="<?php echo esc_attr($ticket->post_content); ?>"
+                                    data-priority="<?php echo esc_attr($priority); ?>"
+                                    data-attachment="<?php echo esc_url($attach_url); ?>"
+                                    data-status="<?php echo esc_attr($status); ?>"
+                                    data-view="<?php echo ($handler_id == $current_user->ID) ? 'handler' : 'user'; ?>"
+                                    data-nonce="<?php echo wp_create_nonce('ep_ticket_action_' . $ticket->ID); ?>">
+                                    Ver Detalle
+                                </button>
+                            </div>
+                        </li>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <li>No tienes tickets abiertos.</li>
+                <?php endif; ?>
+            </ul>
+        </div>
+    </section>
+</div>
+
+<!-- TICKET MODAL -->
+<div id="epTicketModal" class="ep-modal-unified">
+    <div class="ep-modal-content">
+        <span class="ep-close ep-close-modal-trigger">&times;</span>
+        <h2>Ticket #<span id="modalTicketID"></span> <br><small id="modalTicketSubject"
+                style="font-size:0.8em; color:var(--ep-text-muted);"></small></h2>
+
+        <div class="ep-modal-body">
+            <p><strong>Solicitante:</strong> <span id="modalTicketUser"></span></p>
+            <p><strong>Prioridad:</strong> <span id="modalTicketPriority"></span></p>
+            <p><strong>Estado:</strong> <span id="modalTicketStatus"></span></p>
+            <hr>
+            <p><strong>Descripción:</strong></p>
+            <div id="modalTicketContent" class="ep-content-box-unified"></div>
+
+            <div id="modalTicketAttachment" style="display:none; margin-bottom:15px;">
+                <strong>Adjunto:</strong> <a href="#" target="_blank" id="modalTicketAttachmentLink">Ver Archivo</a>
+            </div>
+
+            <div class="ep-modal-actions" style="border-top:1px solid #eee; padding-top:15px; text-align:right;">
+                <!-- Dynamically populated buttons -->
+                <a id="btnTakeTicket" href="#" class="ep-btn ep-btn-primary" style="display:none;">Asignarme Ticket</a>
+                <a id="btnCloseTicket" href="#" class="ep-btn ep-btn-danger" style="display:none;">Cerrar Ticket</a>
+                <button type="button" class="ep-btn ep-close-modal-trigger">Cerrar Ventana</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- QUEUE MODAL -->
+<div id="epQueueModal" class="ep-modal-unified">
+    <div class="ep-modal-content">
+        <span class="ep-close ep-close-modal-trigger">&times;</span>
+        <h2>Detalle de Cola: <span id="epQModalTitle"></span></h2>
+
+        <div class="ep-modal-body">
+            <p><strong>Prioridad Alta:</strong> <span id="epQValHigh"></span> Tickets</p>
+            <p><strong>Prioridad Normal:</strong> <span id="epQValNormal"></span> Tickets</p>
+            <p><strong>Prioridad Baja:</strong> <span id="epQValLow"></span> Tickets</p>
+            <div class="ep-modal-actions" style="border-top:1px solid #eee; padding-top:15px; text-align:right;">
+                <button type="button" class="ep-btn ep-close-modal-trigger">Cerrar Ventana</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+        // Delegation for Modal Interactions with Class Toggling
+        document.addEventListener('click', function (e) {
+
+            // 1. OPEN MODAL
+            const openBtn = e.target.closest('.ep-open-ticket-modal');
+            if (openBtn) {
+                e.preventDefault();
+                e.stopPropagation(); // Stop bubbling to be safe
+
+                const modal = document.getElementById('epTicketModal');
+                if (!modal) {
+                    console.error('EP Modal Not Found in DOM');
+                    return;
+                }
+
+                console.log('Opening Ticket Modal for ID:', openBtn.getAttribute('data-id'));
+
+                // Populate Data using textContent for safety
+                const idSpan = document.getElementById('modalTicketID');
+                if (idSpan) idSpan.textContent = openBtn.getAttribute('data-id');
+
+                const subjectSpan = document.getElementById('modalTicketSubject');
+                if (subjectSpan) subjectSpan.textContent = openBtn.getAttribute('data-title');
+                document.getElementById('modalTicketUser').textContent = openBtn.getAttribute('data-user');
+                document.getElementById('modalTicketPriority').textContent = openBtn.getAttribute('data-priority');
+                document.getElementById('modalTicketStatus').textContent = openBtn.getAttribute('data-status');
+                document.getElementById('modalTicketContent').textContent = openBtn.getAttribute('data-content');
+
+                const attach = openBtn.getAttribute('data-attachment');
+                const attDiv = document.getElementById('modalTicketAttachment');
+                const attLink = document.getElementById('modalTicketAttachmentLink');
+
+                if (attach && attach.trim() !== '') {
+                    attDiv.style.display = 'block';
+                    attLink.href = attach;
+                } else {
+                    attDiv.style.display = 'none';
+                }
+
+                // Actions Visibility Logic
+                const id = openBtn.getAttribute('data-id');
+                const status = openBtn.getAttribute('data-status');
+                const view = openBtn.getAttribute('data-view');
+                const nonce = openBtn.getAttribute('data-nonce');
+                const baseUrl = '?view=tickets&ticket_id=' + id + '&nonce=' + nonce;
+
+                const btnTake = document.getElementById('btnTakeTicket');
+                const btnClose = document.getElementById('btnCloseTicket');
+
+                // Reset button visibility
+                btnTake.style.display = 'none';
+                btnClose.style.display = 'none';
+
+                if (view === 'manager' && status !== 'closed') {
+                    if (status === 'open') {
+                        btnTake.style.display = 'inline-block';
+                        btnTake.href = baseUrl + '&ep_action=take_ticket';
+                    }
+                    if (status === 'in_progress') {
+                        btnClose.style.display = 'inline-block';
+                        btnClose.href = baseUrl + '&ep_action=close_ticket';
+                    }
+                }
+
+                if ((view === 'handler' || view === 'user') && status !== 'closed') {
+                    if (status !== 'open') { // Only allow closing if it's in progress or similar (already handled by view/status check)
+                        btnClose.style.display = 'inline-block';
+                        btnClose.href = baseUrl + '&ep_action=close_ticket';
+                    }
+                }
+
+                modal.classList.add('is-visible');
+                return;
+            }
+
+            // 2. CLOSE MODAL (X, Button, or Background)
+            const closeTrigger = e.target.closest('.ep-close-modal-trigger');
+            const isBackdrop = e.target.id === 'epTicketModal';
+
+            if (closeTrigger || isBackdrop) {
+                e.preventDefault();
+                e.stopPropagation();
+
+
+                const modal = document.getElementById('epTicketModal');
+                if (modal) {
+                    console.log('Closing Modal');
+                    modal.classList.remove('is-visible');
+                }
+
+                const queueModal = document.getElementById('epQueueModal');
+                if (queueModal) {
+                    queueModal.classList.remove('is-visible');
+                }
+            }
+
+            // 3. OPEN QUEUE MODAL
+            const queueBtn = e.target.closest('.ep-queue-trigger');
+            if (queueBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const qModal = document.getElementById('epQueueModal');
+                if (qModal) {
+                    document.getElementById('epQModalTitle').textContent = queueBtn.getAttribute('data-label');
+                    document.getElementById('epQValHigh').textContent = queueBtn.getAttribute('data-high');
+                    document.getElementById('epQValNormal').textContent = queueBtn.getAttribute('data-normal');
+                    document.getElementById('epQValLow').textContent = queueBtn.getAttribute('data-low');
+
+                    qModal.classList.add('is-visible');
+                }
+            }
+        });
+    });
+</script>

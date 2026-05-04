@@ -1,0 +1,49 @@
+# Archivos de configuración de WordPress (Contienen contraseñas)
+wp-config-hardened.php
+
+# Archivos de despliegue y SSH (Contienen IPs y rutas de claves)
+deploy.ps1
+deploy-staging.ps1
+deploy_auto.ps1
+deploy_downloads.php
+deploy_helper.php
+deploy_helper_staging.php
+deploy_prod_headless.ps1
+deploy_staging_headless_v3.ps1
+deploy_staging_php.ps1
+ssh_helper.ps1
+read_logs.ps1
+
+# Logs
+*.log
+staging_debug.log
+ep_debug.log
+
+# Archivos temporales y backups
+*.tar.gz
+*.zip
+portal_restore.zip
+ep-downloads-deploy.tar.gz
+fds_fix_libs.zip
+teams-portal-empleado.zip
+
+# Directorios de entorno y herramientas
+.agent/
+.vscode/
+scratch/
+load-tests/
+
+# Archivos del sistema
+Thumbs.db
+.DS_Store
+
+# Scripts de diagnóstico (si queda alguno)
+diag*.php
+check*.php
+fix_*.php
+emergency_fix*.php
+relax_security.php
+bridge.php
+mkdir_fix.php
+split.ps1
+split.php

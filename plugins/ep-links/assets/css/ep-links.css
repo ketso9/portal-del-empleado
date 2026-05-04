@@ -1,0 +1,394 @@
+:root {
+    --ep-red: #9e1c2e;
+    --ep-red-light: #c0392b;
+    --ep-glass: rgba(255, 255, 255, 0.9);
+    --ep-shadow: 0 8px 32px 0 rgba(158, 28, 46, 0.1);
+    --ep-transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.ep-links-app {
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Form Container */
+.ep-links-admin-form {
+    background: var(--ep-glass);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: var(--ep-shadow);
+    padding: 25px;
+    margin-bottom: 40px;
+    animation: fadeInDown 0.5s ease-out;
+}
+
+.ep-links-admin-form h2 {
+    margin-top: 0;
+    font-size: 1.5rem;
+    color: #2c3e50;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ep-form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-start; /* Better for variable height content */
+}
+
+.ep-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.ep-form-group label {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #4a5568;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ep-form-group input {
+    padding: 10px 15px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 1rem;
+    transition: var(--ep-transition);
+}
+
+.ep-form-group input:focus {
+    outline: none;
+    border-color: var(--ep-red);
+    box-shadow: 0 0 0 3px rgba(158, 28, 46, 0.2);
+}
+
+.ep-links-app .ep-btn-add-link {
+    background: linear-gradient(135deg, #9e1c2e 0%, #7d1625 100%) !important;
+    color: #ffffff !important;
+    border: none !important;
+    padding: 0 30px !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    font-size: 1rem !important;
+    cursor: pointer !important;
+    transition: var(--ep-transition) !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    box-shadow: 0 4px 15px rgba(158, 28, 46, 0.3) !important;
+    height: 48px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    line-height: 48px !important;
+}
+
+.ep-links-app .ep-btn-add-link:hover {
+    transform: translateY(-3px) scale(1.02) !important;
+    box-shadow: 0 8px 25px rgba(158, 28, 46, 0.45) !important;
+    background: linear-gradient(135deg, #c0392b 0%, #9e1c2e 100%) !important;
+}
+
+/* Grid Container */
+.ep-links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 25px;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+/* Link Card */
+.ep-link-card {
+    aspect-ratio: 1 / 1;
+    background: white;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: #2d3436;
+    padding: 20px;
+    text-align: center;
+    position: relative;
+    transition: var(--ep-transition);
+    border: 1px solid #f1f2f6;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+}
+
+.ep-link-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+    border-color: var(--ep-red);
+}
+
+.ep-link-icon-wrapper {
+    width: 60px;
+    height: 60px;
+    background: #f8f9fa;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    color: var(--ep-red);
+    margin-bottom: 15px;
+    transition: var(--ep-transition);
+}
+
+.ep-link-card:hover .ep-link-icon-wrapper {
+    background: var(--ep-red);
+    color: white;
+}
+
+.ep-link-card h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+/* Card Actions Container */
+.ep-card-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    transition: var(--ep-transition);
+    z-index: 2;
+}
+
+.ep-link-card:hover .ep-card-actions {
+    opacity: 1;
+}
+
+.ep-btn-delete-link, .ep-btn-edit-link {
+    background: rgba(255, 255, 255, 0.9);
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--ep-transition);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.ep-btn-delete-link {
+    color: #e74c3c;
+}
+
+.ep-btn-delete-link:hover {
+    background: #e74c3c;
+    color: white;
+}
+
+.ep-btn-edit-link {
+    color: var(--ep-red);
+}
+
+.ep-btn-edit-link:hover {
+    background: var(--ep-red);
+    color: white;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Icon Selector */
+.ep-icon-selector-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #f8fafc;
+    padding: 6px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.ep-icon-preview {
+    width: 48px;
+    height: 48px;
+    background: white;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: var(--ep-red);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border: 1px solid #edf2f7;
+}
+
+.ep-links-app .ep-btn-secondary {
+    background: white !important;
+    color: #9e1c2e !important;
+    border: 2px solid #9e1c2e !important;
+    padding: 0 20px !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    font-size: 0.9rem !important;
+    cursor: pointer !important;
+    transition: var(--ep-transition) !important;
+    height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    box-shadow: 0 2px 6px rgba(158, 28, 46, 0.1) !important;
+}
+
+.ep-links-app .ep-btn-secondary:hover {
+    background: rgba(158, 28, 46, 0.05) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(158, 28, 46, 0.15) !important;
+}
+
+.ep-btn-secondary i {
+    font-size: 1.1rem;
+}
+
+/* Modal */
+.ep-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.ep-modal.is-active {
+    display: flex;
+}
+
+.ep-modal-content {
+    background: white;
+    width: 95%;
+    max-width: 600px;
+    border-radius: 20px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+    animation: zoomIn 0.3s ease-out;
+    overflow: hidden;
+}
+
+.ep-modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #f1f2f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ep-modal-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.ep-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #95a5a6;
+}
+
+.ep-modal-body {
+    padding: 20px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.ep-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+    gap: 15px;
+}
+
+.ep-icon-item {
+    aspect-ratio: 1/1;
+    background: #f8fafc;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: var(--ep-red); /* Color corporativo */
+    cursor: pointer;
+    transition: var(--ep-transition);
+    border: 1px solid #e2e8f0;
+}
+
+.ep-icon-item:hover {
+    background: white;
+    color: var(--ep-red-light);
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(158, 28, 46, 0.15);
+    border-color: var(--ep-red);
+}
+
+.ep-icon-item.is-selected {
+    border-color: var(--ep-red);
+    background: rgba(158, 28, 46, 0.1);
+    color: var(--ep-red);
+}
+
+@keyframes zoomIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .ep-form-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .ep-links-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 15px;
+    }
+}

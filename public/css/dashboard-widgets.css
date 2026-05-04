@@ -1,0 +1,233 @@
+/* --- Dashboard Layout & Widgets --- */
+
+.ep-dashboard-main-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+    margin-bottom: 40px;
+}
+
+/* Todos los widgets del dashboard deben ser iguales */
+.ep-dashboard-main-row section>.ep-card.glass {
+    height: 100%;
+    min-height: 400px;
+    /* Altura mínima consistente */
+    background: var(--ep-glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--ep-glass-border);
+    box-shadow: var(--ep-shadow);
+    display: flex;
+    flex-direction: column;
+    padding: 25px;
+    border-radius: 16px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.ep-dashboard-main-row section>.ep-card.glass:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+}
+
+.widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.widget-header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--ep-primary);
+}
+
+.widget-link {
+    font-size: 0.85rem;
+    color: var(--ep-text-muted);
+    font-weight: 500;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.widget-link:hover {
+    color: var(--ep-primary);
+}
+
+.widget-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Announcements Mini Styles */
+.ep-announcement-mini-item {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.announcement-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+    color: var(--ep-text);
+}
+
+/* Calendar Mini Adjustments */
+.calendar-header-mini {
+    text-align: center;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: var(--ep-primary);
+    text-transform: capitalize;
+}
+
+.calendar-grid-mini {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+    text-align: center;
+}
+
+.calendar-grid-mini span {
+    font-size: 0.85rem;
+    padding: 8px 0;
+    border-radius: 8px;
+}
+
+.calendar-grid-mini span.today {
+    background: var(--ep-primary);
+    color: white;
+    font-weight: 700;
+}
+
+/* Loading State */
+.ep-widget-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--ep-text-muted);
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+/* To Do List Items - Tarjetas Premium */
+.ep-todo-item {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.ep-todo-item:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--ep-primary);
+    transform: translateX(5px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.ep-todo-item:last-child {
+    margin-bottom: 0;
+}
+
+.ep-todo-item i.task-icon {
+    font-size: 1.2rem;
+    margin-right: 15px;
+    color: var(--ep-primary);
+    width: 24px;
+    text-align: center;
+}
+
+.todo-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.task-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ep-text);
+}
+
+.task-source {
+    font-size: 0.75rem;
+    color: var(--ep-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Colores por tipo de tarea */
+.ep-todo-item[data-type="signature"] i { color: #f59e0b; }
+.ep-todo-item[data-type="ticket"] i { color: #3b82f6; }
+.ep-todo-item[data-type="inventory"] i { color: #10b981; }
+.ep-todo-item[data-type="download"] i { color: #8b5cf6; }
+.ep-todo-item[data-source="microsoft"] i { color: #0078d4; }
+
+/* Mail List Items */
+.ep-mail-item {
+    display: flex;
+    flex-direction: column;
+    padding: 15px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+
+.ep-mail-item:last-child {
+    border-bottom: none;
+}
+
+.mail-subject {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--ep-text);
+    margin-bottom: 6px;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .ep-dashboard-main-row {
+        gap: 20px;
+    }
+}
+
+@media (max-width: 992px) {
+    .ep-dashboard-main-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dark Mode Overrides */
+:root.dark-mode .ep-dashboard-main-row section>.ep-card.glass {
+    background: rgba(30, 41, 59, 0.7);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+:root.dark-mode .widget-header h3 {
+    color: #ffffff;
+}
+
+:root.dark-mode .calendar-grid-mini span.today {
+    color: var(--ep-surface);
+    /* Hacer el texto oscuro sobre el fondo blanco */
+}

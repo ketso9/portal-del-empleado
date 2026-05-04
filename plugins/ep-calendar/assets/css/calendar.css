@@ -1,0 +1,125 @@
+/* FullCalendar Custom Styles */
+
+#ep-fullcalendar {
+    font-family: inherit;
+}
+
+.fc-theme-standard .fc-scrollgrid {
+    border: 1px solid #f1f5f9;
+}
+
+.fc-header-toolbar {
+    margin-bottom: 20px !important;
+}
+
+.fc-toolbar-title {
+    font-size: var(--ep-font-size-title) !important;
+    font-weight: 700;
+    color: var(--ep-text);
+}
+
+.fc-button-primary {
+    background-color: var(--ep-surface) !important;
+    border-color: var(--ep-border) !important;
+    color: var(--ep-text-muted) !important;
+    border-radius: var(--ep-radius-sm) !important;
+    text-transform: capitalize;
+    font-weight: 600;
+}
+
+.fc-button-primary:hover {
+    background-color: var(--ep-surface-hover) !important;
+    border-color: var(--ep-primary) !important;
+    color: var(--ep-primary) !important;
+}
+
+.fc-button-active {
+    background-color: var(--ep-primary) !important;
+    border-color: var(--ep-primary) !important;
+    color: white !important;
+}
+
+.fc-day-today {
+    background-color: var(--ep-surface-hover) !important;
+}
+
+/* Dark Mode Overrides for FullCalendar */
+#ep-app-root.dark-mode .fc-theme-standard .fc-scrollgrid {
+    border-color: var(--ep-border);
+}
+
+#ep-app-root.dark-mode .fc-col-header-cell-cushion,
+#ep-app-root.dark-mode .fc-daygrid-day-number {
+    color: var(--ep-text);
+    text-decoration: none;
+}
+
+#ep-app-root.dark-mode .fc-day-today {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+#ep-app-root.dark-mode .fc-list-day-cushion {
+    background-color: var(--ep-surface-hover);
+}
+
+#ep-app-root.dark-mode .fc-list-event:hover td {
+    background-color: var(--ep-surface-hover);
+}
+
+.fc-event {
+    border-radius: 6px;
+    padding: 2px 5px;
+    font-size: 0.85rem;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.fc-event:hover {
+    transform: scale(1.02);
+}
+
+.event-o365 {
+    /* bg color handled dynamically */
+    color: white;
+}
+
+/* Hide default toolbar if we use our custom one, or style it */
+/* Center chunk visible for title */
+.fc-toolbar-chunk:nth-child(2) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fc-timegrid-event {
+    /* border-left: 4px solid #005a9e !important; */
+}
+
+.fc-daygrid-event-dot {
+    /* border-color: #0078d4 !important; */
+}
+
+/* Mobile Enhancements for FullCalendar */
+@media screen and (max-width: 768px) {
+    .fc-header-toolbar {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .fc-toolbar-chunk {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+        margin-bottom: 5px;
+    }
+}
+
+/* Fix FullCalendar dark mode texts */
+#ep-app-root.dark-mode .fc-list-event-title,
+#ep-app-root.dark-mode .fc-list-event-time,
+#ep-app-root.dark-mode .fc-event-main,
+#ep-app-root.dark-mode .fc-list-day-text,
+#ep-app-root.dark-mode .fc-list-day-side-text {
+    color: var(--ep-text) !important;
+}

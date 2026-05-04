@@ -1,0 +1,525 @@
+/* Censo Module Styles */
+
+.ep-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.kpi-card {
+    text-align: center;
+    border-top: 4px solid var(--ep-primary, #9C0A23);
+    padding: 20px;
+    background: var(--ep-surface, #fff);
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    color: var(--ep-text, #333);
+}
+
+.kpi-card h4 {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+}
+
+.kpi-card ul {
+    text-align: left;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.kpi-card ul li {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--ep-border, #eee);
+    font-size: 0.85rem;
+    color: var(--ep-text-muted, #555);
+    display: flex;
+    justify-content: space-between;
+}
+
+.kpi-card ul li:last-child {
+    border-bottom: none;
+}
+
+.ep-search-panel {
+    background: #fff;
+    border: 1px solid #e2e4e7;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.ep-input {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #333;
+}
+
+.ep-input:focus {
+    border-color: var(--ep-primary, #9C0A23);
+    box-shadow: 0 0 0 1px var(--ep-primary, #9C0A23);
+    outline: none;
+}
+
+/* Table overrides if needed */
+#censo-results-container table th {
+    background-color: #f8f9fa;
+    color: #444;
+    font-weight: 600;
+}
+
+#censo-results-container table tr:hover {
+    background-color: #f0f0f1;
+}
+
+/* Button Styles matching Portal Theme */
+.ep-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: var(--ep-radius-sm, 8px);
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    border: 1px solid transparent;
+    text-decoration: none;
+    line-height: 1.2;
+    box-shadow: var(--ep-shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+    font-family: var(--ep-font-sans, sans-serif);
+    width: auto !important;
+    max-width: fit-content !important;
+    min-width: 0 !important;
+    flex: 0 0 auto !important;
+}
+
+.ep-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--ep-shadow, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+    text-decoration: none;
+}
+
+/* Toolbar Layout Improvements */
+.ep-tools-toolbar-container {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+}
+
+.ep-search-panel .ep-tools-toolbar-container .ep-toolbar-row {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    width: 100% !important;
+    overflow-x: auto;
+    padding: 5px 0;
+}
+
+/* Forzar que los botones no crezcan bajo ninguna circunstancia */
+.ep-toolbar-row .ep-btn,
+.ep-toolbar-row button.ep-btn,
+#btn-toggle-worker.ep-btn,
+#btn-enrich-data.ep-btn {
+    flex: 0 0 auto !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: max-content !important;
+    white-space: nowrap !important;
+    display: inline-flex !important;
+}
+
+.ep-tools-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Primary Action (Red) */
+.ep-btn-primary {
+    background-color: var(--ep-primary, #9C0A23) !important;
+    color: white !important;
+    border-color: var(--ep-primary, #9C0A23) !important;
+}
+
+.ep-btn-primary:hover {
+    background-color: var(--ep-primary-hover, #7d081b) !important;
+    color: white !important;
+}
+
+.ep-btn-active {
+    background-color: #27ae60 !important;
+    color: white !important;
+    border-color: #219150 !important;
+}
+
+/* danger Action (Red) */
+.ep-btn-danger {
+    background-color: #9C0A23;
+    color: white;
+    border-color: #9C0A23;
+}
+
+.ep-btn-danger:hover {
+    background-color: #B91C1C;
+    color: white;
+}
+
+/* Outline (Ghost) - Used for Secondary Actions like Export */
+.ep-btn-outline {
+    background-color: transparent;
+    border: 1px solid var(--ep-border, #e2e8f0);
+    color: var(--ep-text-muted, #64748b);
+    background: #fff;
+}
+
+.ep-btn-outline:hover {
+    border-color: var(--ep-primary, #9C0A23);
+    color: var(--ep-primary, #9C0A23);
+    background: var(--ep-surface-hover, #f8fafc);
+}
+
+/* Dark variant for Import maybe? or just use Outline */
+.ep-btn-secondary {
+    background-color: var(--ep-surface, #fff);
+    color: var(--ep-text, #333);
+    border: 1px solid var(--ep-border, #ddd);
+}
+
+.ep-btn-secondary:hover {
+    background-color: var(--ep-surface-hover, #f1f5f9);
+    border-color: var(--ep-text-muted, #999);
+}
+
+/* Icons fix */
+.ep-btn .dashicons {
+    font-size: 1.1rem;
+    width: auto;
+    height: auto;
+    line-height: 1;
+}
+
+/* Modal Styles */
+.ep-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: none;
+    /* JS toggles this */
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(2px);
+}
+
+.ep-modal-container {
+    background: #fff;
+    width: 90%;
+    max-width: 500px;
+    border-radius: 12px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    animation: slideUp 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--ep-font-sans, sans-serif);
+    /* Force font */
+    color: var(--ep-text, #333);
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.ep-modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fcfcfc;
+}
+
+.ep-modal-header h3 {
+    margin: 0;
+    color: var(--ep-primary, #9C0A23);
+    font-size: 1.1rem;
+}
+
+.ep-modal-close {
+    cursor: pointer;
+    font-size: 1.5rem;
+    color: #999;
+    line-height: 1;
+}
+
+.ep-modal-close:hover {
+    color: #333;
+}
+
+.ep-modal-body {
+    padding: 20px;
+}
+
+/* Form Improvements */
+.ep-form-group {
+    margin-bottom: 15px;
+}
+
+.ep-form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #555;
+    font-size: 0.9rem;
+}
+
+.ep-input,
+.ep-select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    color: #333;
+    background: #fff;
+    transition: all 0.2s;
+}
+
+.ep-input:focus,
+.ep-select:focus {
+    border-color: var(--ep-primary, #9C0A23);
+    box-shadow: 0 0 0 3px rgba(156, 10, 35, 0.1);
+    outline: none;
+}
+
+.ep-file-input-wrapper {
+    border: 2px dashed #ddd;
+    padding: 20px;
+    text-align: center;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border 0.3s;
+}
+
+.ep-file-input-wrapper:hover,
+.ep-file-input-wrapper.drag-over {
+    border-color: var(--ep-primary, #9C0A23);
+    background: #fff5f5;
+    /* Light red tint */
+    color: var(--ep-primary, #9C0A23);
+}
+
+.ep-file-input-wrapper.has-file {
+    border-color: #27ae60;
+    background: #f0fff4;
+    color: #27ae60;
+}
+
+/* Layout Utilities */
+.ep-flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 15px;
+    /* Reducido un poco para ganar espacio */
+    flex-wrap: wrap;
+}
+
+.ep-search-group {
+    display: flex;
+    gap: 12px;
+    flex: 1.5;
+    min-width: 350px;
+}
+
+.ep-tools-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+/* Toolbar Design for Dashboard Actions */
+.ep-tools-toolbar {
+    display: inline-flex;
+    background: var(--ep-surface, #ffffff);
+    padding: 6px;
+    border-radius: 12px;
+    gap: 6px;
+    border: 1px solid var(--ep-border, #e5e7eb);
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: fit-content;
+}
+
+.ep-tools-toolbar .ep-btn {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 10px !important;
+    margin: 0 !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    border: 1px solid transparent !important;
+}
+
+.ep-tools-toolbar .ep-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+    background-color: #f9fafb !important;
+}
+
+.ep-tools-toolbar .ep-btn-primary {
+    background-color: var(--ep-primary, #9C0A23) !important;
+    color: white !important;
+}
+
+.ep-tools-toolbar .ep-btn-primary:hover {
+    background-color: var(--ep-primary-hover, #7d081b) !important;
+}
+
+.ep-tools-toolbar .ep-btn .dashicons {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    margin: 0 !important;
+}
+
+.ep-toolbar-divider {
+    width: 1px;
+    height: 24px;
+    background: #e5e7eb;
+    margin: 0 4px;
+}
+
+/* Column Selector */
+.ep-column-selector {
+    position: relative;
+    display: inline-block;
+}
+
+/* Column Selection Modal */
+.column-grid label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    background: #fdfdfd;
+    border: 1px solid #f0f0f0;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.column-grid label:hover {
+    background: #f1f5f9;
+    border-color: var(--ep-primary, #9a0b22);
+}
+
+.column-grid input[type="checkbox"] {
+    margin: 0;
+    width: 18px;
+    height: 18px;
+}
+
+/* Sortable Headers */
+.ep-table th.sortable {
+    cursor: pointer;
+    position: relative;
+    padding-right: 25px !important;
+}
+
+.ep-table th.sortable:after {
+    content: '\f156';
+    font-family: dashicons;
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.3;
+}
+
+.ep-table th.sortable.asc:after {
+    content: '\f142';
+    opacity: 1;
+    color: var(--ep-primary);
+}
+
+.ep-table th.sortable.desc:after {
+    content: '\f140';
+    opacity: 1;
+    color: var(--ep-primary);
+}
+
+/* Columna de Descripción Reducida */
+.col-desc {
+    max-width: 250px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Estilos de Edición en Línea */
+.editable-cell {
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s ease;
+}
+
+.editable-cell:hover {
+    background-color: #f0f7ff !important;
+    padding-right: 25px !important;
+}
+
+.editable-cell::after {
+    content: "\f464";
+    font-family: dashicons;
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    color: var(--ep-primary, #9a0b22);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.editable-cell:hover::after {
+    opacity: 0.7;
+}
+
+.cell-edit-input {
+    width: 100%;
+    padding: 4px 8px !important;
+    font-size: 13px !important;
+    border: 2px solid var(--ep-primary, #9a0b22) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    outline: none !important;
+    margin: 0 !important;
+}
