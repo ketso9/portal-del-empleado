@@ -316,7 +316,7 @@ class EP_Avisos
         }
 
         if (!class_exists('EP_Notifications')) {
-            require_once ABSPATH . 'wp-content/plugins/Portal-empleado-1/includes/class-ep-notifications.php';
+            require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-notifications.php';
         }
 
         $title = '📢 Nuevo Aviso: ' . wp_strip_all_tags($post->post_title);
@@ -467,3 +467,4 @@ class EP_Avisos
 }
 
 new EP_Avisos();
+

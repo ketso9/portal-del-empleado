@@ -385,17 +385,17 @@ class EP_Public
 
     public function enqueue_styles()
     {
-        wp_enqueue_style($this->plugin_name, plugin_dir_url(__FILE__) . 'css/employee-portal.css', array(), time(), 'all');
-        wp_enqueue_style('ep-tickets-extra', plugin_dir_url(__FILE__) . 'css/tickets-extra.css', array(), time(), 'all');
-        wp_enqueue_style('ep-header-widgets', plugin_dir_url(__FILE__) . 'css/header-widgets.css', array(), time(), 'all');
-        wp_enqueue_style('ep-dashboard-widgets', plugin_dir_url(__FILE__) . 'css/dashboard-widgets.css', array(), time(), 'all');
+        wp_enqueue_style($this->plugin_name, EMPLOYEE_PORTAL_URL . 'public/css/employee-portal.css', array(), time(), 'all');
+        wp_enqueue_style('ep-tickets-extra', EMPLOYEE_PORTAL_URL . 'public/css/tickets-extra.css', array(), time(), 'all');
+        wp_enqueue_style('ep-header-widgets', EMPLOYEE_PORTAL_URL . 'public/css/header-widgets.css', array(), time(), 'all');
+        wp_enqueue_style('ep-dashboard-widgets', EMPLOYEE_PORTAL_URL . 'public/css/dashboard-widgets.css', array(), time(), 'all');
         // FontAwesome for icons
         wp_enqueue_style('ep-font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css', array(), '6.4.0');
     }
 
     public function enqueue_scripts()
     {
-        wp_enqueue_script($this->plugin_name, plugin_dir_url(__FILE__) . 'js/employee-portal.js', array('jquery'), time(), false);
+        wp_enqueue_script($this->plugin_name, EMPLOYEE_PORTAL_URL . 'public/js/employee-portal.js', array('jquery'), time(), false);
 
         wp_localize_script($this->plugin_name, 'ep_vars', array(
             'ajax_url' => admin_url('admin-ajax.php'),

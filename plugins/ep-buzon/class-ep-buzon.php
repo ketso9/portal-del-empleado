@@ -234,7 +234,7 @@ class EP_Buzon
         $label = isset($type_labels[$type]) ? $type_labels[$type] : 'Comunicación';
 
         if (!class_exists('EP_Notifications')) {
-            require_once ABSPATH . 'wp-content/plugins/Portal-empleado-1/includes/class-ep-notifications.php';
+            require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-notifications.php';
         }
 
         foreach ($recipients as $uid) {
@@ -259,3 +259,4 @@ class EP_Buzon
 }
 
 new EP_Buzon();
+

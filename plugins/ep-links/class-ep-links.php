@@ -218,7 +218,7 @@ class EP_Links
     public function enqueue_assets()
     {
         if (isset($_GET['view']) && $_GET['view'] === 'links') {
-            wp_enqueue_style('ep-links-style', EP_LINKS_URL . 'assets/css/ep-links.css', array(), '1.0.8');
+            wp_enqueue_style('ep-links-style', EP_LINKS_URL . 'assets/css/ep-links.css', array(), '1.0.9');
             // Enqueue SweetAlert2 for notifications
             wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', array(), '11.0.0', true);
         }

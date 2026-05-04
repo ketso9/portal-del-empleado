@@ -21,9 +21,9 @@ if (defined('EP_PORTAL_RUNNING')) {
 }
 define('EP_PORTAL_RUNNING', true);
 
-define('EMPLOYEE_PORTAL_VERSION', '2.0.26');
-define('EMPLOYEE_PORTAL_PATH', plugin_dir_path(__FILE__));
-define('EMPLOYEE_PORTAL_URL', plugin_dir_url(__FILE__));
+define('EMPLOYEE_PORTAL_VERSION', '2.0.28');
+define('EMPLOYEE_PORTAL_PATH', trailingslashit(dirname(__FILE__)));
+define('EMPLOYEE_PORTAL_URL', trailingslashit(plugins_url('', __FILE__)));
 
 /**
  * Función global para logging controlado.

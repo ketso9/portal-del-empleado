@@ -88,7 +88,7 @@ class EP_App_Directory implements EP_App_Interface
     public function render_full_view()
     {
         // Enqueue styles
-        wp_enqueue_style('ep-directory-style', plugin_dir_url(__FILE__) . 'assets/css/ep-directory.css', array(), '1.0.1');
+        wp_enqueue_style('ep-directory-style', plugin_dir_url(__FILE__) . 'assets/css/ep-directory.css', array(), '1.0.2');
 
         // Fetch all users
         $users = get_users(array(
@@ -99,7 +99,7 @@ class EP_App_Directory implements EP_App_Interface
         include plugin_dir_path(__FILE__) . 'views/directory-view.php';
     }    private function export_pdf()
     {
-        $tcpdf_path = WP_PLUGIN_DIR . '/Portal-empleado-1/plugins/ep-signature/libs/tcpdf/tcpdf.php';
+        $tcpdf_path = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/libs/tcpdf/tcpdf.php';
         if (!file_exists($tcpdf_path)) {
             wp_die('Error: No se encontró la librería TCPDF en la ruta esperada.');
         }
@@ -522,3 +522,4 @@ add_action('wp_ajax_ep_directory_ajax', function () {
     $app = new EP_App_Directory();
     $app->handle_ajax();
 });
+

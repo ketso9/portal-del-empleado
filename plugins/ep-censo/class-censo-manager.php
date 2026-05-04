@@ -449,7 +449,7 @@ class CensoManager
 
         // Enqueue styles
         wp_enqueue_style('dashicons');
-        wp_enqueue_style('ep-censo-style', plugin_dir_url(__FILE__) . 'assets/css/censo.css', [], '1.0.0');
+        wp_enqueue_style('ep-censo-style', plugin_dir_url(__FILE__) . 'assets/css/censo.css', [], '1.0.1');
 
         ob_start();
 

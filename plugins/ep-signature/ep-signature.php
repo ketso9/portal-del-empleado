@@ -32,7 +32,7 @@ if (!class_exists('EP_Fpdi_V4')) {
     if (is_admin()) $should_load_pdf_engines = true;
 
     if ($should_load_pdf_engines) {
-        $base_libs_path = WP_PLUGIN_DIR . '/Portal-empleado-1/plugins/ep-signature/libs/';
+        $base_libs_path = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/libs/';
         
         // Load TCPDF
         if (!class_exists('TCPDF', false)) {
@@ -124,8 +124,8 @@ class EP_App_Signature_V4 implements EP_App_Interface
 
     public function __construct()
     {
-        $this->base_path = WP_PLUGIN_DIR . '/Portal-empleado-1/plugins/ep-signature/';
-        $this->base_url = plugins_url('plugins/ep-signature/', WP_PLUGIN_DIR . '/Portal-empleado-1/employee-portal.php');
+        $this->base_path = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/';
+        $this->base_url  = EMPLOYEE_PORTAL_URL . 'plugins/ep-signature/';
         $this->libs_path = $this->base_path . 'libs/';
 
         // Register AJAX actions
@@ -273,18 +273,13 @@ class EP_App_Signature_V4 implements EP_App_Interface
     public function render_full_view()
     {
         // Enqueue required scripts and styles
-        wp_enqueue_style('ep-signature-style', $this->base_url . 'assets/css/ep-signature.css', array(), '1.0.1');
+        wp_enqueue_style('ep-signature-style', $this->base_url . 'assets/css/ep-signature.css', array(), '1.0.5');
 
         // AutoFirma / WebCrypto libs
-        wp_enqueue_script('fds-autoscript', $this->base_url . 'libs/autoscript.js', array('jquery'), '1.0.0');
+        wp_enqueue_script('fds-autoscript', $this->base_url . 'libs/autoscript.js', array('jquery'), '1.0.4');
         wp_enqueue_script('pdfjs', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js', array(), '2.12.313');
 
-        // Usamos la versión corregida de la raíz si existe, para saltar bloqueos de assets/
-        $js_url = $this->base_url . 'assets/js/ep-signature.js';
-        if (file_exists(EMPLOYEE_PORTAL_PATH . 'ep-signature-v2.js')) {
-            $js_url = EMPLOYEE_PORTAL_URL . 'ep-signature-v2.js';
-        }
-        wp_enqueue_script('ep-signature-js', $js_url, array('jquery', 'fds-autoscript'), '1.0.5');
+        wp_enqueue_script('ep-signature-js', $this->base_url . 'assets/js/ep-signature.js', array('jquery', 'fds-autoscript'), '1.1.0');
 
         // Get permission level
         global $ep_app_manager;
@@ -1260,3 +1255,4 @@ add_action('ep_register_apps', function($manager) {
         ep_error_log("[FDS-NUCLEAR-V4]: ERROR - La clase EP_App_Signature_V4 no existe!");
     }
 });
+

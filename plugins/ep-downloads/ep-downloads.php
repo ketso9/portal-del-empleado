@@ -14,6 +14,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('EP_DOWNLOADS_PATH', plugin_dir_path(__FILE__));
+define('EP_DOWNLOADS_URL', plugin_dir_url(__FILE__));
 
 // Load Logic
 require_once EP_DOWNLOADS_PATH . 'class-ep-downloads.php';

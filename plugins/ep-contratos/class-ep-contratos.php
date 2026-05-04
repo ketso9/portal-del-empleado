@@ -76,7 +76,7 @@ class EP_Contratos
             'ep-contratos-css',
             EP_CONTRATOS_URL . 'css/ep-contratos.css',
             ['employee-portal'],
-            '1.0.5'
+            '1.0.6'
         );
     }
 
@@ -535,7 +535,7 @@ class EP_Contratos
         if (!$contrato) return;
 
         if (!class_exists('EP_Notifications')) {
-            require_once ABSPATH . 'wp-content/plugins/Portal-empleado-1/includes/class-ep-notifications.php';
+            require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-notifications.php';
         }
 
         $trigger_user = get_userdata($trigger_user_id);
@@ -589,3 +589,4 @@ class EP_Contratos
 
 // Bootstrap
 new EP_Contratos();
+
