@@ -147,12 +147,19 @@ class EP_App_Censo implements EP_App_Interface
         if (!empty($email)) $facts[] = ['title' => '📧 Email', 'value' => $email];
         if (!empty($web))   $facts[] = ['title' => '🌐 Web', 'value' => $web];
 
-        return $bot_instance->adaptive_card([
+        $card = $bot_instance->adaptive_card([
             ['type' => 'TextBlock', 'text' => "🏢 Datos de Empresa", 'weight' => 'Bolder', 'size' => 'Large', 'color' => 'Accent'],
             ['type' => 'TextBlock', 'text' => "**{$empresa['RAZON']}**", 'wrap' => true, 'size' => 'Medium', 'weight' => 'Bolder'],
             ['type' => 'FactSet', 'facts' => $facts]
         ], [
             ['type' => 'Action.OpenUrl', 'title' => '🔍 Ver en el Censo', 'url' => home_url('/?view=censo&term=' . urlencode($empresa['NIF']))]
         ]);
+
+        $card['_meta_data'] = [
+            'RAZON' => $empresa['RAZON'],
+            'NIF'   => $empresa['NIF']
+        ];
+
+        return $card;
     }
 }

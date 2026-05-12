@@ -1,0 +1,709 @@
+/* ================================================================
+   EP Directorio de Empresas – Hoja de estilos
+   ================================================================ */
+
+/* ── Variables ──────────────────────────────────────────────── */
+:root {
+    --emp-primary:    #c41230;
+    --emp-primary-dk: #9a0d25;
+    --emp-accent:     #e31e3f;
+    --emp-success:    #22c55e;
+    --emp-danger:     #ef4444;
+    --emp-warn:       #f59e0b;
+    --emp-bg:         #f0f4f8;
+    --emp-card-bg:    #ffffff;
+    --emp-border:     #e2e8f0;
+    --emp-text:       #1e293b;
+    --emp-muted:      #64748b;
+    --emp-radius:     14px;
+    --emp-shadow:     0 4px 20px rgba(0,0,0,.08);
+    --emp-shadow-lg:  0 10px 40px rgba(0,0,0,.14);
+}
+
+/* ── Contenedor app ─────────────────────────────────────────── */
+.ep-empresas-app {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--emp-text);
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 4px;
+}
+
+/* ── Cabecera ───────────────────────────────────────────────── */
+.ep-emp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+}
+.ep-emp-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.ep-emp-header h1 {
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: var(--emp-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+}
+.ep-emp-header h1 i { color: var(--emp-accent); }
+.ep-emp-header p { margin: 4px 0 0; color: var(--emp-muted); font-size: .92rem; }
+
+/* ── Barra de herramientas ──────────────────────────────────── */
+.ep-emp-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: var(--emp-card-bg);
+    border: 1px solid var(--emp-border);
+    border-radius: var(--emp-radius);
+    padding: 14px 18px;
+    margin-bottom: 22px;
+    box-shadow: var(--emp-shadow);
+}
+
+.ep-emp-search-box {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+}
+.ep-emp-search-box i {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--emp-muted);
+}
+.ep-emp-search-box input {
+    width: 100%;
+    padding: 9px 12px 9px 36px;
+    border: 1.5px solid var(--emp-border);
+    border-radius: 8px;
+    font-size: .9rem;
+    color: var(--emp-text);
+    transition: border .2s;
+    box-sizing: border-box;
+}
+.ep-emp-search-box input:focus {
+    outline: none;
+    border-color: var(--emp-accent);
+}
+
+.ep-emp-toolbar select {
+    padding: 9px 12px;
+    border: 1.5px solid var(--emp-border);
+    border-radius: 8px;
+    font-size: .88rem;
+    color: var(--emp-text);
+    background: #fff;
+    cursor: pointer;
+    transition: border .2s;
+}
+.ep-emp-toolbar select:focus {
+    outline: none;
+    border-color: var(--emp-accent);
+}
+
+/* ── Botones orden ──────────────────────────────────────────── */
+.ep-emp-sort-btns {
+    display: flex;
+    gap: 6px;
+}
+.ep-emp-sort-btn {
+    padding: 8px 12px !important;
+    border: 1.5px solid var(--emp-border) !important;
+    border-radius: 8px !important;
+    background: #fff !important;
+    color: var(--emp-muted) !important;
+    font-size: .82rem !important;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all .2s;
+    white-space: nowrap;
+}
+.ep-emp-sort-btn:hover, .ep-emp-sort-btn.active {
+    border-color: var(--emp-accent) !important;
+    color: var(--emp-primary) !important;
+    background: #fff0f2 !important;
+}
+.ep-emp-sort-btn .sort-icon { font-size: .75rem; }
+
+/* ── Toggle vistas ──────────────────────────────────────────── */
+.ep-view-toggle {
+    display: flex;
+    border: 1.5px solid var(--emp-border) !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+}
+.ep-view-btn {
+    padding: 8px 14px !important;
+    background: #fff !important;
+    border: none !important;
+    cursor: pointer;
+    color: var(--emp-muted) !important;
+    font-size: .95rem !important;
+    transition: all .2s;
+}
+.ep-view-btn.active {
+    background: var(--emp-primary) !important;
+    color: #fff !important;
+}
+
+/* ── Botones de acción ──────────────────────────────────────── */
+.ep-emp-btn-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 26px !important;
+    background: var(--emp-primary) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 6px;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s ease;
+    white-space: nowrap;
+    text-decoration: none !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.ep-emp-btn-add i {
+    font-size: .9rem;
+}
+.ep-emp-btn-add:hover {
+    background: var(--emp-primary-dk) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+.ep-emp-btn-add:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.ep-emp-btn-import-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 26px !important;
+    background: var(--emp-primary) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 6px;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s ease;
+    white-space: nowrap;
+    text-decoration: none !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.ep-emp-btn-import-trigger:hover {
+    background: var(--emp-primary-dk) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.ep-emp-btn-settings {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    background: #fff !important;
+    color: var(--emp-muted) !important;
+    border: 1.5px solid var(--emp-border) !important;
+    border-radius: 50% !important;
+    cursor: pointer;
+    transition: all .2s ease;
+    font-size: 1.1rem;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.ep-emp-btn-settings i {
+    display: block;
+    line-height: 1;
+}
+.ep-emp-btn-settings:hover {
+    color: var(--emp-primary) !important;
+    border-color: var(--emp-primary) !important;
+    background: #fff0f2 !important;
+    transform: rotate(30deg);
+}
+
+
+.ep-emp-export-btns {
+    display: flex;
+    gap: 6px;
+}
+.ep-emp-btn-export {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px !important;
+    border-radius: 8px !important;
+    font-size: .84rem !important;
+    font-weight: 600 !important;
+    cursor: pointer;
+    border: 1px solid transparent !important;
+    transition: all .2s;
+}
+.ep-emp-btn-export.csv  { background: #e8f5e9 !important; color: #2e7d32 !important; border-color: #c8e6c9 !important; }
+.ep-emp-btn-export.xls  { background: #fff8e1 !important; color: #f57f17 !important; border-color: #ffe082 !important; }
+.ep-emp-btn-export.xlsx { background: #e3f2fd !important; color: #1565c0 !important; border-color: #bbdefb !important; }
+.ep-emp-btn-export.csv:hover  { background: #c8e6c9 !important; }
+.ep-emp-btn-export.xls:hover  { background: #ffe082 !important; }
+.ep-emp-btn-export.xlsx:hover { background: #bbdefb !important; }
+
+/* ── Vista tarjetas ─────────────────────────────────────────── */
+#ep-emp-cards-view {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 22px;
+    margin-bottom: 30px;
+}
+
+.ep-empresa-card {
+    background: var(--emp-card-bg);
+    border: 1px solid var(--emp-border);
+    border-radius: var(--emp-radius);
+    box-shadow: var(--emp-shadow);
+    overflow: hidden;
+    transition: transform .2s, box-shadow .2s;
+    display: flex;
+    flex-direction: column;
+}
+.ep-empresa-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--emp-shadow-lg);
+}
+
+.ep-card-header {
+    background: linear-gradient(135deg, var(--emp-primary), var(--emp-primary-dk));
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: relative;
+}
+.ep-card-logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: rgba(255,255,255,.15);
+    border: 2px solid rgba(255,255,255,.3);
+    flex-shrink: 0;
+}
+.ep-card-logo-placeholder {
+    width: 60px;
+    height: 60px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.15);
+    border: 2px solid rgba(255,255,255,.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.4rem;
+    color: rgba(255,255,255,.7);
+}
+.ep-card-title { 
+    color: #fff; 
+    flex: 1; 
+    min-width: 0; 
+    padding-right: 85px; 
+}
+.ep-card-title h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ep-card-title span { font-size: .8rem; opacity: .85; }
+
+/* Badge membresía */
+.ep-membresia-badge {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+}
+.ep-membresia-badge.basic    { background: #e0e0e0; color: #424242; }
+.ep-membresia-badge.corporate{ background: #fff3e0; color: #e65100; }
+.ep-membresia-badge.premium  { background: #fff8e1; color: #f57f17; border: 1px solid #ffc107; }
+
+/* Foto lateral en la tarjeta */
+.ep-card-foto {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+}
+
+.ep-card-body {
+    padding: 16px 18px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ep-card-info-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: .85rem;
+    color: var(--emp-muted);
+}
+.ep-card-info-row i { color: var(--emp-accent); width: 16px; flex-shrink: 0; margin-top: 2px; }
+.ep-card-info-row span { color: var(--emp-text); }
+
+.ep-card-obs {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: #f8fafc;
+    border-left: 3px solid var(--emp-accent);
+    border-radius: 0 6px 6px 0;
+    font-size: .82rem;
+    color: var(--emp-muted);
+    font-style: italic;
+}
+
+.ep-card-footer {
+    padding: 10px 18px;
+    border-top: 1px solid var(--emp-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    background: #fafbfc;
+}
+.ep-card-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: .82rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all .2s;
+}
+.ep-card-btn.edit   { background: #e3f2fd; color: #1565c0; }
+.ep-card-btn.delete { background: #ffebee; color: #c62828; }
+.ep-card-btn:hover  { filter: brightness(.93); transform: scale(1.03); }
+
+/* ── Vista tabla ────────────────────────────────────────────── */
+#ep-emp-table-view { display: none; margin-bottom: 30px; }
+
+.ep-emp-table-wrapper {
+    background: var(--emp-card-bg);
+    border: 1px solid var(--emp-border);
+    border-radius: var(--emp-radius);
+    box-shadow: var(--emp-shadow);
+    overflow-x: auto;
+}
+.ep-emp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .87rem;
+}
+.ep-emp-table thead th {
+    background: linear-gradient(135deg, var(--emp-primary), var(--emp-primary-dk));
+    color: #fff;
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.ep-emp-table thead th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+.ep-emp-table thead th.sortable:hover { background: var(--emp-accent); }
+.ep-emp-table thead th i.sort-arrow { margin-left: 5px; opacity: .7; font-size: .75rem; }
+.ep-emp-table tbody tr { transition: background .15s; }
+.ep-emp-table tbody tr:nth-child(even) { background: #f8fafc; }
+.ep-emp-table tbody tr:hover { background: #e0f7fa; }
+.ep-emp-table tbody td { padding: 10px 14px; vertical-align: middle; border-bottom: 1px solid var(--emp-border); }
+
+.ep-table-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 6px;
+    object-fit: cover;
+}
+.ep-table-logo-ph {
+    width: 38px;
+    height: 38px;
+    border-radius: 6px;
+    background: var(--emp-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--emp-muted);
+    font-size: .9rem;
+}
+.ep-table-actions { display: flex; gap: 6px; }
+.ep-table-btn {
+    padding: 5px 10px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: .78rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all .2s;
+}
+.ep-table-btn.edit   { background: #e3f2fd; color: #1565c0; }
+.ep-table-btn.delete { background: #ffebee; color: #c62828; }
+.ep-table-btn:hover  { filter: brightness(.9); }
+
+/* ── Empty state ────────────────────────────────────────────── */
+.ep-emp-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--emp-muted);
+    grid-column: 1 / -1;
+}
+.ep-emp-empty i { font-size: 3.5rem; margin-bottom: 16px; display: block; color: var(--emp-border); }
+.ep-emp-empty p { font-size: 1rem; }
+
+/* ── Loading spinner ────────────────────────────────────────── */
+.ep-emp-loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--emp-muted);
+    grid-column: 1 / -1;
+}
+.ep-emp-loading i { font-size: 2rem; color: var(--emp-accent); }
+
+/* ── Modal ──────────────────────────────────────────────────── */
+.ep-emp-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    z-index: 99990;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    backdrop-filter: blur(3px);
+}
+.ep-emp-modal-overlay.active { display: flex; }
+
+.ep-emp-modal {
+    background: var(--emp-card-bg);
+    border-radius: var(--emp-radius);
+    box-shadow: var(--emp-shadow-lg);
+    width: 100%;
+    max-width: 780px;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    animation: empModalIn .25s ease;
+}
+@keyframes empModalIn {
+    from { opacity: 0; transform: scale(.95) translateY(-20px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.ep-emp-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--emp-border);
+    background: linear-gradient(135deg, var(--emp-primary), var(--emp-primary-dk));
+    border-radius: var(--emp-radius) var(--emp-radius) 0 0;
+    color: #fff;
+}
+.ep-emp-modal-header h2 { margin: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+.ep-emp-modal-close {
+    background: rgba(255,255,255,.15);
+    border: none;
+    color: #fff;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .2s;
+}
+.ep-emp-modal-close:hover { background: rgba(255,255,255,.3); }
+
+.ep-emp-modal-body {
+    overflow-y: auto;
+    padding: 24px;
+    flex: 1;
+}
+
+/* ── Formulario ─────────────────────────────────────────────── */
+.ep-emp-form-section {
+    margin-bottom: 22px;
+}
+.ep-emp-form-section-title {
+    font-size: .8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--emp-primary);
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--emp-accent);
+}
+
+.ep-emp-form-row {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.ep-emp-form-row.cols-2 { grid-template-columns: 1fr 1fr; }
+.ep-emp-form-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.ep-emp-form-row.cols-1 { grid-template-columns: 1fr; }
+
+.ep-emp-form-group { display: flex; flex-direction: column; gap: 5px; }
+.ep-emp-form-group label {
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--emp-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.ep-emp-form-group label span.required { color: var(--emp-danger); }
+.ep-emp-form-group input,
+.ep-emp-form-group select,
+.ep-emp-form-group textarea {
+    padding: 9px 12px;
+    border: 1.5px solid var(--emp-border);
+    border-radius: 8px;
+    font-size: .88rem;
+    color: var(--emp-text);
+    transition: border .2s, box-shadow .2s;
+    width: 100%;
+    box-sizing: border-box;
+    background: #fff;
+    font-family: inherit;
+}
+.ep-emp-form-group input:focus,
+.ep-emp-form-group select:focus,
+.ep-emp-form-group textarea:focus {
+    outline: none;
+    border-color: var(--emp-accent);
+    box-shadow: 0 0 0 3px rgba(0,180,216,.1);
+}
+.ep-emp-form-group textarea { resize: vertical; min-height: 80px; }
+
+/* Upload zona de imagen */
+.ep-emp-upload-zone {
+    border: 2px dashed var(--emp-border);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+    background: #f8fafc;
+}
+.ep-emp-upload-zone:hover { border-color: var(--emp-accent); background: #e0f7fa; }
+.ep-emp-upload-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 0;
+}
+.ep-emp-upload-zone i { font-size: 1.8rem; color: var(--emp-muted); margin-bottom: 6px; display: block; }
+.ep-emp-upload-zone p { font-size: .82rem; color: var(--emp-muted); margin: 0; }
+.ep-emp-upload-preview {
+    width: 100%;
+    max-height: 100px;
+    object-fit: contain;
+    border-radius: 6px;
+    margin-top: 8px;
+    display: none;
+}
+
+/* ── Footer modal ───────────────────────────────────────────── */
+.ep-emp-modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--emp-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    background: #f8fafc;
+    border-radius: 0 0 var(--emp-radius) var(--emp-radius);
+}
+.ep-emp-btn-cancel {
+    padding: 9px 20px;
+    border: 1.5px solid var(--emp-border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--emp-muted);
+    font-size: .9rem;
+    cursor: pointer;
+    transition: all .2s;
+}
+.ep-emp-btn-cancel:hover { border-color: var(--emp-muted); }
+.ep-emp-btn-save {
+    padding: 9px 24px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--emp-primary), var(--emp-accent));
+    color: #fff;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: opacity .2s, transform .15s;
+}
+.ep-emp-btn-save:hover { opacity: .88; transform: translateY(-1px); }
+.ep-emp-btn-save:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+/* ── Membresía colores en tabla ─────────────────────────────── */
+.badge-membresia {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: .74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.badge-membresia.basic     { background: #e0e0e0; color: #424242; }
+.badge-membresia.corporate { background: #ffe0b2; color: #bf360c; }
+.badge-membresia.premium   { background: #fff9c4; color: #f57f17; border: 1px solid #fdd835; }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .ep-emp-form-row.cols-2,
+    .ep-emp-form-row.cols-3 { grid-template-columns: 1fr; }
+    .ep-emp-toolbar { flex-direction: column; align-items: stretch; }
+    .ep-emp-sort-btns { flex-wrap: wrap; }
+    .ep-emp-header { flex-direction: column; align-items: flex-start; }
+    #ep-emp-cards-view { grid-template-columns: 1fr; }
+}

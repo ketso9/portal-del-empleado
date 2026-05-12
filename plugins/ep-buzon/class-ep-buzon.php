@@ -140,6 +140,14 @@ class EP_Buzon
             // Programar notificación en segundo plano
             wp_schedule_single_event(time(), 'ep_buzon_notify_managers_bg', array($msg_id, $type, $title));
             
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('buzon', 'message_sent', get_current_user_id(), [
+                    'message_id' => $msg_id,
+                    'type' => $type,
+                    'title' => $title
+                ]);
+            }
+            
             wp_send_json_success('Tu mensaje ha sido enviado correctamente.');
         } else {
             ep_error_log("EP_Buzon: ERROR al insertar en la base de datos: " . $wpdb->last_error);

@@ -16,9 +16,29 @@ jQuery(document).ready(function ($) {
     //     $('#ep-inventory-modal').appendTo('body');
     // }
 
+    // Selection Counter logic
+    function updateSelectionCounter() {
+        const count = $('.item-checkbox:checked').length;
+        const infoDiv = $('#ep-selection-info');
+        const countSpan = $('#ep-selection-count');
+        
+        if (count > 0) {
+            countSpan.text(count);
+            infoDiv.fadeIn(200);
+        } else {
+            infoDiv.fadeOut(200);
+        }
+    }
+
     // Select All Checkbox
     $(document).on('change', '#selectAll', function () {
         $('.item-checkbox').prop('checked', $(this).is(':checked'));
+        updateSelectionCounter();
+    });
+
+    // Individual Checkbox
+    $(document).on('change', '.item-checkbox', function () {
+        updateSelectionCounter();
     });
 
     // Toggle itinerant status select
@@ -387,6 +407,36 @@ function itinerantBulkCheckOut() {
     openItinerantModal(ids);
 }
 
+function itinerantBulkCheckIn() {
+    const checkboxes = document.querySelectorAll('.item-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('Por favor selecciona al menos un item para dar entrada.');
+        return;
+    }
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (!confirm('¿Confirmas la ENTRADA/RECEPCIÓN de los ' + ids.length + ' items seleccionados?')) return;
+
+    jQuery.ajax({
+        url: ep_inventory_vars.ajax_url,
+        type: 'POST',
+        data: {
+            action: 'ep_inventory_itinerant_action',
+            security: ep_inventory_vars.nonce,
+            item_ids: ids,
+            op: 'check_in'
+        },
+        success: function (response) {
+            if (response.success) {
+                alert(response.data);
+                location.reload();
+            } else {
+                alert('Error: ' + response.data);
+            }
+        }
+    });
+}
+
 
 function itinerantCheckIn(itemId) {
     if (!confirm('¿Confirmas la recepción del equipo y su vuelta al inventario disponible?')) return;
@@ -538,6 +588,38 @@ function uploadSignedInventoryDoc(userId, input) {
         .then(data => {
             if (data.success) {
                 alert('Documento subido y registrado correctamente.');
+                location.reload();
+            } else {
+                alert('Error: ' + data.data);
+                input.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error de conexión');
+            input.disabled = false;
+        });
+}
+
+function uploadSignedLoanDoc(itemId, input) {
+    if (!input.files || !input.files[0]) return;
+
+    const formData = new FormData();
+    formData.append('action', 'ep_inventory_upload_signed_loan');
+    formData.append('item_id', itemId);
+    formData.append('signed_doc', input.files[0]);
+    formData.append('security', ep_inventory_vars.nonce);
+
+    input.disabled = true;
+
+    fetch(ep_inventory_vars.ajax_url, {
+        method: 'POST',
+        body: formData
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Documento de préstamo subido correctamente.');
                 location.reload();
             } else {
                 alert('Error: ' + data.data);

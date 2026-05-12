@@ -1611,9 +1611,12 @@ class EP_Admin
         $daily_limit  = ep_get_option('ep_ai_daily_limit', 100);
         $monthly_limit = ep_get_option('ep_ai_monthly_limit', 3000);
 
-        $usage_today = get_option('ep_ai_usage_today', 0);
-        $usage_month = get_option('ep_ai_usage_month', 0);
-        $total_cost  = get_option('ep_ai_total_cost', 0);
+        $ai_service  = EP_AI_Service::get_instance();
+        $stats       = $ai_service->get_usage_stats();
+        
+        $usage_today = $stats['today'];
+        $usage_month = $stats['month'];
+        $total_cost  = $stats['total_cost'];
 
         // Opciones de Teams & Azure (solo lectura para mostrar valores actuales)
         $teams_bot_id       = ep_get_option('ep_teams_bot_id');
@@ -2377,7 +2380,7 @@ class EP_Admin
         update_option('ep_bot_custom_knowledge', $updated);
 
         $queue = get_option('ep_bot_learning_queue', []);
-        $queue = array_values(array_filter($queue, fn($e) => ($e['id'] ?? '') !== $entry_id));
+        $queue = array_values(array_filter($queue, function($e) use ($entry_id) { return ($e['id'] ?? '') !== $entry_id; }));
         update_option('ep_bot_learning_queue', $queue, false);
 
         ep_error_log("EP Learning: Regla aprobada. ID: $entry_id");
@@ -2394,7 +2397,7 @@ class EP_Admin
         if (empty($entry_id)) wp_send_json_error('Falta entry_id.');
 
         $queue = get_option('ep_bot_learning_queue', []);
-        $queue = array_values(array_filter($queue, fn($e) => ($e['id'] ?? '') !== $entry_id));
+        $queue = array_values(array_filter($queue, function($e) use ($entry_id) { return ($e['id'] ?? '') !== $entry_id; }));
         update_option('ep_bot_learning_queue', $queue, false);
 
         wp_send_json_success('Descartado.');

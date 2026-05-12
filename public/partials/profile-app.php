@@ -12,7 +12,7 @@ if (!$target_user) {
     return;
 }
 
-$is_editable = ($current_logged_in_user->ID === $target_user->ID);
+$is_editable = ($current_logged_in_user->ID === $target_user->ID) || current_user_can('manage_options');
 
 // Fetch User Meta
 $phone = get_user_meta($target_user->ID, 'ep_mobile_phone', true);
@@ -138,8 +138,11 @@ if ($is_editable) {
                         </div>
                     </div>
                     <?php if ($is_editable): ?>
-                        <div class="ep-form-actions">
+                        <div class="ep-form-actions" style="display: flex; gap: 10px; align-items: center;">
                             <button type="submit" class="ep-btn" id="epSaveProfileBtn">Guardar Cambios</button>
+                            <button type="button" class="ep-btn ep-btn-secondary" id="epSyncFromM365Btn" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;">
+                                <i class="fa-solid fa-sync"></i> Sincronizar desde M365
+                            </button>
                             <span id="epProfileMessage" style="margin-left: 10px; font-size: 0.9rem;"></span>
                         </div>
                     <?php endif; ?>
@@ -496,6 +499,7 @@ if ($is_editable) {
 
             const formData = new FormData(this);
             formData.append('action', 'ep_update_profile');
+            formData.append('user_id', '<?php echo $target_user_id; ?>');
             formData.append('security', ep_vars.nonce);
 
             $.ajax({
@@ -512,6 +516,31 @@ if ($is_editable) {
                         $msg.html('<span style="color: red;"><i class="fa-solid fa-times"></i> Error: ' + res.data + '</span>');
                     }
                     $btn.prop('disabled', false).text('Guardar Cambios');
+                }
+            });
+        });
+
+        // Sync from M365
+        $('#epSyncFromM365Btn').on('click', function (e) {
+            e.preventDefault();
+            const $btn = $(this);
+            const $msg = $('#epProfileMessage');
+            const originalHtml = $btn.html();
+
+            $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> Sincronizando...');
+            $msg.text('Obteniendo datos de Microsoft...');
+
+            $.post(ep_vars.ajax_url, {
+                action: 'ep_sync_from_m365',
+                security: ep_vars.nonce,
+                user_id: '<?php echo $target_user_id; ?>'
+            }, function (res) {
+                if (res.success) {
+                    $msg.html('<span style="color: green;"><i class="fa-solid fa-check"></i> ' + res.data + '</span>');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    $msg.html('<span style="color: red;"><i class="fa-solid fa-times"></i> Error: ' + res.data + '</span>');
+                    $btn.prop('disabled', false).html(originalHtml);
                 }
             });
         });

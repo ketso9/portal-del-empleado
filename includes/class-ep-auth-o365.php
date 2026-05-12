@@ -16,7 +16,12 @@ class EP_Auth_O365
 
         // AJAX for profile update
         add_action('wp_ajax_ep_update_profile', array($this, 'handle_profile_update_ajax'));
+        add_action('wp_ajax_ep_sync_from_m365', array($this, 'handle_sync_from_m365_ajax'));
         add_action('wp_ajax_ep_update_oof_settings', array($this, 'handle_oof_update_ajax'));
+
+        // Native WP Hooks for bidirectional sync from wp-admin
+        add_action('profile_update', array($this, 'handle_wp_admin_profile_save'), 10, 2);
+        add_action('updated_user_meta', array($this, 'handle_wp_admin_meta_save'), 10, 4);
 
         // Current instance registration
         self::$instance = $this;
@@ -337,6 +342,10 @@ class EP_Auth_O365
 
     public function sync_user_profile($wp_user_id, $o365_data)
     {
+        if (!defined('EP_IS_SYNCING_PROFILE')) {
+            define('EP_IS_SYNCING_PROFILE', true);
+        }
+
         if (isset($o365_data['id'])) {
             update_user_meta($wp_user_id, 'ep_o365_user_id', $o365_data['id']);
         }
@@ -346,8 +355,12 @@ class EP_Auth_O365
         $is_recent_local = (time() - $last_local_update < 600);
 
         if (!$is_recent_local) {
-            $this->smart_update_meta($wp_user_id, 'first_name', $o365_data['givenName'] ?? '');
-            $this->smart_update_meta($wp_user_id, 'last_name', $o365_data['surname'] ?? '');
+            if (!empty($o365_data['givenName'])) {
+                $this->smart_update_meta($wp_user_id, 'first_name', $o365_data['givenName']);
+            }
+            if (!empty($o365_data['surname'])) {
+                $this->smart_update_meta($wp_user_id, 'last_name', $o365_data['surname']);
+            }
 
             // Only overwrite if O365 has data, otherwise keep local changes
             if (!empty($o365_data['jobTitle'])) {
@@ -369,10 +382,12 @@ class EP_Auth_O365
             }
 
             // Update display name
-            wp_update_user(array(
-                'ID' => $wp_user_id,
-                'display_name' => $o365_data['displayName']
-            ));
+            if (!empty($o365_data['displayName'])) {
+                wp_update_user(array(
+                    'ID' => $wp_user_id,
+                    'display_name' => $o365_data['displayName']
+                ));
+            }
         } else {
             ep_error_log("EP Auth: Sincronización entrante omitida para usuario $wp_user_id (Cambio local reciente detectado).");
         }
@@ -408,13 +423,19 @@ class EP_Auth_O365
 
     public function handle_profile_update_ajax()
     {
-        check_ajax_referer('ep_ajax_nonce', 'security'); // Ensure you send this nonce in JS
+        check_ajax_referer('ep_ajax_nonce', 'security');
 
         if (!is_user_logged_in()) {
             wp_send_json_error('No has iniciado sesión.');
         }
 
-        $user_id = get_current_user_id();
+        $current_user_id = get_current_user_id();
+        $target_user_id = isset($_POST['user_id']) ? intval($_POST['user_id']) : $current_user_id;
+
+        // Verify permissions
+        if ($target_user_id !== $current_user_id && !current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos para editar este perfil.');
+        }
 
         // Sanitize inputs
         $phone = isset($_POST['phone']) ? sanitize_text_field($_POST['phone']) : '';
@@ -424,19 +445,21 @@ class EP_Auth_O365
         $office_phone = isset($_POST['office_phone']) ? sanitize_text_field($_POST['office_phone']) : '';
 
         // Update Local Meta
-        update_user_meta($user_id, 'ep_mobile_phone', $phone);
-        update_user_meta($user_id, 'ep_office_location', $extension);
-        update_user_meta($user_id, 'ep_job_title', $job_title);
-        update_user_meta($user_id, 'ep_department', $department);
-        update_user_meta($user_id, 'ep_business_phone', $office_phone);
+        update_user_meta($target_user_id, 'ep_mobile_phone', $phone);
+        update_user_meta($target_user_id, 'ep_office_location', $extension);
+        update_user_meta($target_user_id, 'ep_job_title', $job_title);
+        update_user_meta($target_user_id, 'ep_department', $department);
+        update_user_meta($target_user_id, 'ep_business_phone', $office_phone);
 
         // Mark this update to prevent incoming O365 sync from overwriting it during propagation lag
-        update_user_meta($user_id, 'ep_profile_local_updated_at', time());
+        update_user_meta($target_user_id, 'ep_profile_local_updated_at', time());
 
         // Attempt to update Office 365
-        $access_token = get_user_meta($user_id, 'ep_o365_access_token', true);
+        $access_token = self::get_valid_token($target_user_id);
+        $graph_synced = false;
+        $graph_error = '';
 
-        if ($access_token) {
+        if ($access_token && !is_wp_error($access_token)) {
             $update_data = array();
             if (!empty($phone))
                 $update_data['mobilePhone'] = $phone;
@@ -453,24 +476,129 @@ class EP_Auth_O365
                 $result = EP_Graph_Service::get_instance()->update_graph_profile($access_token, $update_data);
 
                 if (is_wp_error($result)) {
-                    // Log error but return success for local update
-                    ep_error_log('O365 Update Error: ' . $result->get_error_message());
-                    wp_send_json_success('Perfil actualizado localmente. Error en O365: ' . $result->get_error_message());
+                    $graph_error = $result->get_error_message();
+                    ep_error_log('O365 Update Error: ' . $graph_error);
+                } elseif ($result === true) {
+                    $graph_synced = true;
+                } else {
+                    $graph_error = 'O365 rechazó la actualización (Ver logs).';
                 }
+            } else {
+                $graph_synced = true; // Nothing to sync
             }
+        } else {
+            $graph_error = is_wp_error($access_token) ? $access_token->get_error_message() : 'Usuario sin token de O365 vinculado.';
         }
 
         // Send portal notification
         if (class_exists('EP_Notifications')) {
-            EP_Notifications::add_notification($user_id, array(
+            EP_Notifications::add_notification($target_user_id, array(
                 'type' => 'success',
                 'title' => 'Perfil Actualizado',
-                'message' => 'Has actualizado correctamente tu información de perfil.',
-                'link' => '?view=profile'
+                'message' => 'Has actualizado correctamente la información de perfil.',
+                'link' => '?view=profile&user_id=' . $target_user_id
             ));
         }
 
-        wp_send_json_success('Perfil actualizado correctamente.');
+        if ($graph_synced) {
+            wp_send_json_success('Perfil actualizado correctamente en WordPress y Microsoft 365.');
+        } else {
+            wp_send_json_success('Perfil actualizado localmente, pero hubo un problema con Microsoft: ' . $graph_error);
+        }
+    }
+
+    /**
+     * AJAX: Sincroniza los datos desde Microsoft Graph hacia WordPress.
+     */
+    public function handle_sync_from_m365_ajax()
+    {
+        check_ajax_referer('ep_ajax_nonce', 'security');
+
+        if (!is_user_logged_in()) {
+            wp_send_json_error('No has iniciado sesión.');
+        }
+
+        $current_user_id = get_current_user_id();
+        $target_user_id = isset($_POST['user_id']) ? intval($_POST['user_id']) : $current_user_id;
+
+        // Verify permissions
+        if ($target_user_id !== $current_user_id && !current_user_can('manage_options')) {
+            wp_send_json_error('No tienes permisos.');
+        }
+
+        $token = self::get_valid_token($target_user_id);
+        if (is_wp_error($token)) {
+            wp_send_json_error('Error al obtener token de M365: ' . $token->get_error_message());
+        }
+
+        $graph = EP_Graph_Service::get_instance();
+        $profile_data = $graph->get_user_profile_from_graph($token); // Corrected method name
+
+        if (is_wp_error($profile_data)) {
+            wp_send_json_error('Error al consultar Microsoft Graph: ' . $profile_data->get_error_message());
+        }
+
+        // Force update even if there was a recent local change
+        delete_user_meta($target_user_id, 'ep_profile_local_updated_at');
+        
+        $this->sync_user_profile($target_user_id, $profile_data);
+
+        // Also fetch photo
+        $this->fetch_and_store_user_photo($target_user_id, $token);
+
+        wp_send_json_success('Datos sincronizados desde Microsoft 365 correctamente.');
+    }
+
+    /**
+     * Sincronización automática WP -> Graph cuando se edita en el admin de WordPress.
+     */
+    public function handle_wp_admin_profile_save($user_id, $old_user_data)
+    {
+        // Evitar bucles infinitos
+        if (defined('EP_IS_SYNCING_PROFILE')) return;
+        
+        $this->push_to_graph_background($user_id);
+    }
+
+    public function handle_wp_admin_meta_save($meta_id, $object_id, $meta_key, $_meta_value)
+    {
+        if (defined('EP_IS_SYNCING_PROFILE')) return;
+
+        $tracked_keys = ['ep_mobile_phone', 'ep_office_location', 'ep_job_title', 'ep_department', 'ep_business_phone'];
+        if (in_array($meta_key, $tracked_keys)) {
+            $this->push_to_graph_background($object_id);
+        }
+    }
+
+    private function push_to_graph_background($user_id)
+    {
+        // No queremos retrasar el guardado de WP, pero como es una petición simple PATCH,
+        // la hacemos aquí. En un futuro se podría pasar a un cron/background job.
+        
+        // Evitar múltiples ejecuciones en la misma petición
+        static $pushed_users = [];
+        if (isset($pushed_users[$user_id])) return;
+        $pushed_users[$user_id] = true;
+
+        $access_token = self::get_valid_token($user_id);
+        if (!$access_token || is_wp_error($access_token)) return;
+
+        $update_data = array();
+        $phone = get_user_meta($user_id, 'ep_mobile_phone', true);
+        $extension = get_user_meta($user_id, 'ep_office_location', true);
+        $job_title = get_user_meta($user_id, 'ep_job_title', true);
+        $department = get_user_meta($user_id, 'ep_department', true);
+        $office_phone = get_user_meta($user_id, 'ep_business_phone', true);
+
+        if (!empty($phone)) $update_data['mobilePhone'] = $phone;
+        if (!empty($extension)) $update_data['officeLocation'] = $extension;
+        if (!empty($job_title)) $update_data['jobTitle'] = $job_title;
+        if (!empty($department)) $update_data['department'] = $department;
+        if (!empty($office_phone)) $update_data['businessPhones'] = [$office_phone];
+
+        if (!empty($update_data)) {
+            EP_Graph_Service::get_instance()->update_graph_profile($access_token, $update_data);
+        }
     }
 
     public function update_graph_profile($access_token, $data)

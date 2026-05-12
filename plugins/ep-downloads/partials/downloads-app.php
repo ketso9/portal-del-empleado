@@ -447,7 +447,6 @@ if ($can_write) {
             if ($('.ep-drive-nav-btn.active').data('tab') === 'public-resources') {
                 $('#epForceSyncBtn').parent().hide(); // Ocultar el contenedor de 20%
                 $('#epLinkOneDriveWrapper').show(); // Mostrar el de vincular
-                $('.ep-drive-search-bar').css('width', '60%');
             }
 
             // Navegación Refinada entre secciones
@@ -464,12 +463,10 @@ if ($can_write) {
                 if (tabId === 'private-management') {
                     $('#epForceSyncBtn').parent().show(); // Mostrar el contenedor de 20%
                     $('#epLinkOneDriveWrapper').hide(); // Ocultar Vincular en privado
-                    $('.ep-drive-search-bar').css('width', '60%');
                     $('#epMainNewBtnWrapper').show(); // Todos pueden subir en private-management
                 } else {
                     $('#epForceSyncBtn').parent().hide(); // Ocultar el contenedor de 20%
                     $('#epLinkOneDriveWrapper').show(); // Mostrar Vincular en Empresa
-                    $('.ep-drive-search-bar').css('width', '60%');
                     if (!ep_vars.can_write) {
                         $('#epMainNewBtnWrapper').hide(); // Ocultar Nuevo si no puede escribir
                     } else {
@@ -3304,15 +3301,15 @@ if ($can_write) {
         }
 
         .ep-drive-actions-row .ep-drive-action-wrapper {
-            width: 20% !important;
+            width: auto !important;
             display: flex;
-            /* Quitamos !important para que jQuery pueda ocultarlo */
             justify-content: center !important;
+            flex-shrink: 0 !important;
         }
 
         .ep-drive-actions-row .ep-drive-search-bar {
-            width: 60%;
-            /* Quitamos !important para que JS pueda cambiarlo a 80% */
+            flex-grow: 1 !important;
+            min-width: 200px;
         }
 
         /* --- Botones de Acción Estilo Pill (IDÉNTICOS) --- */
@@ -3331,8 +3328,9 @@ if ($can_write) {
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
             cursor: pointer !important;
             transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            width: 100% !important;
-            height: 50px !important;
+            width: auto !important;
+            min-width: fit-content !important;
+            height: 48px !important;
             /* Altura generosa y fija */
             outline: none !important;
             white-space: nowrap !important;

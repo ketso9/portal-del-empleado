@@ -28,6 +28,9 @@ class EP_GDPR
                 .ep-ms-login-btn { z-index: 1 !important; }
             </style>";
         });
+
+        add_action('wp_ajax_ep_gdpr_log_view', array($this, 'ajax_log_view'));
+        add_action('wp_ajax_nopriv_ep_gdpr_log_view', array($this, 'ajax_log_view'));
     }
 
     private function get_settings()
@@ -253,6 +256,16 @@ class EP_GDPR
                             const type = this.getAttribute('data-type');
                             document.getElementById('ep-legal-content').innerHTML = legalTexts[type];
                             document.getElementById('ep-legal-modal').style.display = 'flex';
+                            
+                            // Log event
+                            fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body: new URLSearchParams({
+                                    action: 'ep_gdpr_log_view',
+                                    type: type
+                                })
+                            });
                         }
                     };
                 });
@@ -320,6 +333,14 @@ class EP_GDPR
             })();
         </script>
         <?php
+    }
+    public function ajax_log_view()
+    {
+        $type = sanitize_text_field($_POST['type'] ?? 'unknown');
+        if (function_exists('ep_stats_log')) {
+            ep_stats_log('gdpr', 'legal_view', get_current_user_id(), ['document' => $type]);
+        }
+        wp_send_json_success();
     }
 }
 

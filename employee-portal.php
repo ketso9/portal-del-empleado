@@ -250,7 +250,8 @@ function ep_load_local_modules()
 		'ep-gdpr' => 'ep-gdpr/ep-gdpr.php',
 		'ep-buzon'     => 'ep-buzon/ep-buzon.php',
 		'ep-contratos' => 'ep-contratos/ep-contratos.php',
-		'ep-links'     => 'ep-links/ep-links.php'
+		'ep-links'     => 'ep-links/ep-links.php',
+		'ep-empresas'  => 'ep-empresas/ep-empresas.php'
 	];
 
 	foreach ($modules as $app_id => $file_path) {

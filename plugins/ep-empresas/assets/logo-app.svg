@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220" width="200" height="220">
+    <!-- Main circle with gap at the bottom -->
+    <path d="M 60 160 A 85 85 0 1 1 140 160" fill="none" stroke="#111" stroke-width="5" stroke-linecap="round"/>
+    
+    <!-- Text "Club" -->
+    <text x="100" y="55" font-family="Georgia, serif" font-size="34" font-weight="bold" text-anchor="middle" fill="#111">Club</text>
+    
+    <!-- Text "18" -->
+    <text x="65" y="130" font-family="'Arial Narrow', sans-serif" font-size="75" font-weight="bold" text-anchor="middle" fill="#111" transform="scale(0.9, 1.2) translate(10, -20)">18</text>
+    
+    <!-- Vertical divider -->
+    <line x1="100" y1="65" x2="100" y2="135" stroke="#111" stroke-width="5"/>
+    
+    <!-- Text "99" -->
+    <text x="135" y="130" font-family="'Arial Narrow', sans-serif" font-size="75" font-weight="bold" text-anchor="middle" fill="#111" transform="scale(0.9, 1.2) translate(15, -20)">99</text>
+    
+    <!-- Stylized "C C" at the bottom gap -->
+    <text x="100" y="175" font-family="Georgia, serif" font-size="40" font-weight="bold" text-anchor="middle" fill="#111" letter-spacing="-5">CC</text>
+    
+    <!-- Text "Cáceres" -->
+    <text x="100" y="200" font-family="Georgia, serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#111">Cáceres</text>
+</svg>

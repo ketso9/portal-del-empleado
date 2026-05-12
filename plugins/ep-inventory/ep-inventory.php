@@ -22,7 +22,7 @@ class EP_Inventory
 
         // Load TCPDF if not available
         if (!class_exists('TCPDF')) {
-            $tcpdf_path = EMPLOYEE_PORTAL_PATH . 'libs/tcpdf/tcpdf.php';
+            $tcpdf_path = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/libs/tcpdf/tcpdf.php';
             if (file_exists($tcpdf_path)) {
                 require_once $tcpdf_path;
             }
@@ -54,6 +54,7 @@ class EP_Inventory
         add_action('admin_post_ep_inventory_download_itinerant_loan', array($this, 'handle_download_itinerant_loan'));
         add_action('admin_post_ep_inventory_download_request_commitment', array($this, 'handle_download_request_commitment'));
         add_action('wp_ajax_ep_inventory_upload_signed_commitment', array($this, 'ajax_upload_signed_commitment'));
+        add_action('wp_ajax_ep_inventory_upload_signed_loan', array($this, 'ajax_upload_signed_loan'));
         add_action('wp_ajax_ep_inventory_upload_signed_request', array($this, 'ajax_upload_signed_request_doc'));
         add_action('admin_post_ep_inventory_download_labels', array($this, 'handle_download_labels'));
         add_action('admin_post_ep_inventory_export', array($this, 'handle_export'));
@@ -469,10 +470,6 @@ class EP_Inventory
             }
         }
 
-        if (!class_exists('TCPDF')) {
-            wp_die('Error: La librería TCPDF no está cargada. Por favor, asegúrese de que el plugin "Firma Documentos Segura" está activo o instale TCPDF.');
-        }
-
         $pdf = new EP_Inventory_PDF();
         $result = $pdf->generate_commitment($target_user_id);
 
@@ -503,10 +500,6 @@ class EP_Inventory
 
         if ($perm !== 'write' && $perm !== 'manage_itinerant' && !current_user_can('administrator')) {
             wp_die('Permisos insuficientes.');
-        }
-
-        if (!class_exists('TCPDF')) {
-            wp_die('Error: La librería TCPDF no está disponible.');
         }
 
         $pdf = new EP_Inventory_PDF();
@@ -546,16 +539,45 @@ class EP_Inventory
             wp_die('Permisos insuficientes.');
         }
 
-        if (!class_exists('TCPDF')) {
-            wp_die('Error: La librería TCPDF no está disponible.');
-        }
-
         $pdf = new EP_Inventory_PDF();
         $result = $pdf->generate_request_commitment($request_id);
 
         if (is_wp_error($result)) {
             wp_die($result->get_error_message());
         }
+    }
+
+    public function ajax_upload_signed_loan()
+    {
+        check_ajax_referer('ep_inventory_nonce', 'security');
+
+        global $ep_app_manager;
+        if ($ep_app_manager->get_user_permission('inventory') !== 'write' && !current_user_can('ep_manage_itinerant_inventory')) {
+            wp_send_json_error('Permisos insuficientes.');
+        }
+
+        $item_id = isset($_POST['item_id']) ? intval($_POST['item_id']) : 0;
+        if (!$item_id || empty($_FILES['signed_doc'])) {
+            wp_send_json_error('Datos incompletos.');
+        }
+
+        require_once(ABSPATH . 'wp-admin/includes/file.php');
+        require_once(ABSPATH . 'wp-admin/includes/media.php');
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+
+        $attachment_id = media_handle_upload('signed_doc', $item_id);
+
+        if (is_wp_error($attachment_id)) {
+            wp_send_json_error($attachment_id->get_error_message());
+        }
+
+        // Guardamos el ID del adjunto como meta del item
+        update_post_meta($item_id, '_ep_item_signed_loan_doc_id', $attachment_id);
+
+        wp_send_json_success(array(
+            'url' => wp_get_attachment_url($attachment_id),
+            'message' => 'Documento de préstamo subido correctamente.'
+        ));
     }
 
     public function ajax_upload_signed_commitment()
@@ -781,47 +803,6 @@ class EP_Inventory
         wp_send_json_success('Solicitud enviada correctamente.');
     }
 
-    /**
-     * Custom Search for Inventory Items (Serial, Provider, etc.)
-     */
-    public function inventory_search_join($join)
-    {
-        global $wpdb;
-        if (is_admin() && isset($_GET['view']) && $_GET['view'] === 'inventory' && !empty($_GET['search_query'])) {
-            $join .= " LEFT JOIN {$wpdb->postmeta} ON {$wpdb->posts}.ID = {$wpdb->postmeta}.post_id ";
-        }
-        return $join;
-    }
-
-    public function inventory_search_where($where)
-    {
-        global $wpdb;
-        if (is_admin() && isset($_GET['view']) && $_GET['view'] === 'inventory' && !empty($_GET['search_query'])) {
-            $search = sanitize_text_field($_GET['search_query']);
-            $where = preg_replace(
-                "/\(\s*{$wpdb->posts}.post_title\s+LIKE\s*(\'[^\']+\')\s*\)/",
-                "({$wpdb->posts}.post_title LIKE $1) OR ({$wpdb->postmeta}.meta_value LIKE $1)",
-                $where
-            );
-            // Ensure distinct results
-            $where .= " GROUP BY {$wpdb->posts}.ID ";
-            // Wait, GROUP BY in WHERE clause is invalid SQL. WP_Query has 'groupby' param but filters don't usually add it here.
-            // Better strategy: Change the main WP_Query args in admin-inventory.php might be safer, but WP_Query 's' param is hardcoded.
-            // Let's stick to modifying the WHERE clause carefully or just adding the OR condition.
-            // Actually, simpler way:
-            // The default search generates: AND (((post_title LIKE '%foo%') OR (post_excerpt LIKE '%foo%') ...))
-            // We want to append: OR (meta_value LIKE '%foo%')
-            // But doing it via regex usually safer to inject into the existing bracket group.
-
-            // Re-thinking: Using 'meta_query' with 'relation' => 'OR' in WP_Query is cleaner IF we drop the 's' parameter.
-            // But 's' gives us title search for free. 
-            // Let's use the filter to just add the meta logic.
-
-            // $where .= " OR ({$wpdb->postmeta}.meta_value LIKE '%" . esc_sql($wpdb->esc_like($search)) . "%') ";
-            // This needs to be inside the main AND () if any. 
-        }
-        return $where;
-    }
 
     // Actually, sticking to the standard "Filter by Search" using meta_query OR logic in the View file is much easier and safer than raw SQL injection here.
     // I will NOT add these filters here, but instead modify admin-inventory.php to build a proper meta_query OR loop.
@@ -830,55 +811,51 @@ class EP_Inventory
 
     public function register_search_filters()
     {
-        add_filter('posts_join', array($this, 'search_join'));
-        add_filter('posts_where', array($this, 'search_where'));
-        add_filter('posts_distinct', array($this, 'search_distinct'));
+        add_filter('posts_join', array($this, 'search_join'), 10, 2);
+        add_filter('posts_where', array($this, 'search_where'), 10, 2);
+        add_filter('posts_distinct', array($this, 'search_distinct'), 10, 2);
     }
 
-    public function search_join($join)
+    public function search_join($join, $query)
     {
         global $wpdb;
-        if (is_admin() && isset($_GET['view']) && $_GET['view'] === 'inventory' && !empty($_GET['search_query'])) {
-            $join .= " LEFT JOIN {$wpdb->postmeta} ON {$wpdb->posts}.ID = {$wpdb->postmeta}.post_id ";
+        if ($query->get('ep_custom_search')) {
+            $join .= " LEFT JOIN {$wpdb->postmeta} ep_meta ON {$wpdb->posts}.ID = ep_meta.post_id ";
         }
         return $join;
     }
 
-    public function search_where($where)
+    public function search_where($where, $query)
     {
         global $wpdb;
-        if (is_admin() && isset($_GET['view']) && $_GET['view'] === 'inventory' && !empty($_GET['search_query'])) {
-            $search_term = sanitize_text_field($_GET['search_query']);
+        $search_term = $query->get('ep_custom_search');
+        if (!empty($search_term)) {
             $like_term = '%' . $wpdb->esc_like($search_term) . '%';
 
-            // 1. Search Standard Fields (Title) and Meta Values (Serial, Provider)
-            // 2. Search Users by Display Name to get IDs
+            // 1. Search Users by Display Name to get IDs
             $user_ids = $wpdb->get_col($wpdb->prepare(
                 "SELECT ID FROM {$wpdb->users} WHERE display_name LIKE %s",
                 $like_term
             ));
 
-            $meta_or_clause = $wpdb->prepare("({$wpdb->postmeta}.meta_value LIKE %s)", $like_term);
+            $meta_or_clause = $wpdb->prepare("(ep_meta.meta_value LIKE %s)", $like_term);
 
             if (!empty($user_ids)) {
                 $ids_string = implode(',', array_map('intval', $user_ids));
-                // Add condition: OR (meta_key = '_ep_item_assigned_to' AND meta_value IN (ids))
-                $meta_or_clause .= " OR ({$wpdb->postmeta}.meta_key = '_ep_item_assigned_to' AND {$wpdb->postmeta}.meta_value IN ($ids_string))";
+                $meta_or_clause .= " OR (ep_meta.meta_key = '_ep_item_assigned_to' AND ep_meta.meta_value IN ($ids_string))";
+                $meta_or_clause .= " OR (ep_meta.meta_key = '_ep_item_loaned_to' AND ep_meta.meta_value IN ($ids_string))";
             }
 
-            // Replace standard title search with our complex OR group
-            // CRITICAL: We use $wpdb->prepare to build the SQL securely and prevent injections
-            $where = $wpdb->prepare(
-                " AND ({$wpdb->posts}.post_title LIKE %s OR $meta_or_clause) ",
-                $like_term
-            );
+            // Append safely to existing WHERE clause
+            // Note: We avoid passing $meta_or_clause back into prepare() to prevent % issues
+            $where .= " AND ({$wpdb->posts}.post_title LIKE " . $wpdb->prepare('%s', $like_term) . " OR $meta_or_clause) ";
         }
         return $where;
     }
 
-    public function search_distinct($distinct)
+    public function search_distinct($distinct, $query)
     {
-        if (is_admin() && isset($_GET['view']) && $_GET['view'] === 'inventory' && !empty($_GET['search_query'])) {
+        if ($query->get('ep_custom_search')) {
             return "DISTINCT";
         }
         return $distinct;
@@ -1296,8 +1273,13 @@ class EP_Inventory
             wp_send_json_error('Permisos insuficientes para gestionar material itinerante.');
         }
 
-        $ids_raw = $_POST['item_id'] ?? '';
-        $ids = array_filter(array_map('intval', explode(',', $ids_raw)));
+        $ids_raw = $_POST['item_id'] ?? $_POST['item_ids'] ?? '';
+        if (is_array($ids_raw)) {
+            $ids = array_filter(array_map('intval', $ids_raw));
+        } else {
+            $ids = array_filter(array_map('intval', explode(',', (string)$ids_raw)));
+        }
+
         $op = sanitize_text_field($_POST['op']); // check_out or check_in
 
         if (empty($ids)) {
@@ -1329,6 +1311,7 @@ class EP_Inventory
                 update_post_meta($id, '_ep_item_location', $loan_location); // Sincroniza con chip de la tabla
                 update_post_meta($id, '_ep_item_borrower_cargo', $borrower_cargo);
                 update_post_meta($id, '_ep_item_last_checkout_by', get_current_user_id());
+                delete_post_meta($id, '_ep_item_signed_loan_doc_id'); // Limpiar documento previo si existía
 
                 // Log stats
                 if (function_exists('ep_stats_log')) {
@@ -1357,30 +1340,41 @@ class EP_Inventory
                 'download_url' => $download_url
             ]);
         } else {
-            // Check-in (Devolución) - solo manejamos uno por ahora por sencillez de la UI de devolución
-            $id = $ids[0];
-            $old_borrower_id = get_post_meta($id, '_ep_item_loaned_to', true);
+            // Check-in (Devolución) - ahora soporta lote
+            $affected_users = [];
+            foreach ($ids as $id) {
+                $old_borrower_id = get_post_meta($id, '_ep_item_loaned_to', true);
+                if ($old_borrower_id) {
+                    $affected_users[] = $old_borrower_id;
+                }
 
-            update_post_meta($id, '_ep_item_itinerant_status', 'available');
-            update_post_meta($id, '_ep_item_loaned_to', 0);
-            update_post_meta($id, '_ep_item_external_borrower', '');
-            update_post_meta($id, '_ep_item_borrower_nif', '');
-            update_post_meta($id, '_ep_item_location', ''); // Limpia el chip al devolver
+                update_post_meta($id, '_ep_item_itinerant_status', 'available');
+                update_post_meta($id, '_ep_item_loaned_to', 0);
+                update_post_meta($id, '_ep_item_external_borrower', '');
+                update_post_meta($id, '_ep_item_borrower_nif', '');
+                update_post_meta($id, '_ep_item_location', ''); // Limpia el chip al devolver
+                delete_post_meta($id, '_ep_item_signed_loan_doc_id'); // Limpiar documento al devolver
 
-            if ($old_borrower_id > 0) {
+                // Log stats
+                if (function_exists('ep_stats_log')) {
+                    ep_stats_log('inventory', 'itinerant_check_in', get_current_user_id(), [
+                        'item_id' => $id,
+                        'item_title' => get_the_title($id)
+                    ]);
+                }
+            }
+
+            // Sync Commitment PDF for all affected users
+            if (!empty($affected_users)) {
+                $affected_users = array_unique($affected_users);
                 $pdf = new EP_Inventory_PDF();
-                $pdf->sync_commitment_to_portal($old_borrower_id);
+                foreach ($affected_users as $uid) {
+                    $pdf->sync_commitment_to_portal($uid);
+                }
             }
 
-            // Log stats
-            if (function_exists('ep_stats_log')) {
-                ep_stats_log('inventory', 'itinerant_check_in', get_current_user_id(), [
-                    'item_id' => $id,
-                    'item_title' => get_the_title($id)
-                ]);
-            }
-
-            wp_send_json_success('Entrada (devolución) registrada correctamente.');
+            $msg = count($ids) > 1 ? 'Entrada en lote registrada correctamente.' : 'Entrada (devolución) registrada correctamente.';
+            wp_send_json_success($msg);
         }
     }
 

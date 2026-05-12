@@ -59,6 +59,9 @@ class EP_App_Links implements EP_App_Interface
             case 'delete':
                 $this->ajax_delete_link();
                 break;
+            case 'track_click':
+                $this->ajax_track_click();
+                break;
         }
     }
 
@@ -140,6 +143,23 @@ class EP_App_Links implements EP_App_Interface
         } else {
             wp_send_json_error('Enlace no encontrado.');
         }
+    }
+
+    private function ajax_track_click()
+    {
+        check_ajax_referer('ep_links_nonce', 'security');
+        
+        $title = sanitize_text_field($_POST['title']);
+        $url = esc_url_raw($_POST['url']);
+        
+        if (function_exists('ep_stats_log')) {
+            ep_stats_log('links', 'link_click', get_current_user_id(), [
+                'title' => $title,
+                'url' => $url
+            ]);
+        }
+        
+        wp_send_json_success();
     }
 }
 

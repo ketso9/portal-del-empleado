@@ -227,6 +227,9 @@ add_action('save_post', function ($post_id, $post, $update) {
         case 'ep_document':
             $app_id = 'downloads';
             break;
+        case 'ep_link':
+            $app_id = 'links';
+            break;
     }
 
     $event = $update ? 'post_updated' : 'post_created';
@@ -257,6 +260,9 @@ add_action('before_delete_post', function ($post_id) {
             break;
         case 'ep_document':
             $app_id = 'downloads';
+            break;
+        case 'ep_link':
+            $app_id = 'links';
             break;
         case 'fds_documentos':
             $app_id = 'signature';

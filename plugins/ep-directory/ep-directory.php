@@ -99,12 +99,20 @@ class EP_App_Directory implements EP_App_Interface
         include plugin_dir_path(__FILE__) . 'views/directory-view.php';
     }    private function export_pdf()
     {
-        $tcpdf_path = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/libs/tcpdf/tcpdf.php';
+        $tcpdf_path = dirname(dirname(__FILE__)) . '/ep-signature/libs/tcpdf/tcpdf.php';
+        if (!file_exists($tcpdf_path)) {
+            if (defined('EMPLOYEE_PORTAL_PATH')) {
+                $tcpdf_path = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/libs/tcpdf/tcpdf.php';
+            }
+        }
+
         if (!file_exists($tcpdf_path)) {
             wp_die('Error: No se encontró la librería TCPDF en la ruta esperada.');
         }
 
-        require_once($tcpdf_path);
+        if (!class_exists('TCPDF')) {
+            require_once($tcpdf_path);
+        }
 
         $users = get_users(array(
             'orderby' => 'display_name',
@@ -274,6 +282,7 @@ class EP_App_Directory implements EP_App_Interface
 
             $users = get_users(['meta_key' => 'ep_o365_user_id']);
             $graph = EP_Graph_Service::get_instance();
+            $auth = EP_Auth_O365::get_instance();
             $synced = 0;
             $errors = 0;
 
@@ -286,6 +295,15 @@ class EP_App_Directory implements EP_App_Interface
                     continue;
                 }
                 
+                // 1. Sync Profile Data
+                $profile_data = $graph->get_user_profile_from_graph($token);
+                if (!is_wp_error($profile_data)) {
+                    // Force update by ignoring the 10min lock for this manual sync
+                    delete_user_meta($user->ID, 'ep_profile_local_updated_at');
+                    $auth->sync_user_profile($user->ID, $profile_data);
+                }
+
+                // 2. Sync Photo
                 $response = $graph->fetch_user_photo($user->ID, $token);
                 if (!is_wp_error($response)) {
                     $status = wp_remote_retrieve_response_code($response);
@@ -297,16 +315,13 @@ class EP_App_Directory implements EP_App_Interface
                         
                         file_put_contents($file_path, $body);
                         update_user_meta($user->ID, 'ep_user_photo_url', $upload_dir['url'] . '/' . $filename);
-                        $synced++;
-                    } else {
-                        $errors++;
                     }
-                } else {
-                    $errors++;
                 }
+                
+                $synced++;
             }
 
-            wp_send_json_success("Se han actualizado $synced fotos correctamente." . ($errors > 0 ? " ($errors errores/sin foto)" : ""));
+            wp_send_json_success("Se han sincronizado $synced perfiles y fotos correctamente." . ($errors > 0 ? " ($errors usuarios sin conexión)" : ""));
         }
     }
 
@@ -506,7 +521,16 @@ class EP_App_Directory implements EP_App_Interface
             ]];
         }
 
-        return $bot_instance->adaptive_card($cuerpo);
+        $card = $bot_instance->adaptive_card($cuerpo);
+        if (!empty($usuarios)) {
+            $u = $usuarios[0];
+            $card['_meta_data'] = [
+                'display_name' => $u->display_name,
+                'job_title'    => get_user_meta($u->ID, 'ep_job_title', true) ?: 'Empleado',
+                'department'   => get_user_meta($u->ID, 'ep_department', true) ?: ''
+            ];
+        }
+        return $card;
     }
 }
 

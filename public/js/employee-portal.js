@@ -220,9 +220,11 @@ jQuery(document).ready(function ($) {
 
 	// Real-time Polling for new notifications
 	const storageKey = 'ep_last_notif_' + (ep_vars.user_id || 'guest');
-	let lastNotificationId = parseInt(localStorage.getItem(storageKey)) || 0;
 
 	function pollNotifications() {
+		// Leer el último ID guardado globalmente (para sincronización entre pestañas)
+		let currentLastId = parseInt(localStorage.getItem(storageKey)) || 0;
+
 		$.ajax({
 			url: ep_vars.ajax_url,
 			type: 'POST',
@@ -236,22 +238,18 @@ jQuery(document).ready(function ($) {
 					const latest = notifications[0];
 					const latestId = parseInt(latest.id);
 
-					// If we have a stored ID and there are newer ones
-					if (lastNotificationId > 0 && latestId > lastNotificationId) {
-						// Filter only notifications newer than what we've shown
-						const newItems = notifications.filter(n => parseInt(n.id) > lastNotificationId);
+					// Si hay notificaciones más nuevas que lo que esta pestaña (o cualquier otra) ha mostrado
+					if (currentLastId > 0 && latestId > currentLastId) {
+						// Filtrar solo las que son nuevas Y están sin leer
+						const newItems = notifications.filter(n => parseInt(n.id) > currentLastId && n.is_read == 0);
 
-						// Show toasts for new items (reverse to show oldest first)
+						// Mostrar toasts
 						newItems.reverse().forEach(item => {
 							showToastNotification(item.title, item.message, item.link);
 						});
 					}
 
-					// If it's the very first time (lastNotificationId === 0), 
-					// we just set the baseline to avoid spamming old notifications.
-					// But we update badge and list anyway.
-
-					lastNotificationId = latestId;
+					// Actualizar la referencia global y local
 					localStorage.setItem(storageKey, latestId);
 
 					updateBadge(response.data.unread_count);
@@ -263,15 +261,15 @@ jQuery(document).ready(function ($) {
 		});
 	}
 
-	setInterval(pollNotifications, 10000); // 10s polling for better real-time feel
-	pollNotifications(); // Initial poll on load
+	setInterval(pollNotifications, 10000); // 10s polling
+	pollNotifications(); // Inicial
 
 	function showToastNotification(title, message, link) {
 		if (!$('.ep-toast-container').length) {
 			$('body').append('<div class="ep-toast-container"></div>');
 		}
 
-		// Limit to 3 toasts
+		// Limitar a 3 toasts visibles simultáneamente
 		const $existingToasts = $('.ep-toast');
 		if ($existingToasts.length >= 3) {
 			$existingToasts.first().addClass('toast-out');
@@ -292,26 +290,27 @@ jQuery(document).ready(function ($) {
 		const $toast = $(toastHtml);
 		$('.ep-toast-container').append($toast);
 
-		// Handle close button
+		// Botón cerrar
 		$toast.find('.ep-toast-close').on('click', function (e) {
 			e.stopPropagation();
 			$toast.addClass('toast-out');
 			setTimeout(() => $toast.remove(), 500);
 		});
 
-		// Handle click on toast (except close button)
+		// Click en el toast (redirección)
 		$toast.on('click', function (e) {
 			if (!$(e.target).hasClass('ep-toast-close')) {
 				window.location.href = $(this).data('link');
 			}
 		});
 
+		// Auto-ocultar tras 6 segundos (menos intrusivo)
 		setTimeout(() => {
 			if ($toast.parent().length) {
 				$toast.addClass('toast-out');
 				setTimeout(() => $toast.remove(), 500);
 			}
-		}, 10000);
+		}, 6000);
 	}
 
 	if ($('#epProfileForm').length) {

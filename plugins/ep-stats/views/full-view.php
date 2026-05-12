@@ -58,6 +58,11 @@
                             <option value="directory" <?php selected($filters['app_id'], 'directory'); ?>>Directorio
                             </option>
                             <option value="calendar" <?php selected($filters['app_id'], 'calendar'); ?>>Agenda</option>
+                            <option value="empresas" <?php selected($filters['app_id'], 'empresas'); ?>>Empresas</option>
+                            <option value="links" <?php selected($filters['app_id'], 'links'); ?>>Enlaces</option>
+                            <option value="buzon" <?php selected($filters['app_id'], 'buzon'); ?>>Buzón</option>
+                            <option value="contratos" <?php selected($filters['app_id'], 'contratos'); ?>>Contratos</option>
+                            <option value="gdpr" <?php selected($filters['app_id'], 'gdpr'); ?>>GDPR</option>
                             <option value="o365" <?php selected($filters['app_id'], 'o365'); ?>>Office 365</option>
                             <option value="system" <?php selected($filters['app_id'], 'system'); ?>>Sistema</option>
                         </select>
@@ -109,8 +114,9 @@
         <div class="ep-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 30px;">
             <div class="ep-card">
                 <h4
-                    style="margin-top:0; border-bottom: 1px solid var(--ep-border); padding-bottom: 10px; margin-bottom: 20px;">
-                    <i class="fas fa-chart-line"></i> Tendencia de Actividad
+                    style="margin-top:0; border-bottom: 1px solid var(--ep-border); padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <span><i class="fas fa-chart-line"></i> Tendencia de Actividad</span>
+                    <span style="font-size: 11px; font-weight: normal; color: #888;">(<?php echo !empty($filters['date_from']) ? 'Personalizado' : 'Últimos 30 días'; ?>)</span>
                 </h4>
                 <div style="height: 250px;">
                     <canvas id="activityChart"></canvas>
@@ -118,8 +124,9 @@
             </div>
             <div class="ep-card">
                 <h4
-                    style="margin-top:0; border-bottom: 1px solid var(--ep-border); padding-bottom: 10px; margin-bottom: 20px;">
-                    <i class="fas fa-chart-pie"></i> Uso por Aplicación
+                    style="margin-top:0; border-bottom: 1px solid var(--ep-border); padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <span><i class="fas fa-chart-pie"></i> Uso por Aplicación</span>
+                    <span style="font-size: 11px; font-weight: normal; color: #888;">(<?php echo !empty($filters['date_from']) ? 'Personalizado' : 'Últimos 30 días'; ?>)</span>
                 </h4>
                 <div style="height: 250px; display: flex; justify-content: center;">
                     <canvas id="appsChart"></canvas>
@@ -457,6 +464,13 @@
                                 ${u.censo_count > 0 ? `<span class="ep-stats-badge" style="background:#fff3e0; color:#fb8c00;" title="Censo"><i class="fas fa-id-card"></i> ${u.censo_count}</span>` : ''}
                                 ${u.downloads_count > 0 ? `<span class="ep-stats-badge" style="background:#f3e5f5; color:#8e24aa;" title="Descargas"><i class="fas fa-download"></i> ${u.downloads_count}</span>` : ''}
                                 ${u.directory_count > 0 ? `<span class="ep-stats-badge" style="background:#e0f7fa; color:#006064;" title="Directorio"><i class="fas fa-address-book"></i> ${u.directory_count}</span>` : ''}
+                                ${u.empresas_count > 0 ? `<span class="ep-stats-badge" style="background:#fff0f2; color:#d32f2f;" title="Empresas"><i class="fas fa-building"></i> ${u.empresas_count}</span>` : ''}
+                                ${u.links_count > 0 ? `<span class="ep-stats-badge" style="background:#e8f5e9; color:#2e7d32;" title="Enlaces"><i class="fas fa-link"></i> ${u.links_count}</span>` : ''}
+                                ${u.buzon_count > 0 ? `<span class="ep-stats-badge" style="background:#fffde7; color:#fbc02d;" title="Buzón"><i class="fas fa-envelope-open-text"></i> ${u.buzon_count}</span>` : ''}
+                                ${u.contratos_count > 0 ? `<span class="ep-stats-badge" style="background:#fce4ec; color:#c2185b;" title="Contratos"><i class="fas fa-file-contract"></i> ${u.contratos_count}</span>` : ''}
+                                ${u.gdpr_count > 0 ? `<span class="ep-stats-badge" style="background:#e8eaf6; color:#3f51b5;" title="GDPR"><i class="fas fa-user-shield"></i> ${u.gdpr_count}</span>` : ''}
+                                ${u.calendar_count > 0 ? `<span class="ep-stats-badge" style="background:#e0f2f1; color:#00796b;" title="Agenda"><i class="fas fa-calendar-check"></i> ${u.calendar_count}</span>` : ''}
+                                ${u.avisos_count > 0 ? `<span class="ep-stats-badge" style="background:#fff9c4; color:#fbc02d;" title="Avisos"><i class="fas fa-bullhorn"></i> ${u.avisos_count}</span>` : ''}
                             </div>
                         </td>
                     </tr>
@@ -520,7 +534,11 @@
                     labels: [<?php echo "'" . implode("','", array_map(['EP_App_Stats', 'format_app'], wp_list_pluck($summary['top_apps'], 'app_id'))) . "'"; ?>],
                     datasets: [{
                         data: [<?php echo implode(',', wp_list_pluck($summary['top_apps'], 'count')); ?>],
-                        backgroundColor: ['#9e1c2e', '#2e7d32', '#1565c0', '#f9a825', '#6a1b9a', '#37474f']
+                        backgroundColor: [
+                            '#9e1c2e', '#2e7d32', '#1565c0', '#f9a825', '#6a1b9a', 
+                            '#37474f', '#0097a7', '#5d4037', '#e64a19', '#455a64',
+                            '#c2185b', '#7b1fa2', '#303f9f', '#00796b', '#689f38'
+                        ]
                     }]
                 },
                 options: { responsive: true, maintainAspectRatio: false }

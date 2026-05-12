@@ -11,9 +11,6 @@ $queues = EP_Tickets::get_department_queues();
 $stats = EP_Tickets::get_stats();
 ?>
 
-
-
-
 <div class="ep-content-grid">
 
     <!-- Stats & Workload Container -->
@@ -205,13 +202,14 @@ $stats = EP_Tickets::get_stats();
                             <th>Solicitante</th>
                             <th>Fecha</th>
                             <th>Estado</th>
+                            <th><i class="fa-solid fa-paperclip"></i></th>
                             <th>Acción</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($manageable_tickets)): ?>
                             <tr>
-                                <td colspan="8">No hay tickets pendientes para tu departamento.</td>
+                                <td colspan="9">No hay tickets pendientes para tu departamento.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($manageable_tickets as $ticket):
@@ -221,7 +219,10 @@ $stats = EP_Tickets::get_stats();
                                 $type_label = isset($type_labels[$ticket_type]) ? $type_labels[$ticket_type] : $ticket_type;
                                 $type_css = strtolower($ticket_type);
                                 $attach_id = get_post_meta($ticket->ID, '_ep_ticket_attachment_id', true);
-                                $attach_url = $attach_id ? wp_get_attachment_url($attach_id) : '';
+                                if (!$attach_id) {
+                                    $attach_id = get_post_meta($ticket->ID, '_ep_ticket_attachment', true);
+                                }
+                                $attach_url = $attach_id ? (is_numeric($attach_id) ? wp_get_attachment_url($attach_id) : $attach_id) : '';
                                 $status = get_post_meta($ticket->ID, '_ep_ticket_status', true);
                                 ?>
                                 <tr class="ticket-row" data-id="<?php echo $ticket->ID; ?>">
@@ -235,6 +236,13 @@ $stats = EP_Tickets::get_stats();
                                     <td><?php echo get_the_date('d/m/Y', $ticket->ID); ?></td>
                                     <td><span
                                             class="ep-badge-unified <?php echo strtolower($status); ?>"><?php echo $status; ?></span>
+                                    </td>
+                                    <td>
+                                        <?php if ($attach_url): ?>
+                                            <a href="<?php echo esc_url($attach_url); ?>" target="_blank" title="Ver Adjunto">
+                                                <i class="fa-solid fa-paperclip" style="color: var(--ep-primary);"></i>
+                                            </a>
+                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <button type="button" class="ep-btn ep-btn-sm ep-btn-primary ep-open-ticket-modal"
@@ -271,6 +279,7 @@ $stats = EP_Tickets::get_stats();
                                 <th>Categoría</th>
                                 <th>Solicitante</th>
                                 <th class="ep-sortable" data-type="date" style="cursor:pointer;" title="Haz clic para ordenar">Cerrado el <i class="fa-solid fa-sort"></i></th>
+                                <th><i class="fa-solid fa-paperclip"></i></th>
                                 <th>Acción</th>
                             </tr>
                         </thead>
@@ -288,6 +297,13 @@ $stats = EP_Tickets::get_stats();
                                     <td><span class="ep-badge-unified <?php echo strtolower($ticket_type); ?>"><?php echo $ticket_type; ?></span></td>
                                     <td><?php echo get_the_author_meta('display_name', $ticket->post_author); ?></td>
                                     <td><?php echo $closed_date ? date('d/m/Y H:i', strtotime($closed_date)) : 'N/A'; ?></td>
+                                    <td>
+                                        <?php if ($attach_url): ?>
+                                            <a href="<?php echo esc_url($attach_url); ?>" target="_blank" title="Ver Adjunto">
+                                                <i class="fa-solid fa-paperclip" style="color: var(--ep-primary);"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                    </td>
                                     <td>
                                         <button type="button" class="ep-btn ep-btn-sm ep-open-ticket-modal"
                                             data-id="<?php echo $ticket->ID; ?>"
@@ -309,34 +325,6 @@ $stats = EP_Tickets::get_stats();
         </section>
         <?php endif; ?>
     <?php endif; ?>
-
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const header = document.querySelector('.ep-sortable');
-        if (!header) return;
-
-        header.addEventListener('click', function() {
-            const tbody = document.getElementById('epClosedTicketsBody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            const isAsc = this.classList.contains('sort-asc');
-            
-            rows.sort((a, b) => {
-                const valA = parseInt(a.getAttribute('data-timestamp'));
-                const valB = parseInt(b.getAttribute('data-timestamp'));
-                return isAsc ? valA - valB : valB - valA;
-            });
-
-            this.classList.toggle('sort-asc', !isAsc);
-            rows.forEach(row => tbody.appendChild(row));
-            
-            // Update icon
-            const icon = this.querySelector('i');
-            if (icon) {
-                icon.className = isAsc ? 'fa-solid fa-sort-up' : 'fa-solid fa-sort-down';
-            }
-        });
-    });
-    </script>
 
     <!-- User Section -->
     <section class="ep-tickets-section full-width">
@@ -394,7 +382,10 @@ $stats = EP_Tickets::get_stats();
                         $handler_id = get_post_meta($ticket->ID, '_ep_ticket_handler_id', true);
                         $handler_name = $handler_id ? get_the_author_meta('display_name', $handler_id) : 'Sin asignar';
                         $attach_id = get_post_meta($ticket->ID, '_ep_ticket_attachment_id', true);
-                        $attach_url = $attach_id ? wp_get_attachment_url($attach_id) : '';
+                        if (!$attach_id) {
+                            $attach_id = get_post_meta($ticket->ID, '_ep_ticket_attachment', true);
+                        }
+                        $attach_url = $attach_id ? (is_numeric($attach_id) ? wp_get_attachment_url($attach_id) : $attach_id) : '';
                         ?>
                         <li class="ticket-item">
                             <div class="ticket-info">
@@ -454,11 +445,28 @@ $stats = EP_Tickets::get_stats();
             <p><strong>Descripción:</strong></p>
             <div id="modalTicketContent" class="ep-content-box-unified"></div>
 
-            <div id="modalTicketAttachment" style="display:none; margin-bottom:15px;">
-                <strong>Adjunto:</strong> <a href="#" target="_blank" id="modalTicketAttachmentLink">Ver Archivo</a>
+            <div id="modalTicketAttachment" style="display:none; margin-bottom:15px; padding: 10px; background: #f0f7ff; border-radius: 8px; border: 1px dashed var(--ep-primary);">
+                <strong>Adjunto:</strong> <a href="#" target="_blank" id="modalTicketAttachmentLink">Ver Archivo / Descargar</a>
+                <div id="modalTicketImagePreview" style="margin-top:10px; display:none;">
+                    <img src="" style="max-width:100%; border-radius:5px; border:1px solid #ddd;">
+                </div>
             </div>
 
-            <div class="ep-modal-actions" style="border-top:1px solid #eee; padding-top:15px; text-align:right;">
+            <hr>
+            <div id="modalTicketReplies" style="margin-top:15px;">
+                <h3 style="font-size: 1rem; margin-bottom: 10px;"><i class="fa-solid fa-comments"></i> Conversación</h3>
+                <div id="repliesContainer" style="max-height: 300px; overflow-y: auto; padding-right: 5px; margin-bottom: 15px;">
+                    <!-- Comments loaded via AJAX -->
+                    <p style="color: #999; font-style: italic;">Cargando conversación...</p>
+                </div>
+                
+                <div id="replyFormContainer" style="display:none; border-top: 1px solid #eee; padding-top: 15px;">
+                    <textarea id="replyText" rows="3" placeholder="Escribe una respuesta..." style="width: 100%; border-radius: 8px; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px;"></textarea>
+                    <button type="button" id="btnSendReply" class="ep-btn ep-btn-sm ep-btn-primary">Enviar Respuesta</button>
+                </div>
+            </div>
+
+            <div class="ep-modal-actions" style="border-top:1px solid #eee; padding-top:15px; text-align:right; margin-top: 15px;">
                 <!-- Dynamically populated buttons -->
                 <a id="btnTakeTicket" href="#" class="ep-btn ep-btn-primary" style="display:none;">Asignarme Ticket</a>
                 <a id="btnCloseTicket" href="#" class="ep-btn ep-btn-danger" style="display:none;">Cerrar Ticket</a>
@@ -488,56 +496,164 @@ $stats = EP_Tickets::get_stats();
 <script>
     document.addEventListener('DOMContentLoaded', function () {
 
-        // Delegation for Modal Interactions with Class Toggling
+        // 1. Sorting logic
+        const sortHeader = document.querySelector('.ep-sortable');
+        if (sortHeader) {
+            sortHeader.addEventListener('click', function() {
+                const tbody = document.getElementById('epClosedTicketsBody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const isAsc = this.classList.contains('sort-asc');
+                
+                rows.sort((a, b) => {
+                    const valA = parseInt(a.getAttribute('data-timestamp'));
+                    const valB = parseInt(b.getAttribute('data-timestamp'));
+                    return isAsc ? valA - valB : valB - valA;
+                });
+
+                this.classList.toggle('sort-asc', !isAsc);
+                rows.forEach(row => tbody.appendChild(row));
+                
+                const icon = this.querySelector('i');
+                if (icon) {
+                    icon.className = isAsc ? 'fa-solid fa-sort-up' : 'fa-solid fa-sort-down';
+                }
+            });
+        }
+
+        // 2. Send Reply logic
+        const btnSendReply = document.getElementById('btnSendReply');
+        if (btnSendReply) {
+            btnSendReply.addEventListener('click', function() {
+                const text = document.getElementById('replyText').value.trim();
+                const id = document.getElementById('modalTicketID').textContent;
+                if (!text) return;
+
+                this.disabled = true;
+                this.textContent = 'Enviando...';
+
+                const formData = new FormData();
+                formData.append('action', 'ep_app_ajax');
+                formData.append('app', 'tickets');
+                formData.append('ep_action', 'add_ticket_comment');
+                formData.append('ticket_id', id);
+                formData.append('comment_content', text);
+
+                fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(response => {
+                    if (response.success) {
+                        location.reload(); 
+                    } else {
+                        alert('Error: ' + response.data);
+                        this.disabled = false;
+                        this.textContent = 'Enviar Respuesta';
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert('Error de servidor.');
+                    this.disabled = false;
+                    this.textContent = 'Enviar Respuesta';
+                });
+            });
+        }
+
+        // 3. Delegation for Modal Interactions
         document.addEventListener('click', function (e) {
 
-            // 1. OPEN MODAL
+            // OPEN MODAL
             const openBtn = e.target.closest('.ep-open-ticket-modal');
             if (openBtn) {
                 e.preventDefault();
-                e.stopPropagation(); // Stop bubbling to be safe
+                e.stopPropagation();
 
                 const modal = document.getElementById('epTicketModal');
-                if (!modal) {
-                    console.error('EP Modal Not Found in DOM');
-                    return;
-                }
+                if (!modal) return;
 
-                console.log('Opening Ticket Modal for ID:', openBtn.getAttribute('data-id'));
-
-                // Populate Data using textContent for safety
-                const idSpan = document.getElementById('modalTicketID');
-                if (idSpan) idSpan.textContent = openBtn.getAttribute('data-id');
-
-                const subjectSpan = document.getElementById('modalTicketSubject');
-                if (subjectSpan) subjectSpan.textContent = openBtn.getAttribute('data-title');
-                document.getElementById('modalTicketUser').textContent = openBtn.getAttribute('data-user');
-                document.getElementById('modalTicketPriority').textContent = openBtn.getAttribute('data-priority');
-                document.getElementById('modalTicketStatus').textContent = openBtn.getAttribute('data-status');
-                document.getElementById('modalTicketContent').textContent = openBtn.getAttribute('data-content');
-
-                const attach = openBtn.getAttribute('data-attachment');
-                const attDiv = document.getElementById('modalTicketAttachment');
-                const attLink = document.getElementById('modalTicketAttachmentLink');
-
-                if (attach && attach.trim() !== '') {
-                    attDiv.style.display = 'block';
-                    attLink.href = attach;
-                } else {
-                    attDiv.style.display = 'none';
-                }
-
-                // Actions Visibility Logic
                 const id = openBtn.getAttribute('data-id');
                 const status = openBtn.getAttribute('data-status');
                 const view = openBtn.getAttribute('data-view');
                 const nonce = openBtn.getAttribute('data-nonce');
                 const baseUrl = '?view=tickets&ticket_id=' + id + '&nonce=' + nonce;
 
+                document.getElementById('modalTicketID').textContent = id;
+                document.getElementById('modalTicketSubject').textContent = openBtn.getAttribute('data-title');
+                document.getElementById('modalTicketUser').textContent = openBtn.getAttribute('data-user');
+                document.getElementById('modalTicketPriority').textContent = openBtn.getAttribute('data-priority');
+                document.getElementById('modalTicketStatus').textContent = status;
+                document.getElementById('modalTicketContent').textContent = openBtn.getAttribute('data-content');
+
+                const attach = openBtn.getAttribute('data-attachment');
+                const attDiv = document.getElementById('modalTicketAttachment');
+                const attLink = document.getElementById('modalTicketAttachmentLink');
+                const attPreview = document.getElementById('modalTicketImagePreview');
+                const attImg = attPreview.querySelector('img');
+
+                if (attach && attach.trim() !== '') {
+                    attDiv.style.display = 'block';
+                    attLink.href = attach;
+                    const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(attach);
+                    if (isImg) {
+                        attPreview.style.display = 'block';
+                        attImg.src = attach;
+                    } else {
+                        attPreview.style.display = 'none';
+                    }
+                } else {
+                    attDiv.style.display = 'none';
+                }
+
+                // Load Comments
+                const repliesContainer = document.getElementById('repliesContainer');
+                repliesContainer.innerHTML = '<p style="color: #999; font-style: italic;">Cargando conversación...</p>';
+                
+                const fd = new FormData();
+                fd.append('action', 'ep_app_ajax');
+                fd.append('app', 'tickets');
+                fd.append('ep_action', 'get_ticket_comments');
+                fd.append('ticket_id', id);
+
+                fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                    method: 'POST',
+                    body: fd
+                })
+                .then(res => res.json())
+                .then(response => {
+                    if (response.success && response.data.length > 0) {
+                        repliesContainer.innerHTML = '';
+                        response.data.forEach(comment => {
+                            const div = document.createElement('div');
+                            div.style.marginBottom = '10px';
+                            div.style.padding = '10px';
+                            div.style.borderRadius = '8px';
+                            div.style.background = comment.is_staff ? '#fef2f2' : '#f8f9fa';
+                            div.style.borderLeft = comment.is_staff ? '3px solid var(--ep-primary)' : '3px solid #ddd';
+                            div.innerHTML = `
+                                <div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.8rem;">
+                                    <strong>${comment.author} ${comment.is_staff ? '<span class="ep-badge-unified it" style="font-size:0.6rem; padding:1px 4px;">SOPORTE</span>' : ''}</strong>
+                                    <span style="color:#999;">${comment.date}</span>
+                                </div>
+                                <div style="font-size:0.9rem;">${comment.content}</div>
+                            `;
+                            repliesContainer.appendChild(div);
+                        });
+                        repliesContainer.scrollTop = repliesContainer.scrollHeight;
+                    } else {
+                        repliesContainer.innerHTML = '<p style="color: #999; font-style: italic; font-size: 0.9rem;">No hay respuestas aún.</p>';
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    repliesContainer.innerHTML = '<p style="color: #dc3545;">Error al cargar la conversación.</p>';
+                });
+
+                document.getElementById('replyFormContainer').style.display = (status !== 'closed') ? 'block' : 'none';
+
                 const btnTake = document.getElementById('btnTakeTicket');
                 const btnClose = document.getElementById('btnCloseTicket');
-
-                // Reset button visibility
                 btnTake.style.display = 'none';
                 btnClose.style.display = 'none';
 
@@ -552,51 +668,32 @@ $stats = EP_Tickets::get_stats();
                     }
                 }
 
-                if ((view === 'handler' || view === 'user') && status !== 'closed') {
-                    if (status !== 'open') { // Only allow closing if it's in progress or similar (already handled by view/status check)
-                        btnClose.style.display = 'inline-block';
-                        btnClose.href = baseUrl + '&ep_action=close_ticket';
-                    }
+                if ((view === 'handler' || view === 'user') && status !== 'closed' && status !== 'open') {
+                    btnClose.style.display = 'inline-block';
+                    btnClose.href = baseUrl + '&ep_action=close_ticket';
                 }
 
                 modal.classList.add('is-visible');
-                return;
             }
 
-            // 2. CLOSE MODAL (X, Button, or Background)
+            // CLOSE MODAL
             const closeTrigger = e.target.closest('.ep-close-modal-trigger');
-            const isBackdrop = e.target.id === 'epTicketModal';
-
-            if (closeTrigger || isBackdrop) {
-                e.preventDefault();
-                e.stopPropagation();
-
-
+            if (closeTrigger || e.target.classList.contains('ep-modal-unified')) {
                 const modal = document.getElementById('epTicketModal');
-                if (modal) {
-                    console.log('Closing Modal');
-                    modal.classList.remove('is-visible');
-                }
-
-                const queueModal = document.getElementById('epQueueModal');
-                if (queueModal) {
-                    queueModal.classList.remove('is-visible');
-                }
+                if (modal) modal.classList.remove('is-visible');
+                const qModal = document.getElementById('epQueueModal');
+                if (qModal) qModal.classList.remove('is-visible');
             }
 
-            // 3. OPEN QUEUE MODAL
+            // QUEUE MODAL
             const queueBtn = e.target.closest('.ep-queue-trigger');
             if (queueBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-
                 const qModal = document.getElementById('epQueueModal');
                 if (qModal) {
                     document.getElementById('epQModalTitle').textContent = queueBtn.getAttribute('data-label');
                     document.getElementById('epQValHigh').textContent = queueBtn.getAttribute('data-high');
                     document.getElementById('epQValNormal').textContent = queueBtn.getAttribute('data-normal');
                     document.getElementById('epQValLow').textContent = queueBtn.getAttribute('data-low');
-
                     qModal.classList.add('is-visible');
                 }
             }

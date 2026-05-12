@@ -42,7 +42,76 @@ class EP_App_Tickets implements EP_App_Interface
 
     public function handle_ajax()
     {
-        // Handle AJAX requests if any
+        if (isset($_POST['ep_action']) && $_POST['ep_action'] === 'get_ticket_comments') {
+            $ticket_id = intval($_POST['ticket_id']);
+            $current_user_id = get_current_user_id();
+
+            // Permissions check
+            $is_admin = current_user_can('administrator');
+            $is_owner = EP_Tickets::is_ticket_owner($ticket_id, $current_user_id);
+            
+            // For managers, we check if they can manage this ticket type or have general write permission
+            $is_manager = (EP_App_Manager::get_permission('tickets', $current_user_id) === 'write');
+            
+            // If not owner/admin/full-manager, check if it's manageable by dept
+            if (!$is_admin && !$is_owner && !$is_manager) {
+                $manageable = EP_Tickets::get_manageable_tickets_for_user($current_user_id);
+                $is_manager = in_array($ticket_id, wp_list_pluck($manageable, 'ID'));
+            }
+
+            if (!$is_admin && !$is_owner && !$is_manager) {
+                wp_send_json_error('No tienes permisos.');
+            }
+
+            $comments = get_comments([
+                'post_id' => $ticket_id,
+                'order' => 'ASC',
+                'status' => 'approve'
+            ]);
+
+            $data = [];
+            foreach ($comments as $comment) {
+                $author_id = $comment->user_id;
+                $is_staff_reply = EP_Tickets::is_staff($author_id);
+                
+                $data[] = [
+                    'author' => $comment->comment_author,
+                    'date' => date('d/m/Y H:i', strtotime($comment->comment_date)),
+                    'content' => wpautop(esc_html($comment->comment_content)),
+                    'is_staff' => $is_staff_reply
+                ];
+            }
+            wp_send_json_success($data);
+        }
+
+        if (isset($_POST['ep_action']) && $_POST['ep_action'] === 'add_ticket_comment') {
+            $ticket_id = intval($_POST['ticket_id']);
+            $content = sanitize_textarea_field($_POST['comment_content']);
+            $current_user_id = get_current_user_id();
+
+            if (empty($content)) {
+                wp_send_json_error('El mensaje no puede estar vacío.');
+            }
+
+            // Simple permission check
+            if (!EP_Tickets::is_ticket_owner($ticket_id, $current_user_id) && !EP_Tickets::is_staff($current_user_id)) {
+                wp_send_json_error('No tienes permisos.');
+            }
+
+            $comment_id = wp_insert_comment([
+                'comment_post_ID' => $ticket_id,
+                'comment_content' => $content,
+                'user_id' => $current_user_id,
+                'comment_author' => wp_get_current_user()->display_name,
+                'comment_approved' => 1
+            ]);
+
+            if ($comment_id) {
+                wp_send_json_success();
+            } else {
+                wp_send_json_error('Error al guardar el comentario.');
+            }
+        }
     }
 }
 
@@ -56,6 +125,9 @@ class EP_Tickets
         add_action('init', array($this, 'handle_ticket_actions'));
         add_action('wp_insert_comment', array($this, 'notify_ticket_comment'), 10, 2);
 
+        // AJAX Routing
+        add_action('wp_ajax_ep_app_ajax', array($this, 'route_app_ajax'));
+
         // Cron tasks
         add_action('ep_daily_cleanup', array($this, 'purge_old_tickets'));
 
@@ -65,6 +137,19 @@ class EP_Tickets
         // --- Integración con IA Bot ---
         add_filter('ep_bot_intents', array($this, 'registrar_intent_bot'));
         add_filter('ep_bot_handle_intent_tickets', array($this, 'responder_intent_bot'), 10, 5);
+    }
+
+    /**
+     * Routes global app ajax to the correct handler if app=tickets
+     */
+    public function route_app_ajax()
+    {
+        if (isset($_POST['app']) && $_POST['app'] === 'tickets') {
+            $app = new EP_App_Tickets();
+            $app->handle_ajax();
+        }
+        // If it's not for us, we don't die, in case other apps also hook here
+        // (Though standard WP AJAX should die if no one handles it)
     }
 
     public function block_direct_access()
@@ -688,6 +773,26 @@ class EP_Tickets
         ], [
             ['type' => 'Action.OpenUrl', 'title' => '🔍 Ver en Portal', 'url' => home_url("/?view=tickets&ticket_id={$ticket_id}")]
         ]);
+    }
+
+    /**
+     * Helper to check if a user is staff (admin or has write permissions)
+     */
+    public static function is_staff($user_id)
+    {
+        if (user_can($user_id, 'administrator')) return true;
+        
+        global $ep_app_manager;
+        if (isset($ep_app_manager)) {
+            if ($ep_app_manager->get_user_permission('tickets', $user_id) === 'write') return true;
+        }
+
+        $dept = get_user_meta($user_id, 'ep_department', true);
+        if ($dept && (stripos((string)$dept, 'Comuni') !== false || stripos((string)$dept, 'TRANSFORMACI') !== false || stripos((string)$dept, 'Digital') !== false)) {
+            return true;
+        }
+
+        return false;
     }
 }
 

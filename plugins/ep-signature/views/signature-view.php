@@ -100,9 +100,18 @@ $is_admin_role = in_array('administrator', (array) wp_get_current_user()->roles)
                                 <h4>Documentos en cola (<span id="fds-queue-count">0</span>)</h4>
                                 <div id="fds-queue-list" class="queue-list"></div>
                             </div>
+                            <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #1e293b;">Opciones de Firma</h3>
                         <?php endif; ?>
 
-                        <h3>Opciones de Firma</h3>
+                        <div id="fds-post-sign-options" class="option-group" style="border: 1px solid var(--ep-primary); background: #f0f7ff; padding: 10px; border-radius: 8px; margin-bottom: 15px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; color: var(--ep-primary); margin: 0;">
+                                <input type="checkbox" id="fds-send-to-sender" checked style="width: 18px; height: 18px;"> 
+                                <i class="fa-solid fa-paper-plane"></i> Enviar copia al remitente
+                            </label>
+                            <small style="display: block; margin-top: 5px; color: #555; font-size: 0.75rem; line-height: 1.2;">
+                                Se enviará un correo automático al solicitante.
+                            </small>
+                        </div>
 
                         <?php if ($user_can_manage): ?>
                             <div class="option-group">
@@ -201,6 +210,7 @@ $is_admin_role = in_array('administrator', (array) wp_get_current_user()->roles)
                             <div class="coords">X: <span id="fds-coords-x">--</span>, Y: <span
                                     id="fds-coords-y">--</span></div>
                         </div>
+
 
                         <div class="ep-actions-row">
                             <button id="fds-sign-button" class="ep-btn ep-btn-primary full-width">

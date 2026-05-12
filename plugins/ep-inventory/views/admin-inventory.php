@@ -9,19 +9,41 @@ $assigned_filter = isset($_GET['assigned_to']) ? intval($_GET['assigned_to']) : 
 $itinerant_filter = $_GET['itinerant_filter'] ?? '';
 
 $paged = isset($_GET['ep_paged']) ? max(1, intval($_GET['ep_paged'])) : 1;
+$per_page = isset($_GET['ep_per_page']) ? (sanitize_text_field($_GET['ep_per_page']) === 'all' ? -1 : intval($_GET['ep_per_page'])) : 20;
 
 // Detect active tab (default: items)
 $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'items';
 
+// Sort parameters
+$orderby = isset($_GET['ep_orderby']) ? sanitize_text_field($_GET['ep_orderby']) : 'date';
+$order = isset($_GET['ep_order']) ? strtoupper(sanitize_text_field($_GET['ep_order'])) : 'DESC';
+
 // Basic filter arguments
 $args = array(
     'post_type' => 'ep_inventory_item',
-    'posts_per_page' => 20,
+    'posts_per_page' => $per_page,
     'paged' => $paged,
     'post_status' => 'publish',
-    's' => $search,
+    'ep_custom_search' => $search,
+    'orderby' => $orderby,
+    'order' => $order,
     'meta_query' => array('relation' => 'AND')
 );
+
+// Special meta sorting
+if ($orderby === 'type') {
+    $args['meta_key'] = '_ep_item_type';
+    $args['orderby'] = 'meta_value';
+} elseif ($orderby === 'serial') {
+    $args['meta_key'] = '_ep_item_serial';
+    $args['orderby'] = 'meta_value';
+} elseif ($orderby === 'assigned') {
+    $args['meta_key'] = '_ep_item_assigned_to';
+    $args['orderby'] = 'meta_value_num';
+} elseif ($orderby === 'itinerant_status') {
+    $args['meta_key'] = '_ep_item_itinerant_status';
+    $args['orderby'] = 'meta_value';
+}
 
 // Restriction for Itinerant Manager
 global $ep_app_manager;
@@ -55,12 +77,21 @@ if ($type_filter) {
 
 if ($assigned_filter) {
     if ($assigned_filter === -1) {
-        // Not assigned
+        // Not assigned: ID is 0, empty, or doesn't exist. 
+        // To handle deleted users, we would need a NOT IN (valid_ids) which is heavy.
+        // For now, let's at least ensure we get 0 and NOT EXISTS.
         $args['meta_query'][] = array(
-            'key' => '_ep_item_assigned_to',
-            'value' => '0', // Assuming 0 or empty for unassigned, need to verify saving logic
-            'compare' => '<=',
-            'type' => 'NUMERIC'
+            'relation' => 'OR',
+            array(
+                'key' => '_ep_item_assigned_to',
+                'compare' => 'NOT EXISTS'
+            ),
+            array(
+                'key' => '_ep_item_assigned_to',
+                'value' => '0',
+                'compare' => '<=',
+                'type' => 'NUMERIC'
+            )
         );
     } else {
         $args['meta_query'][] = array(
@@ -80,10 +111,43 @@ $inventory = new WP_Query($args);
 
 // Stats Calculation
 $total_items = wp_count_posts('ep_inventory_item')->publish;
-$assigned_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON pm.post_id = p.ID WHERE p.post_type = 'ep_inventory_item' AND p.post_status = 'publish' AND pm.meta_key = '_ep_item_assigned_to' AND CAST(pm.meta_value AS UNSIGNED) > 0");
+$assigned_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} pm 
+    JOIN {$wpdb->posts} p ON pm.post_id = p.ID 
+    JOIN {$wpdb->users} u ON pm.meta_value = u.ID
+    WHERE p.post_type = 'ep_inventory_item' 
+    AND p.post_status = 'publish' 
+    AND pm.meta_key = '_ep_item_assigned_to' 
+    AND CAST(pm.meta_value AS UNSIGNED) > 0");
 $unassigned_count = $total_items - $assigned_count;
 $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100) : 0;
+
+if (!function_exists('ep_get_inventory_sort_url')) {
+    function ep_get_inventory_sort_url($field, $current_orderby, $current_order) {
+        $new_order = ($current_orderby === $field && $current_order === 'ASC') ? 'DESC' : 'ASC';
+        return add_query_arg(['ep_orderby' => $field, 'ep_order' => $new_order]);
+    }
+}
+
+if (!function_exists('ep_get_inventory_sort_icon')) {
+    function ep_get_inventory_sort_icon($field, $current_orderby, $current_order) {
+        if ($current_orderby !== $field) return '<i class="fa-solid fa-sort" style="opacity:0.3; margin-left:5px;"></i>';
+        return $current_order === 'ASC' ? '<i class="fa-solid fa-sort-up" style="margin-left:5px; color:var(--ep-primary);"></i>' : '<i class="fa-solid fa-sort-down" style="margin-left:5px; color:var(--ep-primary);"></i>';
+    }
+}
 ?>
+
+<style>
+.ep-sortable-header {
+    color: inherit !important;
+    text-decoration: none !important;
+    display: flex;
+    align-items: center;
+    transition: opacity 0.2s;
+}
+.ep-sortable-header:hover {
+    opacity: 0.7;
+}
+</style>
 
 <div class="ep-app-container">
     <div class="ep-app-header">
@@ -120,6 +184,7 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
             <form method="GET" class="ep-filter-form">
                 <!-- <input type="hidden" name="page" value="employee-portal"> -->
                 <input type="hidden" name="view" value="inventory">
+                <input type="hidden" name="tab" value="<?php echo esc_attr($active_tab); ?>">
                 <input type="text" name="search_query" placeholder="Buscar..." value="<?php echo esc_attr($search); ?>">
                 <select name="type">
                     <option value="">Todos los tipos</option>
@@ -144,22 +209,33 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
                     }
                     ?>
                 </select>
+                <select name="ep_per_page" onchange="this.form.submit()">
+                    <option value="20" <?php selected($per_page, 20); ?>>20 por pág.</option>
+                    <option value="50" <?php selected($per_page, 50); ?>>50 por pág.</option>
+                    <option value="100" <?php selected($per_page, 100); ?>>100 por pág.</option>
+                    <option value="all" <?php selected($per_page, -1); ?>>Ver todo</option>
+                </select>
                 <button type="submit" class="ep-btn"><i class="fa-solid fa-filter"></i> Filtrar</button>
             </form>
 
             <div class="ep-bulk-actions"
                 style="display: flex; gap: 10px; align-items: center; border-left: 1px solid var(--ep-border); padding-left: 15px;">
+                
+                <div id="ep-selection-info" style="display:none; font-weight:bold; color:var(--ep-primary); background:rgba(var(--ep-primary-rgb, 99, 102, 241), 0.1); padding:4px 10px; border-radius:20px; font-size:12px;">
+                    <span id="ep-selection-count">0</span> seleccionados
+                </div>
+
                 <?php if ($perm !== 'manage_itinerant'): ?>
                 <select id="ep-bulk-user-assign" class="ep-select-sm" style="width: auto;">
                     <option value="">— Asignar a... —</option>
                     <option value="0">Libre (Quitar)</option>
                     <?php
                     foreach ($users as $user) {
-                        echo '<option value="' . esc_attr($user->ID) . '">' . esc_html($user->display_name) . '</option>';
+                        echo '<option value="' . esc_attr($user->ID) . '" ' . (isset($assigned_filter) && $assigned_filter == $user->ID ? 'selected' : '') . '>' . esc_html($user->display_name) . '</option>';
                     }
                     ?>
                 </select>
-                <button class="ep-btn ep-btn-secondary" onclick="bulkAssignItems()"
+                <button class="ep-btn ep-btn-secondary ep-btn-sm" onclick="bulkAssignItems()"
                     title="Asignar seleccionados a este usuario">
                     Asignar
                 </button>
@@ -168,10 +244,17 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
                     <i class="fa-solid fa-user-slash"></i> Liberar
                 </button>
                 <?php endif; ?>
-                <button class="ep-btn ep-btn-sm ep-btn-primary" onclick="itinerantBulkCheckOut()"
-                    title="Registrar salida de todos los seleccionados">
-                    <i class="fa-solid fa-right-from-bracket"></i> Salida Lote
-                </button>
+
+                <div style="display:flex; gap:5px; border-left:1px solid #eee; padding-left:10px;">
+                    <button class="ep-btn ep-btn-sm ep-btn-primary" onclick="itinerantBulkCheckOut()"
+                        title="Registrar salida de todos los seleccionados">
+                        <i class="fa-solid fa-right-from-bracket"></i> Salida Lote
+                    </button>
+                    <button class="ep-btn ep-btn-sm" style="background:#10b981; color:white;" onclick="itinerantBulkCheckIn()"
+                        title="Registrar entrada/devolución de todos los seleccionados">
+                        <i class="fa-solid fa-right-to-bracket"></i> Entrada Lote
+                    </button>
+                </div>
             </div>
 
             <div class="ep-header-actions" style="margin-left: auto; display: flex; gap: 10px;">
@@ -213,7 +296,61 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
 
     <?php if (isset($_GET['tab']) && $_GET['tab'] === 'users'): 
         // Lógica para la pestaña de Usuarios
-        $users_with_items = $wpdb->get_col("SELECT DISTINCT meta_value FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON pm.post_id = p.ID WHERE p.post_type = 'ep_inventory_item' AND p.post_status = 'publish' AND pm.meta_key = '_ep_item_assigned_to' AND CAST(pm.meta_value AS UNSIGNED) > 0");
+        $user_query_args = array(
+            'post_type' => 'ep_inventory_item',
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'meta_query' => array(
+                array(
+                    'key' => '_ep_item_assigned_to',
+                    'value' => 0,
+                    'compare' => '>',
+                    'type' => 'NUMERIC'
+                )
+            )
+        );
+
+        // Si hay una búsqueda global, filtrar items que coincidan
+        if (!empty($search)) {
+            $user_query_args['ep_custom_search'] = $search;
+        }
+
+        $items_matching = get_posts($user_query_args);
+        $users_with_items = array();
+
+        if (!empty($items_matching)) {
+            foreach ($items_matching as $item_id) {
+                $uid = get_post_meta($item_id, '_ep_item_assigned_to', true);
+                if ($uid) $users_with_items[] = intval($uid);
+            }
+            $users_with_items = array_unique($users_with_items);
+        }
+
+        // Si el usuario buscó por nombre de usuario directamente, incluir esos IDs también si tienen material
+        if (!empty($search)) {
+            $direct_users = get_users(array(
+                'search' => '*' . $search . '*',
+                'search_columns' => array('user_login', 'user_nicename', 'display_name', 'user_email'),
+                'fields' => 'ID'
+            ));
+            
+            if (!empty($direct_users)) {
+                // Verificar cuáles de estos usuarios tienen material asignado
+                foreach ($direct_users as $du_id) {
+                    $has_material = $wpdb->get_var($wpdb->prepare("SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_ep_item_assigned_to' AND meta_value = %d LIMIT 1", $du_id));
+                    if ($has_material) {
+                        $users_with_items[] = intval($du_id);
+                    }
+                }
+                $users_with_items = array_unique($users_with_items);
+            }
+        }
+
+        // Si hay un filtro de usuario específico seleccionado en el dropdown
+        if ($assigned_filter && $assigned_filter > 0) {
+            $users_with_items = in_array($assigned_filter, $users_with_items) ? array($assigned_filter) : array();
+        }
         ?>
         <div class="ep-table-responsive">
             <table class="ep-table">
@@ -298,7 +435,7 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
                                                 <i class="fa-solid fa-clock"></i> Pendiente
                                             </span>
                                         <?php endif; ?>
-                                        
+                                    </div>
                                     <div style="display:flex; gap:10px; align-items:center;">
                                         <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" target="_blank" style="margin:0;">
                                             <input type="hidden" name="action" value="ep_inventory_download_commitment">
@@ -534,12 +671,16 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
             <thead>
                 <tr>
                     <th><input type="checkbox" id="selectAll"></th>
-                    <th>Item</th>
-                    <th>Tipo</th>
-                    <th>Nº Serie</th>
-                    <th>Responsable Interno</th>
+                    <th><a href="<?php echo ep_get_inventory_sort_url('title', $orderby, $order); ?>" class="ep-sortable-header">Item <?php echo ep_get_inventory_sort_icon('title', $orderby, $order); ?></a></th>
+                    <th><a href="<?php echo ep_get_inventory_sort_url('type', $orderby, $order); ?>" class="ep-sortable-header">Tipo <?php echo ep_get_inventory_sort_icon('type', $orderby, $order); ?></a></th>
+                    <th><a href="<?php echo ep_get_inventory_sort_url('serial', $orderby, $order); ?>" class="ep-sortable-header">Nº Serie <?php echo ep_get_inventory_sort_icon('serial', $orderby, $order); ?></a></th>
+                    <th><a href="<?php echo ep_get_inventory_sort_url('assigned', $orderby, $order); ?>" class="ep-sortable-header">Responsable Interno <?php echo ep_get_inventory_sort_icon('assigned', $orderby, $order); ?></a></th>
                     <?php if ($active_tab === 'loans'): ?>
-                        <th>Prestatario / Situación</th>
+                        <th>
+                            <a href="<?php echo ep_get_inventory_sort_url('itinerant_status', $orderby, $order); ?>" class="ep-sortable-header">
+                                Prestatario / Situación <?php echo ep_get_inventory_sort_icon('itinerant_status', $orderby, $order); ?>
+                            </a>
+                        </th>
                     <?php endif; ?>
                     <th>Estado</th>
                     <th style="min-width:160px;">Ubicación / Notas</th>
@@ -586,14 +727,10 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
                             <td><code style="font-size: 11px;"><?php echo esc_html($serial); ?></code></td>
                             <td>
                                 <div class="ep-user-mini">
-                                    <?php if ($assigned_id):
-                                        if ($assigned_user): ?>
-                                            <span><?php echo esc_html($assigned_user->display_name); ?></span>
-                                        <?php else: ?>
-                                            <span class="text-error">Usuario borrado</span>
-                                        <?php endif;
-                                    else: ?>
-                                        <span>Sin asignar</span>
+                                    <?php if ($assigned_id && $assigned_user): ?>
+                                        <span><?php echo esc_html($assigned_user->display_name); ?></span>
+                                    <?php else: ?>
+                                        <span style="color: #999; font-style: italic;">Sin asignar</span>
                                     <?php endif; ?>
                                 </div>
                             </td>
@@ -632,6 +769,26 @@ $assigned_perc = $total_items > 0 ? round(($assigned_count / $total_items) * 100
                                                     <i class="fa-solid fa-file-pdf"></i>
                                                 </button>
                                             </form>
+
+                                            <!-- Botón Subir Préstamo Firmado -->
+                                            <button class="ep-btn ep-btn-sm" style="background-color: #6c757d; color: white;" 
+                                                title="Subir Justificante Firmado" 
+                                                onclick="document.getElementById('loan-upload-<?php echo get_the_ID(); ?>').click()">
+                                                <i class="fa-solid fa-file-upload"></i>
+                                            </button>
+                                            <input type="file" id="loan-upload-<?php echo get_the_ID(); ?>" style="display:none;" 
+                                                onchange="uploadSignedLoanDoc(<?php echo get_the_ID(); ?>, this)">
+
+                                            <?php 
+                                            $signed_loan_id = get_post_meta(get_the_ID(), '_ep_item_signed_loan_doc_id', true);
+                                            if ($signed_loan_id): 
+                                                $signed_loan_url = wp_get_attachment_url($signed_loan_id);
+                                            ?>
+                                                <a href="<?php echo esc_url($signed_loan_url); ?>" target="_blank" class="ep-btn ep-btn-sm" 
+                                                   style="background-color: #28a745; color: white;" title="Ver Justificante Firmado">
+                                                    <i class="fa-solid fa-file-circle-check"></i>
+                                                </a>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     <?php endif; ?>
 

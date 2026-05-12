@@ -13,7 +13,7 @@
             </button>
             <?php if (current_user_can('manage_options')): ?>
                 <button class="button ep-btn-primary" id="ep-sync-photos-btn" onclick="epForceSyncPhotos(this, '<?php echo wp_create_nonce('ep_directory_sync_photos'); ?>')" style="padding: 8px 16px; background-color: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                    <i class="fa-solid fa-sync"></i> Forzar Sincronización de Fotos
+                    <i class="fa-solid fa-sync"></i> Forzar Sincronización Completa
                 </button>
             <?php endif; ?>
         </div>
@@ -52,6 +52,11 @@
                     <?php if ($office_phone): ?>
                         <a href="tel:<?php echo esc_attr($office_phone); ?>" class="ep-contact-item" title="Llamar a extensión">
                             <i class="fa-solid fa-phone"></i> Extensión: <?php echo esc_html($office_phone); ?>
+                        </a>
+                    <?php endif; ?>
+                    <?php if ($phone): ?>
+                        <a href="tel:<?php echo esc_attr($phone); ?>" class="ep-contact-item" title="Llamar al móvil">
+                            <i class="fa-solid fa-mobile-screen"></i> Móvil: <?php echo esc_html($phone); ?>
                         </a>
                     <?php endif; ?>
                 </div>

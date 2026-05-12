@@ -115,7 +115,7 @@ class EP_Deployer
         while (false !== ($file = readdir($handle))) {
             if ($file != '.' && $file != '..' && !in_array($file, $exclude)) {
                 $filePath = "$dir/$file";
-                $localPath = substr($filePath, $exclusiveLength);
+                $localPath = str_replace('\\', '/', substr($filePath, $exclusiveLength));
                 if (is_file($filePath)) {
                     $zip->addFile($filePath, $localPath);
                 } elseif (is_dir($filePath)) {

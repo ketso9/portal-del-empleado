@@ -226,6 +226,11 @@ class EP_App_Stats implements EP_App_Interface
             'censo' => 'Censo',
             'directory' => 'Directorio',
             'calendar' => 'Agenda',
+            'empresas' => 'Empresas',
+            'links' => 'Enlaces',
+            'buzon' => 'Buzón',
+            'gdpr' => 'GDPR',
+            'contratos' => 'Contratos',
             'o365' => 'Office 365',
             'system' => 'Sistema',
             'stats' => 'Estadísticas'

@@ -358,6 +358,10 @@ class EP_Avisos
     public function ajax_get_avisos()
     {
         check_ajax_referer('ep_avisos_nonce', 'security');
+        
+        if (function_exists('ep_stats_log')) {
+            ep_stats_log('avisos', 'board_viewed', get_current_user_id());
+        }
 
         $type = isset($_GET['type']) ? sanitize_text_field($_GET['type']) : 'active';
         $is_manager = self::can_manage_avisos();

@@ -148,10 +148,40 @@ class EP_Stats_DB
         $table_name = $wpdb->prefix . 'ep_stats_events';
 
         $days = 30;
+        $app_id = null;
+        $user_id = null;
+
         if (is_numeric($filters)) {
             $days = intval($filters);
-        } elseif (isset($filters['days'])) {
-            $days = intval($filters['days']);
+        } elseif (is_array($filters)) {
+            $days = isset($filters['days']) ? intval($filters['days']) : 30;
+            $app_id = isset($filters['app_id']) ? $filters['app_id'] : null;
+            $user_id = isset($filters['user_id']) ? $filters['user_id'] : null;
+        }
+
+        $where_base = "1=1";
+        $params_base = [];
+
+        if (!empty($filters['date_from'])) {
+            $where_base .= " AND event_time >= %s";
+            $params_base[] = $filters['date_from'] . ' 00:00:00';
+        } elseif ($days) {
+            $where_base .= " AND event_time >= DATE_SUB(NOW(), INTERVAL %d DAY)";
+            $params_base[] = $days;
+        }
+
+        if (!empty($filters['date_to'])) {
+            $where_base .= " AND event_time <= %s";
+            $params_base[] = $filters['date_to'] . ' 23:59:59';
+        }
+
+        if ($app_id) {
+            $where_base .= " AND app_id = %s";
+            $params_base[] = $app_id;
+        }
+        if ($user_id) {
+            $where_base .= " AND user_id = %d";
+            $params_base[] = $user_id;
         }
 
         // Basic stats for charts
@@ -159,15 +189,33 @@ class EP_Stats_DB
         $raw_events = $wpdb->get_results($wpdb->prepare(
             "SELECT DATE(event_time) as date, COUNT(*) as count 
              FROM $table_name 
-             WHERE event_time >= DATE_SUB(NOW(), INTERVAL %d DAY) 
+             WHERE $where_base
              GROUP BY DATE(event_time) 
              ORDER BY date ASC", 
-            $days
+            ...$params_base
         ));
 
         $events_per_day = [];
-        $current_date = new DateTime("- " . ($days - 1) . " days");
-        $end_date = new DateTime('now');
+        
+        // Define range for filling gaps
+        if (!empty($filters['date_from'])) {
+            $current_date = new DateTime($filters['date_from']);
+        } else {
+            $current_date = new DateTime("- " . ($days - 1) . " days");
+        }
+
+        if (!empty($filters['date_to'])) {
+            $end_date = new DateTime($filters['date_to']);
+        } else {
+            $end_date = new DateTime('now');
+        }
+
+        // Limit range to prevent performance issues (max 180 days for charts)
+        $diff = $current_date->diff($end_date)->days;
+        if ($diff > 180) {
+            $current_date = clone $end_date;
+            $current_date->modify('-180 days');
+        }
 
         // Map raw results to an associative array for easy lookup
         $raw_map = [];
@@ -189,22 +237,22 @@ class EP_Stats_DB
         $top_apps = $wpdb->get_results($wpdb->prepare(
             "SELECT app_id, COUNT(*) as count 
              FROM $table_name 
-             WHERE event_time >= DATE_SUB(NOW(), INTERVAL %d DAY) 
+             WHERE $where_base
              GROUP BY app_id 
              ORDER BY count DESC 
-             LIMIT 5", 
-            $days
+             LIMIT 15", 
+            ...$params_base
         ));
 
         // Top Users
         $top_users = $wpdb->get_results($wpdb->prepare(
             "SELECT user_id, COUNT(*) as count 
              FROM $table_name 
-             WHERE event_time >= DATE_SUB(NOW(), INTERVAL %d DAY) 
+             WHERE $where_base
              GROUP BY user_id 
              ORDER BY count DESC 
              LIMIT 5", 
-            $days
+            ...$params_base
         ));
 
         return [
@@ -455,13 +503,20 @@ class EP_Stats_DB
                     (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'inventory' AND e.event_time >= %s) as inventory_count,
                     (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'censo' AND e.event_time >= %s) as censo_count,
                     (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'downloads' AND e.event_time >= %s) as downloads_count,
-                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'directory' AND e.event_time >= %s) as directory_count
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'directory' AND e.event_time >= %s) as directory_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'empresas' AND e.event_time >= %s) as empresas_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'links' AND e.event_time >= %s) as links_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'buzon' AND e.event_time >= %s) as buzon_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'contratos' AND e.event_time >= %s) as contratos_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'gdpr' AND e.event_time >= %s) as gdpr_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'calendar' AND e.event_time >= %s) as calendar_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'avisos' AND e.event_time >= %s) as avisos_count
                 FROM {$wpdb->users} u
                 ORDER BY (SELECT ls2.login_time FROM $sessions_table ls2 WHERE ls2.user_id = u.ID ORDER BY ls2.login_time DESC LIMIT 1) DESC
                 LIMIT %d OFFSET %d";
 
-        // Add parameters for the app counts
-        for ($i = 0; $i < 6; $i++) {
+        // Add parameters for the app counts (13 apps total now)
+        for ($i = 0; $i < 13; $i++) {
             $params[] = $date_limit;
         }
 

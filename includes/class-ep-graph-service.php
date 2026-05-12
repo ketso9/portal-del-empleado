@@ -417,6 +417,10 @@ class EP_Graph_Service {
      */
     public function update_graph_profile($access_token, $data) {
         $url = 'https://graph.microsoft.com/v1.0/me';
+        
+        ep_error_log("Graph API: PATCH request to $url");
+        ep_error_log("Graph API: Payload: " . json_encode($data));
+
         $response = wp_remote_request($url, [
             'method'  => 'PATCH',
             'headers' => [
@@ -427,8 +431,19 @@ class EP_Graph_Service {
             'timeout' => 30
         ]);
 
-        if (is_wp_error($response)) return $response;
+        if (is_wp_error($response)) {
+            ep_error_log("Graph API: Request failed. Error: " . $response->get_error_message());
+            return $response;
+        }
+
         $code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        
+        ep_error_log("Graph API: Response Code: $code");
+        if ($code < 200 || $code >= 300) {
+            ep_error_log("Graph API: Error Response: " . $body);
+        }
+
         return ($code >= 200 && $code < 300);
     }
 

@@ -7,13 +7,17 @@ class EP_Inventory_PDF
     public function __construct()
     {
         // Require TCPDF if not already loaded. 
-        // We assume it's loaded by the other plugin or we might need to load it here.
-        // If FDS plugin is active, TCPDF should be available. 
-        // If not, we might crash. For safety, we check class_exists.
         if (!class_exists('TCPDF')) {
-            // Try to load from FDS if path known, else we might need our own vendor.
-            // For this environment, we assume it is there.
-            // Fallback: Check standard locations?
+            // Try to load from FDS plugin via relative path
+            $tcpdf_path = dirname(dirname(__FILE__)) . '/ep-signature/libs/tcpdf/tcpdf.php';
+            if (file_exists($tcpdf_path)) {
+                require_once $tcpdf_path;
+            } else if (defined('EMPLOYEE_PORTAL_PATH')) {
+                $tcpdf_path_alt = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/libs/tcpdf/tcpdf.php';
+                if (file_exists($tcpdf_path_alt)) {
+                    require_once $tcpdf_path_alt;
+                }
+            }
         }
     }
 
@@ -286,9 +290,20 @@ class EP_Inventory_PDF
             $responsible_name = $u_resp ? $u_resp->display_name : $assigned_to;
         }
 
-        // Admin logueado para la entrega
-        $current_user = wp_get_current_user();
-        $admin_name = $current_user->ID ? $current_user->display_name : 'Administrador';
+        // Obtener el nombre del responsable que realizó la entrega (last_checkout_by)
+        $last_checkout_by = get_post_meta($item_id, '_ep_item_last_checkout_by', true);
+        $admin_name = '';
+        if ($last_checkout_by) {
+            $u_admin = get_userdata($last_checkout_by);
+            if ($u_admin) {
+                $admin_name = $u_admin->display_name;
+            }
+        }
+
+        if (empty($admin_name)) {
+            $current_user = wp_get_current_user();
+            $admin_name = $current_user->ID ? $current_user->display_name : 'Administrador';
+        }
 
         // Init PDF
         $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
@@ -393,8 +408,20 @@ class EP_Inventory_PDF
             $responsible_name = $u_resp ? $u_resp->display_name : $assigned_to;
         }
 
-        $current_user = wp_get_current_user();
-        $admin_name = $current_user->ID ? $current_user->display_name : 'Administrador';
+        // Obtener el nombre del responsable que realizó la entrega
+        $last_checkout_by = get_post_meta($first_id, '_ep_item_last_checkout_by', true);
+        $admin_name = '';
+        if ($last_checkout_by) {
+            $u_admin = get_userdata($last_checkout_by);
+            if ($u_admin) {
+                $admin_name = $u_admin->display_name;
+            }
+        }
+
+        if (empty($admin_name)) {
+            $current_user = wp_get_current_user();
+            $admin_name = $current_user->ID ? $current_user->display_name : 'Administrador';
+        }
 
         $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
         $pdf->SetCreator('Portal del Empleado');

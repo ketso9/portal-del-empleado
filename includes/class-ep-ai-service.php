@@ -79,9 +79,13 @@ class EP_AI_Service
 
         // Para mensajes con contexto de usuario, incluimos el user_id en el hash
         // para que diferentes usuarios obtengan cache independiente.
-        $user_id_hash = !empty($user_context['user_id']) ? $user_context['user_id'] : 'guest';
-        $msg_hash  = md5(strtolower(trim($message)) . $user_id_hash);
-        $cache_key = 'ep_ai_intent_v13_' . $msg_hash; // v13: invalida caché anterior rota
+        $user_id_hash = md5($user_context['user_id'] ?? 'global');
+
+        // IMPORTANTE: Incluimos el resumen del historial en el hash para evitar que 
+        // mensajes idénticos (ej: "con el") devuelvan resultados cacheados de contextos distintos.
+        $history_summary = EP_Bot_Context::get_prompt_context($user_context['user_id'] ?? '');
+        $msg_hash  = md5(strtolower(trim($message)) . $user_id_hash . md5($history_summary));
+        $cache_key = 'ep_ai_intent_v15_' . $msg_hash; // v15: cache sensible al contexto
         $cached    = get_transient($cache_key);
         
         if ($cached && is_array($cached)) {
@@ -89,7 +93,9 @@ class EP_AI_Service
             return $cached;
         }
 
-        if (!$this->check_limits()) {
+        $stats = $this->get_usage_stats();
+        if ($stats['today'] >= (int)ep_get_option('ep_ai_daily_limit', 100) || 
+            $stats['month'] >= (int)ep_get_option('ep_ai_monthly_limit', 3000)) {
             return ['error' => 'Límite de uso de IA alcanzado para este periodo.'];
         }
 
@@ -120,7 +126,7 @@ class EP_AI_Service
         $prompt .= "Tu tarea es clasificar la intención del usuario entre las siguientes categorías:\n\n";
         $intents = apply_filters('ep_bot_intents', [
             'AGENDA' => "El usuario quiere ver SUS PROPIOS eventos, reuniones o citas. Ej: 'qué tengo mañana', 'mis reuniones del viernes', 'agenda de esta semana'.",
-            'MEETING_PLANNER' => "El usuario quiere encontrar un hueco común en el calendario FUTURO para organizar una reunión. Señales clave: menciona 'huecos', 'planificar', 'organizar reunión'.\n  * OJO: Si pregunta por la disponibilidad ACTUAL de alguien (ej: 'necesito llamar a Sandra, ¿está libre?'), usa DIRECTORY, no esto.\n  * Extrae en params: duration_hours (número, por defecto 1), date_range_start (YYYY-MM-DD), date_range_end (YYYY-MM-DD), morning_only (true/false).\n  * Usa el contexto de 'Fecha actual del sistema' para calcular correctamente días relativos (hoy, mañana, el viernes, la semana que viene). Si el usuario pide un solo día ('el viernes'), date_range_start y date_range_end deben ser ESE MISMO DÍA.\n  * Extrae en params.attendees un array de strings con los nombres o correos explícitos (ej: ['Raul', 'antonio@empresa.com']). NO pongas aquí grupos genéricos.\n  * Extrae en params.all_org el valor true SÓLO si dice expresamente palabras generalistas como 'con todos', 'toda mi organización', 'el personal', 'el personal de camara', 'personal', 'compañeros', 'mi equipo', 'contactos frecuentes', 'la organización' o 'la oficina'. Si all_org es true, deja attendees vacío.\n  * Si dice 'esta semana', calcula desde el lunes de la semana actual hasta el viernes.",
+            'MEETING_PLANNER' => "El usuario quiere encontrar un hueco común en el calendario FUTURO para organizar una reunión. Señales clave: menciona 'huecos', 'planificar', 'organizar reunión'.\n  * OJO: Si pregunta por la disponibilidad ACTUAL de alguien (ej: 'necesito llamar a Sandra, ¿está libre?'), usa DIRECTORY, no esto.\n  * Extrae en params: duration_hours (número, por defecto 1), date_range_start (YYYY-MM-DD), date_range_end (YYYY-MM-DD), morning_only (true/false).\n  * Usa el contexto de 'Fecha actual del sistema' para calcular correctamente días relativos (hoy, mañana, el viernes, la semana que viene). Si el usuario pide un solo día ('el viernes'), date_range_start y date_range_end deben ser ESE MISMO DÍA.\n  * Extrae en params.attendees un array de strings con los nombres o correos explícitos (ej: ['Raul', 'antonio@empresa.com']). SI EL USUARIO NO DA NOMBRES PERO HAY UNA 'Persona mencionada' EN EL HISTORIAL Y USA PRONOMBRES COMO 'con el' O REFERENCIAS RELATIVAS, USA ESE NOMBRE. NO pongas aquí grupos genéricos.\n  * Extrae en params.all_org el valor true SÓLO si dice expresamente palabras generalistas como 'con todos', 'toda mi organización', 'el personal', 'el personal de camara', 'personal', 'compañeros', 'mi equipo', 'contactos frecuentes', 'la organización' o 'la oficina'. Si all_org es true, deja attendees vacío.\n  * Si dice 'esta semana', calcula desde el lunes de la semana actual hasta el viernes.",
             'INVENTORY' => "El usuario quiere ver su equipo asignado, material, portátil, móvil, periféricos o software. Ej: 'mi inventario', 'qué equipo tengo', 'listame el material'.",
             'TICKETS' => "El usuario quiere ver sus tickets, incidencias, soporte o estado de peticiones. Ej: 'mis tickets', 'incidencias abiertas', 'estado de mi sugerencia'.",
             'DIRECTORY' => "El usuario busca el contacto, teléfono, email, ubicación o el estado/disponibilidad ACTUAL en Teams de un compañero para llamarle. Ej: 'teléfono de María', 'quién es Pedro', '¿está libre Sandra ahora?', 'necesito llamar a Raúl, ¿está ocupado?'.",
@@ -143,11 +149,12 @@ class EP_AI_Service
         
         $prompt .= "REGLAS DE CONTEXTO:\n";
         $prompt .= "1. Si el usuario pregunta cosas relativas como '¿cuál es su email?' o 'dame más datos', usa el Historial Reciente para saber de quién o qué habla.\n";
-        $prompt .= "2. Si el usuario pide 'inventario', 'material' o 'equipo', prioriza siempre INVENTORY.\n";
-        $prompt .= "3. MEETING_PLANNER tiene prioridad sobre AGENDA cuando se quiera planificar una reunión en el calendario.\n";
-        $prompt .= "4. REGLA DE ORO: Si el usuario quiere 'llamar' o saber si alguien 'está libre' ACTUALMENTE o 'AQUÍ Y AHORA', usa SIEMPRE DIRECTORY. Sólo usa MEETING_PLANNER si quiere organizar o convocar una reunión.\n";
-        $prompt .= "5. Para DIRECTORY y CENSO, extrae SOLO el término de búsqueda en search_term. Ej: 'cuál es el teléfono de Antonio' -> search_term: 'Antonio'.\n";
-        $prompt .= "6. Para TICKETS e INVENTORY, extrae términos específicos si los hay, de lo contrario deja search_term vacío.\n\n";
+        $prompt .= "2. RESOLUCIÓN DE PRONOMBRES: Si el usuario usa pronombres como 'con él', 'con ella', 'con ellos' o simplemente dice 'reunirme con el' sin dar un nombre, DEBES mirar la 'Persona mencionada' en el Historial Reciente y extraer ese nombre en params.attendees.\n";
+        $prompt .= "3. Si el usuario pide 'inventario', 'material' o 'equipo', prioriza siempre INVENTORY.\n";
+        $prompt .= "4. MEETING_PLANNER tiene prioridad sobre AGENDA cuando se quiera planificar una reunión en el calendario.\n";
+        $prompt .= "5. REGLA DE ORO: Si el usuario quiere 'llamar' o saber si alguien 'está libre' ACTUALMENTE o 'AQUÍ Y AHORA', usa SIEMPRE DIRECTORY. Sólo usa MEETING_PLANNER si quiere organizar o convocar una reunión.\n";
+        $prompt .= "6. Para DIRECTORY y CENSO, extrae SOLO el término de búsqueda en search_term. Ej: 'cuál es el teléfono de Antonio' -> search_term: 'Antonio'.\n";
+        $prompt .= "7. Para TICKETS e INVENTORY, extrae términos específicos si los hay, de lo contrario deja search_term vacío.\n\n";
 
         $prompt .= "CONTEXTO ACTUAL:\n";
         $dias = ["Sunday"=>"Domingo", "Monday"=>"Lunes", "Tuesday"=>"Martes", "Wednesday"=>"Miércoles", "Thursday"=>"Jueves", "Friday"=>"Viernes", "Saturday"=>"Sábado"];
@@ -229,6 +236,12 @@ class EP_AI_Service
     {
         if (empty($this->api_key)) return new WP_Error('no_key', 'API Key no configurada');
 
+        $stats = $this->get_usage_stats();
+        if ($stats['today'] >= (int)ep_get_option('ep_ai_daily_limit', 100) || 
+            $stats['month'] >= (int)ep_get_option('ep_ai_monthly_limit', 3000)) {
+            return new WP_Error('limit_reached', 'Límite de uso de IA alcanzado para este periodo.');
+        }
+
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent?key=" . $this->api_key;
 
         $payload = [
@@ -267,6 +280,9 @@ class EP_AI_Service
         if (empty($text) && isset($body['error'])) {
             return new WP_Error('gemini_error', $body['error']['message'] ?? 'Error analizando documento');
         }
+
+        // Track usage (Estimation: file size is critical here)
+        $this->track_usage(strlen($file_content), strlen($text));
 
         return $text;
     }
@@ -315,30 +331,43 @@ class EP_AI_Service
         return $body['candidates'][0]['content']['parts'][0]['text'] ?? '';
     }
 
-    private function check_limits()
+    /**
+     * Obtiene estadísticas de uso asegurando que los contadores temporales estén al día.
+     */
+    public function get_usage_stats()
     {
-        $daily_limit = (int) ep_get_option('ep_ai_daily_limit', 100);
-        $monthly_limit = (int) ep_get_option('ep_ai_monthly_limit', 3000);
-
+        $today = date('Y-m-d');
+        $last_reset = get_option('ep_ai_last_reset_day', '');
+        
         $usage_today = (int) get_option('ep_ai_usage_today', 0);
         $usage_month = (int) get_option('ep_ai_usage_month', 0);
+        $total_cost  = (float) get_option('ep_ai_total_cost', 0.0);
 
-        // Reset diario si cambió el día
-        $last_reset = get_option('ep_ai_last_reset_day', '');
-        $today = date('Y-m-d');
         if ($last_reset !== $today) {
             update_option('ep_ai_usage_today', 0);
             update_option('ep_ai_last_reset_day', $today);
             $usage_today = 0;
             
-            // Reset mensual si cambió el mes
             if (substr((string) $last_reset, 0, 7) !== substr($today, 0, 7)) {
                 update_option('ep_ai_usage_month', 0);
                 $usage_month = 0;
             }
         }
 
-        if ($usage_today >= $daily_limit || $usage_month >= $monthly_limit) {
+        return [
+            'today' => $usage_today,
+            'month' => $usage_month,
+            'total_cost' => $total_cost
+        ];
+    }
+
+    private function check_limits()
+    {
+        $stats = $this->get_usage_stats();
+        $daily_limit = (int) ep_get_option('ep_ai_daily_limit', 100);
+        $monthly_limit = (int) ep_get_option('ep_ai_monthly_limit', 3000);
+
+        if ($stats['today'] >= $daily_limit || $stats['month'] >= $monthly_limit) {
             return false;
         }
 

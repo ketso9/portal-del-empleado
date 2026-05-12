@@ -305,6 +305,10 @@ class EP_App_Calendar implements EP_App_Interface
     {
         try {
             check_ajax_referer('ep_calendar_nonce', 'nonce');
+            
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('calendar', 'events_fetched', get_current_user_id());
+            }
 
             $start = isset($_POST['start']) ? sanitize_text_field($_POST['start']) : '';
             $end = isset($_POST['end']) ? sanitize_text_field($_POST['end']) : '';
@@ -771,7 +775,7 @@ class EP_App_Calendar implements EP_App_Interface
         );
 
         $horario_label = $morning ? 'horario de mañana (08:00–14:00)' : 'horario laboral (08:00–18:00)';
-        $nombres_contactos = implode(', ', array_map(fn($c) => $c['displayName'], array_slice($contacts, 0, 4)));
+        $nombres_contactos = implode(', ', array_map(function($c) { return $c['displayName']; }, array_slice($contacts, 0, 4)));
         if ($num_contactos > 4) $nombres_contactos .= ' y ' . ($num_contactos - 4) . ' más';
 
         $cuerpo = [
@@ -851,7 +855,7 @@ class EP_App_Calendar implements EP_App_Interface
                 $start_iso = $slot_start->format('Y-m-d') . 'T' . $slot_start->format('H:i:s');
                 $end_iso   = $slot_end->format('Y-m-d') . 'T' . $slot_end->format('H:i:s');
 
-                $attendees = implode(',', array_map(fn($c) => $c['email'], $contacts));
+                $attendees = implode(',', array_map(function($c) { return $c['email']; }, $contacts));
                 $attendees_encoded = rawurlencode($attendees);
 
                 $teams_url = "https://teams.microsoft.com/l/meeting/new?subject={$subject_encoded}&startTime={$start_iso}&endTime={$end_iso}&attendees={$attendees_encoded}";
@@ -866,7 +870,15 @@ class EP_App_Calendar implements EP_App_Interface
 
         $acciones[] = ['type' => 'Action.OpenUrl', 'title' => '📅 Ver mi Calendario', 'url' => home_url('/?view=calendar&teams=true')];
 
-        return $bot_instance->adaptive_card($cuerpo, $acciones);
+        $card = $bot_instance->adaptive_card($cuerpo, $acciones);
+        
+        // Añadir metadatos para la memoria del bot
+        $card['_meta_data'] = [
+            'display_name' => !empty($contacts) ? $contacts[0]['displayName'] : '',
+            'attendees'    => array_map(function($c) { return $c['displayName']; }, $contacts)
+        ];
+
+        return $card;
     }
 }
 

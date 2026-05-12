@@ -24,95 +24,82 @@ define('EP_SIGNATURE_V4_LOADED', true);
 // --- Start Global Helper Block ---
 /**
  * Define the extended FPDI class at global scope.
- * We load the parent libraries ONLY when this class is about to be defined.
+ * Las librerías se cargan de forma LAZY dentro de handle_prepare_pdf().
+ * Este bloque solo define la clase si las librerías ya están disponibles
+ * (por ejemplo, si otro plugin las cargó antes).
  */
-if (!class_exists('EP_Fpdi_V4')) {
-    // Only load if we are in a context that requires PDF processing (AJAX prepare or Admin)
-    $should_load_pdf_engines = (defined('DOING_AJAX') && DOING_AJAX);
-    if (is_admin()) $should_load_pdf_engines = true;
+function ep_signature_define_fpdi_class() {
+    if (class_exists('EP_Fpdi_V4')) {
+        return true;
+    }
+    if (!class_exists('\\setasign\\Fpdi\\Tcpdf\\Fpdi')) {
+        return false;
+    }
 
-    if ($should_load_pdf_engines) {
-        $base_libs_path = EMPLOYEE_PORTAL_PATH . 'plugins/ep-signature/libs/';
-        
-        // Load TCPDF
-        if (!class_exists('TCPDF', false)) {
-            $tcpdf_main = $base_libs_path . 'tcpdf/tcpdf.php';
-            if (file_exists($tcpdf_main)) require_once $tcpdf_main;
+    class EP_Fpdi_V4 extends \setasign\Fpdi\Tcpdf\Fpdi {
+        public function getPageAnnots($pageNumber) {
+            try {
+                $reader = $this->getPdfReader($this->currentReaderId);
+                $page = $reader->getPage($pageNumber);
+                $dict = $page->getPageDictionary();
+                $annots = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($dict, 'Annots'), $reader->getParser());
+                return ($annots instanceof \setasign\Fpdi\PdfParser\Type\PdfArray) ? $annots : null;
+            } catch (\Exception $e) {
+                return null;
+            }
         }
-        
-        // Load FPDI Autoloader
-        if (!class_exists('\setasign\Fpdi\Tcpdf\Fpdi', false)) {
-            $fpdi_auto = $base_libs_path . 'fpdi/src/autoload.php';
-            if (file_exists($fpdi_auto)) require_once $fpdi_auto;
-        }
 
-        if (class_exists('\setasign\Fpdi\Tcpdf\Fpdi')) {
+        public function importAnnotAppearance($annot, $pageNumber) {
+            try {
+                $reader = $this->getPdfReader($this->currentReaderId);
+                $parser = $reader->getParser();
+                $annotDict = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($annot, $parser);
+                if (!($annotDict instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary)) return false;
 
-            class EP_Fpdi_V4 extends \setasign\Fpdi\Tcpdf\Fpdi {
-                public function getPageAnnots($pageNumber) {
-                    try {
-                        $reader = $this->getPdfReader($this->currentReaderId);
-                        $page = $reader->getPage($pageNumber);
-                        $dict = $page->getPageDictionary();
-                        $annots = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($dict, 'Annots'), $reader->getParser());
-                        return ($annots instanceof \setasign\Fpdi\PdfParser\Type\PdfArray) ? $annots : null;
-                    } catch (\Exception $e) {
-                        return null;
-                    }
+                $page = $reader->getPage($pageNumber);
+                $bbox = $page->getBoundary(\setasign\Fpdi\PdfReader\PageBoundaries::CROP_BOX);
+                $llx = $bbox->getLlx();
+                $lly = $bbox->getLly();
+
+                $ap = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($annotDict, 'AP'), $parser);
+                if (!($ap instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary)) return false;
+
+                $n = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($ap, 'N'), $parser);
+                if (!($n instanceof \setasign\Fpdi\PdfParser\Type\PdfStream)) return false;
+
+                $rect = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($annotDict, 'Rect'), $parser);
+                if (!($rect instanceof \setasign\Fpdi\PdfParser\Type\PdfArray) || count($rect->value) !== 4) return false;
+
+                $lx = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[0], $parser))->value;
+                $ly = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[1], $parser))->value;
+                $ux = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[2], $parser))->value;
+                $uy = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[3], $parser))->value;
+
+                $width = abs($ux - $lx); $height = abs($uy - $ly);
+
+                // SANITY CHECK: Evitar dimensiones cero que rompen TCPDF
+                if ($width <= 0.0001 || $height <= 0.0001) {
+                    return false;
                 }
 
-                public function importAnnotAppearance($annot, $pageNumber) {
-                    try {
-                        $reader = $this->getPdfReader($this->currentReaderId);
-                        $parser = $reader->getParser();
-                        $annotDict = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($annot, $parser);
-                        if (!($annotDict instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary)) return false;
+                $rel_x = ($lx - $llx); $rel_y_top = ($uy - $lly);
 
-                        $page = $reader->getPage($pageNumber);
-                        $bbox = $page->getBoundary(\setasign\Fpdi\PdfReader\PageBoundaries::CROP_BOX);
-                        $llx = $bbox->getLlx();
-                        $lly = $bbox->getLly();
+                $tplId = 'ANN_TPL_' . $this->getNextTemplateId();
+                $this->importedPages[$tplId] = [
+                    'objectNumber' => null, 'readerId' => $this->currentReaderId,
+                    'id' => 'TPL' . $this->getNextTemplateId(),
+                    'width' => $width / $this->k, 'height' => $height / $this->k,
+                    'stream' => $n, 'externalLinks' => []
+                ];
 
-                        $ap = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($annotDict, 'AP'), $parser);
-                        if (!($ap instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary)) return false;
-
-                        $n = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($ap, 'N'), $parser);
-                        if (!($n instanceof \setasign\Fpdi\PdfParser\Type\PdfStream)) return false;
-
-                        $rect = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($annotDict, 'Rect'), $parser);
-                        if (!($rect instanceof \setasign\Fpdi\PdfParser\Type\PdfArray) || count($rect->value) !== 4) return false;
-
-                        $lx = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[0], $parser))->value;
-                        $ly = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[1], $parser))->value;
-                        $ux = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[2], $parser))->value;
-                        $uy = \setasign\Fpdi\PdfParser\Type\PdfNumeric::ensure(\setasign\Fpdi\PdfParser\Type\PdfType::resolve($rect->value[3], $parser))->value;
-
-                        $width = abs($ux - $lx); $height = abs($uy - $ly);
-                        
-                        // SANITY CHECK: Evitar dimensiones cero que rompen TCPDF
-                        if ($width <= 0.0001 || $height <= 0.0001) {
-                            return false;
-                        }
-
-                        $rel_x = ($lx - $llx); $rel_y_top = ($uy - $lly);
-
-                        $tplId = 'ANN_TPL_' . $this->getNextTemplateId();
-                        $this->importedPages[$tplId] = [
-                            'objectNumber' => null, 'readerId' => $this->currentReaderId,
-                            'id' => 'TPL' . $this->getNextTemplateId(),
-                            'width' => $width / $this->k, 'height' => $height / $this->k,
-                            'stream' => $n, 'externalLinks' => []
-                        ];
-
-                        return ['id' => $tplId, 'x' => $rel_x / $this->k, 'y' => $rel_y_top / $this->k, 'w' => $width / $this->k, 'h' => $height / $this->k];
-                    } catch (\Exception $e) {
-                        ep_error_log("EP_App_Signature_V4: Error importing annot: " . $e->getMessage());
-                        return false;
-                    }
-                }
+                return ['id' => $tplId, 'x' => $rel_x / $this->k, 'y' => $rel_y_top / $this->k, 'w' => $width / $this->k, 'h' => $height / $this->k];
+            } catch (\Exception $e) {
+                ep_error_log("EP_App_Signature_V4: Error importing annot: " . $e->getMessage());
+                return false;
             }
         }
     }
+    return true;
 }
 // --- End Global Helper Block ---
 
@@ -211,12 +198,8 @@ class EP_App_Signature_V4 implements EP_App_Interface
         return file_put_contents($file_path, 'ENC:' . $iv . $encrypted);
     }
 
-    private function decrypt_file_content($file_path)
+    private function decrypt_content($content)
     {
-        if (!file_exists($file_path))
-            return false;
-        $content = file_get_contents($file_path);
-
         // Check if it's one of our encrypted files using 8-bit safe check
         if (mb_substr($content, 0, 4, '8bit') !== 'ENC:') {
             return $content; // Return as is (legacy or unencrypted)
@@ -229,6 +212,14 @@ class EP_App_Signature_V4 implements EP_App_Interface
         $encrypted = mb_substr($content, $iv_len, null, '8bit');
 
         return openssl_decrypt($encrypted, 'aes-256-ctr', $key, OPENSSL_RAW_DATA, $iv);
+    }
+
+    private function decrypt_file_content($file_path)
+    {
+        if (!file_exists($file_path))
+            return false;
+        $content = file_get_contents($file_path);
+        return $this->decrypt_content($content);
     }
 
     private function decrypt_file_to_temp($file_path, $original_name)
@@ -279,7 +270,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
         wp_enqueue_script('fds-autoscript', $this->base_url . 'libs/autoscript.js', array('jquery'), '1.0.4');
         wp_enqueue_script('pdfjs', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js', array(), '2.12.313');
 
-        wp_enqueue_script('ep-signature-js', $this->base_url . 'assets/js/ep-signature.js', array('jquery', 'fds-autoscript'), '1.1.0');
+        wp_enqueue_script('ep-signature-js', $this->base_url . 'assets/js/ep-signature.js', array('jquery', 'fds-autoscript'), '1.1.2');
 
         // Get permission level
         global $ep_app_manager;
@@ -308,6 +299,10 @@ class EP_App_Signature_V4 implements EP_App_Interface
         if (isset($_GET['sub_action']) && $_GET['sub_action'] === 'verify' && isset($_GET['csv'])) {
             $this->render_verification_view(sanitize_text_field($_GET['csv']));
             return;
+        }
+
+        if (function_exists('ep_stats_log')) {
+            ep_stats_log('signature', 'app_viewed', get_current_user_id());
         }
 
         include $this->base_path . 'views/signature-view.php';
@@ -447,6 +442,9 @@ class EP_App_Signature_V4 implements EP_App_Interface
             if (file_exists($doc->ruta_documento_firmado)) {
                 unlink($doc->ruta_documento_firmado);
             }
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('signature', 'document_deleted', get_current_user_id(), ['doc_id' => $id, 'filename' => $doc->nombre_archivo_original]);
+            }
             // Delete DB record
             $wpdb->delete($table, ['id' => $id]);
             wp_send_json_success(['message' => 'Documento eliminado']);
@@ -473,6 +471,10 @@ class EP_App_Signature_V4 implements EP_App_Interface
                 $pdf_content = base64_decode($_POST['original_pdf_base64']);
             }
 
+            if (!empty($pdf_content)) {
+                $pdf_content = $this->decrypt_content($pdf_content);
+            }
+
             if (empty($pdf_content)) {
                 wp_send_json_error(['message' => 'Faltan datos del PDF.']);
             }
@@ -497,48 +499,79 @@ class EP_App_Signature_V4 implements EP_App_Interface
                 ];
             }
 
-            // Robust Library Loading
+            // === CARGA ROBUSTA DE LIBRERÍAS PDF ===
+            // Paso 1: TCPDF
             if (!class_exists('TCPDF', false)) {
-                if (file_exists($this->libs_path . 'tcpdf/tcpdf.php')) {
-                    require_once $this->libs_path . 'tcpdf/tcpdf.php';
-                }
-            }
-            if (!class_exists('setasign\Fpdi\Tcpdf\Fpdi', false)) {
-                $fpdi_autoload = $this->libs_path . 'fpdi/src/autoload.php';
-                if (file_exists($fpdi_autoload)) {
-                    require_once $fpdi_autoload;
+                $tcpdf_path = $this->libs_path . 'tcpdf/tcpdf.php';
+                if (file_exists($tcpdf_path)) {
+                    require_once $tcpdf_path;
+                } else {
+                    wp_send_json_error(['message' => 'Error: No se encontró la librería TCPDF en: ' . $tcpdf_path]);
+                    return;
                 }
             }
 
-            // Load commercial PDF-Parser (Essential for signed PDFs / incremental updates)
+            // Paso 2: FPDI Autoloader
+            if (!class_exists('\\setasign\\Fpdi\\Tcpdf\\Fpdi', false)) {
+                $fpdi_autoload = $this->libs_path . 'fpdi/src/autoload.php';
+                if (file_exists($fpdi_autoload)) {
+                    require_once $fpdi_autoload;
+                } else {
+                    wp_send_json_error(['message' => 'Error: No se encontró el autoloader de FPDI en: ' . $fpdi_autoload]);
+                    return;
+                }
+            }
+
+            // Paso 3: Definir EP_Fpdi_V4 ahora que las libs están cargadas
+            ep_signature_define_fpdi_class();
+
+            // Verificar que la clase quedó definida
+            if (!class_exists('EP_Fpdi_V4')) {
+                wp_send_json_error(['message' => 'Error: No se pudo definir la clase EP_Fpdi_V4. Verifique que TCPDF y FPDI se cargaron correctamente.']);
+                return;
+            }
+
+            // Paso 4: PDF-Parser (Essential for signed PDFs / incremental updates)
             $parser_autoload = $this->libs_path . 'pdf-mod/src/autoload.php';
             if (!file_exists($parser_autoload)) {
                 $wp_uploads = wp_upload_dir();
                 $parser_autoload = $wp_uploads['basedir'] . '/pdf-mod/src/autoload.php';
             }
-
             if (file_exists($parser_autoload)) {
                 require_once $parser_autoload;
                 ep_error_log('EP_App_Signature_V4: [LIBS] PDF-Parser loaded.');
             }
 
+            // Paso 5: QR Code
             if (!class_exists('QRcode', false)) {
                 if (file_exists($this->libs_path . 'phpqrcode/qrlib.php')) {
                     require_once $this->libs_path . 'phpqrcode/qrlib.php';
                 }
             }
 
-            if (!class_exists('EP_Fpdi_V4')) {
-                wp_send_json_error(['message' => 'Error: Clase EP_Fpdi_V4 no encontrada.']);
-                return;
-            }
+            ep_error_log('EP_App_Signature_V4: [LIBS] Todas las librerías cargadas. EP_Fpdi_V4 disponible.');
             $pdf = new EP_Fpdi_V4();
             $pdf->setPrintHeader(false);
             $pdf->setPrintFooter(false);
             $pdf->SetAutoPageBreak(false);
 
             $stream = \setasign\Fpdi\PdfParser\StreamReader::createByString($pdf_content);
-            $page_count = $pdf->setSourceFile($stream);
+            try {
+                $page_count = $pdf->setSourceFile($stream);
+            } catch (\Throwable $e) {
+                ep_error_log('EP_App_Signature_V4: [WARN] Fallo en apertura de PDF (¿protegido?): ' . $e->getMessage());
+                // Si el PDF está encriptado/protegido, permitimos firmar el original como fallback
+                $error_msg = $e->getMessage();
+                if (stripos($error_msg, 'encrypted') !== false || stripos($error_msg, 'permission') !== false || stripos($error_msg, 'authenticated') !== false) {
+                    wp_send_json_success([
+                        'pdf_data_to_sign_base64' => base64_encode($pdf_content),
+                        'message' => 'Documento protegido: No se puede añadir el pie de página, se firmará el original.',
+                        'skipped_prep' => true
+                    ]);
+                    return;
+                }
+                throw $e;
+            }
 
             $qr_img = null;
             if ($pdf_hash_original && class_exists('QRcode')) {
@@ -686,6 +719,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
             $original_hash = isset($_POST['pdf_hash']) ? sanitize_text_field($_POST['pdf_hash']) : '';
             $request_id = isset($_POST['request_id']) ? absint($_POST['request_id']) : 0;
             $cert_info_json = isset($_POST['cert_info']) ? wp_unslash($_POST['cert_info']) : null;
+            $send_to_sender = isset($_POST['send_to_sender']) && $_POST['send_to_sender'] === '1';
 
             if (empty($signature_b64)) {
                 wp_send_json_error(['message' => 'Faltan los datos de la firma.']);
@@ -730,11 +764,50 @@ class EP_App_Signature_V4 implements EP_App_Interface
                 );
 
                 if ($request_id) {
+                    $old_doc = $wpdb->get_row($wpdb->prepare("SELECT solicitante_id FROM $table_name WHERE id = %d", $request_id));
                     $wpdb->update($table_name, $data, ['id' => $request_id]);
                     $id_to_return = $request_id;
+
+                    // Si se solicita enviar al remitente y hay un solicitante
+                    if ($send_to_sender && $old_doc && !empty($old_doc->solicitante_id)) {
+                        $this->send_signed_copy_to_requester($id_to_return, $old_doc->solicitante_id);
+
+                        // SI VIENE DE EP-DOWNLOADS: Actualizar el estado del documento original
+                        // Buscamos si hay un post vinculado
+                        global $wpdb;
+                        $external_post_id = $wpdb->get_var($wpdb->prepare(
+                            "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_ep_signature_request_id' AND meta_value = %s",
+                            $id_to_return
+                        ));
+
+                        if ($external_post_id) {
+                            update_post_meta($external_post_id, '_ep_document_review_status', 'ok');
+                            update_post_meta($external_post_id, '_ep_document_is_signed', '1');
+                            update_post_meta($external_post_id, '_ep_signature_request_completed', '1');
+                            
+                            // Notificar al solicitante en el portal también
+                            if (class_exists('EP_Notifications')) {
+                                EP_Notifications::add_notification($old_doc->solicitante_id, [
+                                    'type' => 'success',
+                                    'title' => 'Documento Firmado',
+                                    'message' => wp_get_current_user()->display_name . ' ha firmado el documento "' . $filename . '".',
+                                    'link' => '?view=downloads'
+                                ]);
+                            }
+                        }
+                    }
                 } else {
                     $wpdb->insert($table_name, $data);
                     $id_to_return = $wpdb->insert_id;
+                }
+
+                // Log to stats
+                if (function_exists('ep_stats_log')) {
+                    ep_stats_log('signature', 'document_signed', get_current_user_id(), [
+                        'doc_id' => $id_to_return,
+                        'filename' => $filename,
+                        'signer' => $signer_name
+                    ]);
                 }
 
                 wp_send_json_success([
@@ -746,6 +819,33 @@ class EP_App_Signature_V4 implements EP_App_Interface
         } catch (\Throwable $e) {
             wp_send_json_error(['message' => 'Error crítico al guardar: ' . $e->getMessage()]);
         }
+    }
+
+    private function send_signed_copy_to_requester($doc_id, $requester_id)
+    {
+        $requester = get_userdata($requester_id);
+        if (!$requester) return false;
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'fds_documentos';
+        $doc = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $doc_id));
+        if (!$doc || !file_exists($doc->ruta_documento_firmado)) return false;
+
+        $temp_path = $this->decrypt_file_to_temp($doc->ruta_documento_firmado, $doc->nombre_archivo_original);
+        if (!$temp_path) return false;
+
+        $signer = wp_get_current_user();
+        $to = $requester->user_email;
+        $subject = 'Documento Firmado: ' . $doc->nombre_archivo_original;
+        $body = "Hola " . $requester->display_name . ",\n\n" . $signer->display_name . " ha firmado el documento \"" . $doc->nombre_archivo_original . "\".\n\nAdjunto encontrarás la copia firmada.\n\nSaludos.";
+        $headers = array('Content-Type: text/plain; charset=UTF-8');
+
+        $sent = wp_mail($to, $subject, $body, $headers, [$temp_path]);
+
+        // Limpieza del temporal después de un tiempo
+        wp_schedule_single_event(time() + 600, 'ep_cleanup_temp_file', [$temp_path]);
+
+        return $sent;
     }
 
     private function handle_save_user_dni()
@@ -871,6 +971,15 @@ class EP_App_Signature_V4 implements EP_App_Interface
 
             $request_id = $wpdb->insert_id;
 
+            // Log to stats
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('signature', 'signature_requested', get_current_user_id(), [
+                    'request_id' => $request_id,
+                    'filename' => $file['name'],
+                    'target_user_id' => $recipient_id
+                ]);
+            }
+
             // Add Portal Notification
             if (class_exists('EP_Notifications')) {
                 EP_Notifications::add_notification($recipient_id, [
@@ -916,6 +1025,15 @@ class EP_App_Signature_V4 implements EP_App_Interface
             header('Content-Type: application/pdf');
             header('Content-Disposition: attachment; filename="' . $doc->nombre_archivo_original . '"');
             header('Content-Length: ' . mb_strlen($content, '8bit'));
+            
+            // Log to stats
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('signature', 'document_download', get_current_user_id(), [
+                    'doc_id' => $id,
+                    'filename' => $doc->nombre_archivo_original
+                ]);
+            }
+
             echo $content;
             exit;
         } else {
@@ -1070,6 +1188,9 @@ class EP_App_Signature_V4 implements EP_App_Interface
                     unlink($doc->ruta_documento_firmado);
                 }
                 $wpdb->delete($table, ['id' => $id]);
+                if (function_exists('ep_stats_log')) {
+                    ep_stats_log('signature', 'document_deleted_bulk', get_current_user_id(), ['doc_id' => $id, 'filename' => $doc->nombre_archivo_original]);
+                }
                 $deleted_count++;
             }
         }
@@ -1134,18 +1255,28 @@ class EP_App_Signature_V4 implements EP_App_Interface
         }
 
         $zip = new \ZipArchive();
-        if ($zip->open($zip_path, \ZipArchive::CREATE) !== TRUE) {
+        if ($zip->open($zip_path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== TRUE) {
             wp_send_json_error(['message' => 'No se pudo crear el archivo ZIP']);
         }
 
+        $temp_pdfs_for_zip = [];
         foreach ($valid_files as $file) {
             $content = $this->decrypt_file_content($file['path']);
             if ($content !== false) {
-                $zip->addFromString($file['name'], $content);
+                $tmp_pdf = $fds_dir . 'tmp_z_' . bin2hex(random_bytes(4)) . '.pdf';
+                file_put_contents($tmp_pdf, $content);
+                $zip->addFile($tmp_pdf, $file['name']);
+                $temp_pdfs_for_zip[] = $tmp_pdf;
             }
         }
         $zip->close();
+        
+        // Limpiar temporales
+        if (!empty($temp_pdfs_for_zip)) {
+            foreach ($temp_pdfs_for_zip as $tp) { @unlink($tp); }
+        }
 
+        clearstatcache(true, $zip_path);
         wp_send_json_success(['url' => $upload_dir['baseurl'] . '/fds-documents/' . $zip_name]);
     }
 
@@ -1174,6 +1305,20 @@ class EP_App_Signature_V4 implements EP_App_Interface
                 foreach ($urls as $url) {
                     if (preg_match('/id=([0-9]+)/', $url, $matches)) {
                         $ids[] = intval($matches[1]);
+                    } else {
+                        // Si no tiene ID, puede ser un ZIP de lote o un archivo directo
+                        $filename = basename($url);
+                        $file_path = $fds_dir . $filename;
+                        if (file_exists($file_path)) {
+                            clearstatcache(true, $file_path);
+                            // Crear una copia temporal para el envío para evitar bloqueos/corrupción
+                            $temp_send_path = $fds_dir . 'mail_tmp_' . bin2hex(random_bytes(4)) . '_' . $filename;
+                            if (copy($file_path, $temp_send_path)) {
+                                $attachments[] = $temp_send_path;
+                                $temp_files[] = $temp_send_path;
+                                clearstatcache(true, $temp_send_path);
+                            }
+                        }
                     }
                 }
                 $ids = array_unique($ids);
@@ -1242,6 +1387,66 @@ class EP_App_Signature_V4 implements EP_App_Interface
 
         include $this->base_path . 'views/sent-requests-view.php';
         die();
+    }
+
+    /**
+     * Permite a otros plugins añadir una solicitud de firma programáticamente.
+     */
+    public static function add_signature_request($recipient_id, $file_path, $title, $solicitor_id = 0, $external_post_id = 0)
+    {
+        global $wpdb;
+        $upload_dir = wp_upload_dir();
+        $fds_dir = $upload_dir['basedir'] . '/fds-documents/';
+        if (!file_exists($fds_dir)) wp_mkdir_p($fds_dir);
+
+        $final_filename = 'req_' . date('Ymd_His') . '_' . sanitize_file_name(basename($file_path));
+        $dest_path = $fds_dir . $final_filename;
+
+        if (copy($file_path, $dest_path)) {
+            // Cifrar el archivo en el repositorio de firmas
+            $instance = new self();
+            $instance->encrypt_file($dest_path);
+
+            $pdf_content = $instance->decrypt_file_content($dest_path);
+            $pdf_hash = hash('sha256', $pdf_content);
+
+            $table_name = $wpdb->prefix . 'fds_documentos';
+            $wpdb->insert($table_name, [
+                'nombre_documento' => $final_filename,
+                'nombre_archivo_original' => basename($file_path),
+                'ruta_documento_firmado' => '', // Aún no firmado
+                'url_documento_firmado' => '',
+                'usuario_id' => $recipient_id,
+                'solicitante_id' => $solicitor_id,
+                'hash_documento_original' => $pdf_hash,
+                'estado' => 'pendiente',
+                'fecha_firma' => current_time('mysql'),
+                'csv_documento' => $pdf_hash
+            ]);
+
+            $request_id = $wpdb->insert_id;
+
+            // Guardar el ID externo para trazabilidad
+            if ($external_post_id) {
+                update_post_meta($external_post_id, '_ep_signature_request_id', $request_id);
+            }
+
+            // Add Portal Notification
+            if (class_exists('EP_Notifications')) {
+                $solicitor = get_userdata($solicitor_id);
+                $solicitor_name = $solicitor ? $solicitor->display_name : 'Sistema';
+                EP_Notifications::add_notification($recipient_id, [
+                    'type' => 'warning',
+                    'title' => 'Nueva solicitud de firma',
+                    'message' => $solicitor_name . ' te ha enviado el documento "' . $title . '" para firmar.',
+                    'link' => '?view=signature'
+                ]);
+            }
+
+            return $request_id;
+        } else {
+            return new WP_Error('upload_error', 'Error al copiar el archivo al repositorio de firmas.');
+        }
     }
 }
 

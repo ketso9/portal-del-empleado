@@ -193,6 +193,14 @@ jQuery(document).ready(function ($) {
         renderQueue();
         await initPDF(item.buffer);
         updateCoordsDisplay();
+
+        // Mostrar opción de enviar al remitente solo si es una solicitud recibida (Buzón)
+        console.log('EP_App_Signature: [DEBUG] item.requestId is:', item.requestId);
+        if (item.requestId) {
+            $('#fds-post-sign-options').fadeIn();
+        } else {
+            $('#fds-post-sign-options').hide();
+        }
     }
 
     async function calculateHash(buffer) {
@@ -649,7 +657,8 @@ jQuery(document).ready(function ($) {
                         $downloadLink.removeClass('ep-btn-loading').html('<i class="fa-solid fa-download"></i> Descargar Todo (ZIP)');
                         if (response.success) {
                             $downloadLink.attr('href', response.data.url).off('click');
-                            $emailBtn.attr('data-urls', JSON.stringify([response.data.url])).prop('disabled', false); // Enviar el ZIP por defecto
+                            // Para el email, enviamos los archivos individuales en lugar del ZIP para mayor fiabilidad
+                            $emailBtn.attr('data-urls', JSON.stringify(signedFiles.map(f => f.download_url))).prop('disabled', false); 
                         } else {
                             $downloadLink.attr('href', '#').on('click', (e) => { e.preventDefault(); alert('Error al generar ZIP: ' + response.data.message); });
                         }
@@ -712,7 +721,12 @@ jQuery(document).ready(function ($) {
                 console.log('EP_App_Signature: [RESPONSE] Prepare PDF:', response);
                 if (response.success) {
                     try {
-                        updateStatus('Esperando respuesta de AutoFirma...', 50);
+                        if (response.data.skipped_prep) {
+                            updateStatus('Documento protegido. Firmando original...', 40);
+                            console.warn('EP_App_Signature: [WARN] ' + response.data.message);
+                        } else {
+                            updateStatus('Esperando respuesta de AutoFirma...', 50);
+                        }
                         const signResults = await signWithAutoFirma(response.data.pdf_data_to_sign_base64);
                         saveSignedDocument(signResults.signature, item, signResults.certificate);
                     } catch (err) {
@@ -756,6 +770,7 @@ jQuery(document).ready(function ($) {
 
         if (item.requestId) {
             formData.append('request_id', item.requestId);
+            formData.append('send_to_sender', $('#fds-send-to-sender').is(':checked') ? '1' : '0');
         }
 
         $.ajax({

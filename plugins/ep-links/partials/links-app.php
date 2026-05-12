@@ -303,5 +303,23 @@ jQuery(document).ready(function($) {
         $(this).addClass('is-selected');
         $('#ep_icon_picker_modal').fadeOut(200);
     });
+
+    // Track Link Clicks
+    $('.ep-link-card').on('click', function() {
+        const title = $(this).find('h3').text();
+        const url = $(this).attr('href');
+        
+        $.ajax({
+            url: ajax_url,
+            type: 'POST',
+            data: {
+                action: 'ep_links_action',
+                link_action: 'track_click',
+                security: nonce,
+                title: title,
+                url: url
+            }
+        });
+    });
 });
 </script>

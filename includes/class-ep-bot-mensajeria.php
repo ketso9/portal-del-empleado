@@ -704,7 +704,7 @@ class EP_Bot_Mensajeria
             case 'CONVERSATIONAL':
                 if (!empty($intent_data['suggested_reply'])) {
                     if ($conversation_id) {
-                        EP_Bot_Context::set_context($conversation_id, [
+                        EP_Bot_Context::set_context($user_id, [
                             'intent' => 'CONVERSATIONAL',
                             'params' => ['search_term' => mb_substr($texto, 0, 50)],
                             'results' => []
@@ -719,7 +719,7 @@ class EP_Bot_Mensajeria
                 $dynamic_response = apply_filters('ep_bot_handle_intent_' . strtolower($intent), null, $intent_data, $user_id, $texto, $this);
                 if ($dynamic_response !== null) {
                     if ($conversation_id) {
-                        EP_Bot_Context::set_context($conversation_id, [
+                        EP_Bot_Context::set_context($user_id, [
                             'intent' => $intent,
                             'params' => $params,
                             'results' => $dynamic_response['_meta_data'] ?? []
@@ -732,7 +732,7 @@ class EP_Bot_Mensajeria
             case 'UNKNOWN':
                 if (!empty($intent_data['suggested_reply'])) {
                     if ($conversation_id) {
-                        EP_Bot_Context::set_context($conversation_id, [
+                        EP_Bot_Context::set_context($user_id, [
                             'intent' => 'CONVERSATIONAL',
                             'params' => ['search_term' => mb_substr($texto, 0, 50)],
                             'results' => []

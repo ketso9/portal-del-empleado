@@ -27,7 +27,7 @@ $nonce = wp_create_nonce('ep_calendar_nonce');
                     <!-- Checkboxes will be injected here -->
                 </div>
                 
-                <button id="btn-add-calendar" class="ep-btn-small" style="margin-top:15px; width:100%; display:flex; align-items:center; justify-content:center; gap:8px;">
+                <button id="btn-add-calendar" class="ep-btn-small" style="margin-top: 15px; width: 100%;">
                     <i class="fa-solid fa-user-plus"></i> Añadir Compañero
                 </button>
             </div>
@@ -112,6 +112,37 @@ $nonce = wp_create_nonce('ep_calendar_nonce');
         height: 10px;
         border-radius: 50%;
         display: inline-block;
+    }
+
+    /* Estilo para botones pequeños tipo Portal */
+    .ep-btn-small {
+        background: #ffffff !important;
+        color: #1e293b !important;
+        border: 1px solid #e2e8f0 !important;
+        padding: 8px 16px !important;
+        border-radius: 20px !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        text-decoration: none !important;
+    }
+
+    .ep-btn-small:hover {
+        background: #f8fafc !important;
+        border-color: var(--ep-primary) !important;
+        color: var(--ep-primary) !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+        transform: translateY(-1px);
+    }
+
+    .ep-btn-small i {
+        font-size: 0.9rem !important;
     }
 
     /* Responsive */

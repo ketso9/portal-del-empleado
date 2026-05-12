@@ -540,6 +540,14 @@ class EP_Downloads
             if (ob_get_level())
                 ob_end_clean();
 
+            // Log to stats
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('downloads', 'document_download', get_current_user_id(), [
+                    'post_id' => $post_id,
+                    'filename' => $filename
+                ]);
+            }
+
             if ($is_encrypted && isset($content)) {
                 echo $content;
             } else {
@@ -555,6 +563,13 @@ class EP_Downloads
             $download_url = EP_Auth_O365::get_instance()->get_item_download_url((int) $target_user_id, $onedrive_id);
 
             if (!is_wp_error($download_url)) {
+                // Log to stats
+                if (function_exists('ep_stats_log')) {
+                    ep_stats_log('downloads', 'document_download_onedrive', get_current_user_id(), [
+                        'post_id' => $post_id,
+                        'onedrive_id' => $onedrive_id
+                    ]);
+                }
                 wp_redirect($download_url);
                 exit;
             }
@@ -723,12 +738,14 @@ class EP_Downloads
 
         if ($attachment_id) {
             $file_path = get_attached_file($attachment_id);
-            if (!$file_path || !file_exists($file_path)) {
-                wp_send_json_error('El archivo local no existe en el servidor.');
+            if ($file_path && file_exists($file_path)) {
+                // Desencriptar a temp
+                $temp_file = $this->decrypt_to_temp($file_path, basename($file_path));
+                $is_temp = true;
             }
-            // Desencriptar a temp
-            $temp_file = $this->decrypt_to_temp($file_path, basename($file_path));
-        } elseif ($onedrive_id && class_exists('EP_Auth_O365')) {
+        }
+        
+        if (!$temp_file && $onedrive_id && class_exists('EP_Auth_O365')) {
             $target_user_id = get_post_meta($post_id, '_ep_document_target_user', true) ?: get_post_field('post_author', $post_id);
             
             // Si es public, target user es el admin/sync principal
@@ -757,6 +774,7 @@ class EP_Downloads
             $new_temp_file = $temp_download . '.' . $ext;
             rename($temp_download, $new_temp_file);
             $temp_file = $new_temp_file;
+            $is_temp = true;
         } else {
              wp_send_json_error('No se encontró el archivo local ni en OneDrive.');
         }
@@ -781,11 +799,12 @@ class EP_Downloads
                 $signer_id,
                 $temp_file,
                 $title,
-                get_current_user_id()
+                get_current_user_id(),
+                $post_id // Pasamos el ID del documento para trazabilidad
             );
 
-            // Limpieza del archivo temporal
-            if (file_exists($temp_file)) {
+            // Limpieza del archivo temporal (SOLO si es una descarga temporal de OneDrive)
+            if (isset($is_temp) && $is_temp && file_exists($temp_file)) {
                 @unlink($temp_file);
             }
 
@@ -1145,7 +1164,8 @@ class EP_Downloads
         }
 
         // Para la vista PRIVADA: añadir también documentos compartidos con el usuario actual
-        if (!$is_global) {
+        // IMPORTANTE: Solo mostramos compartidos en la RAIZ para evitar duplicados en subcarpetas
+        if (!$is_global && $folder_id === 0) {
             $shared_args = array(
                 'post_type'      => self::POST_TYPE,
                 'posts_per_page' => -1,
@@ -1154,17 +1174,12 @@ class EP_Downloads
                     'relation' => 'OR',
                     array(
                         'key'     => '_ep_shared_with',
-                        'value'   => sprintf('s:%d:"%s";', strlen((string)$user_id), $user_id),
-                        'compare' => 'LIKE'
-                    ),
-                    array(
-                        'key'     => '_ep_shared_with',
-                        'value'   => 'i:' . $user_id . ';',
-                        'compare' => 'LIKE'
-                    ),
-                    array(
-                        'key'     => '_ep_shared_with',
                         'value'   => '"' . $user_id . '"',
+                        'compare' => 'LIKE'
+                    ),
+                    array(
+                        'key'     => '_ep_shared_with',
+                        'value'   => ':' . $user_id . ';',
                         'compare' => 'LIKE'
                     )
                 )

@@ -322,6 +322,12 @@ class EP_Contratos
         $row['can_upload'] = self::current_user_can_write();
         $row['can_delete'] = current_user_can('administrator');
 
+        if (function_exists('ep_stats_log')) {
+            ep_stats_log('contratos', 'contract_created', get_current_user_id(), [
+                'contract_id' => $new_id,
+                'numero' => $numero
+            ]);
+        }
         wp_send_json_success(['contrato' => $row, 'message' => "Contrato {$numero} creado correctamente."]);
     }
 
@@ -383,6 +389,12 @@ class EP_Contratos
         $row['can_upload'] = self::current_user_can_write();
         $row['can_delete'] = $is_admin;
 
+        if (function_exists('ep_stats_log')) {
+            ep_stats_log('contratos', 'contract_updated', get_current_user_id(), [
+                'contract_id' => $id,
+                'numero' => $row['numero']
+            ]);
+        }
         wp_send_json_success(['contrato' => $row, 'message' => 'Contrato actualizado correctamente.']);
     }
 
@@ -459,6 +471,12 @@ class EP_Contratos
             ['%d', '%s'],
             ['%d']
         );
+        if (function_exists('ep_stats_log')) {
+            ep_stats_log('contratos', 'contract_signed', get_current_user_id(), [
+                'contract_id' => $id,
+                'numero' => $contrato['numero']
+            ]);
+        }
 
         // Notificar que el contrato ha sido firmado y bloqueado
         wp_schedule_single_event(time(), 'ep_contratos_notify_bg', [$id, 'contract_signed', get_current_user_id()]);
