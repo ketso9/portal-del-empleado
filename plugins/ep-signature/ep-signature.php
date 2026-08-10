@@ -67,6 +67,26 @@ function ep_signature_define_fpdi_class() {
                 $n = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($ap, 'N'), $parser);
                 if (!($n instanceof \setasign\Fpdi\PdfParser\Type\PdfStream)) return false;
 
+                // --- ASEGURAR CABECERA FORM XOBJECT VÁLIDA PARA ACROBAT (Evita "Se esperaba un objeto nominal") ---
+                if ($n->value instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary) {
+                    $n->value->value['Type'] = \setasign\Fpdi\PdfParser\Type\PdfName::create('XObject');
+                    $n->value->value['Subtype'] = \setasign\Fpdi\PdfParser\Type\PdfName::create('Form');
+                    if (!isset($n->value->value['FormType'])) {
+                        $n->value->value['FormType'] = \setasign\Fpdi\PdfParser\Type\PdfNumeric::create(1);
+                    }
+                    if (!isset($n->value->value['Matrix'])) {
+                        $n->value->value['Matrix'] = \setasign\Fpdi\PdfParser\Type\PdfArray::create([
+                            \setasign\Fpdi\PdfParser\Type\PdfNumeric::create(1),
+                            \setasign\Fpdi\PdfParser\Type\PdfNumeric::create(0),
+                            \setasign\Fpdi\PdfParser\Type\PdfNumeric::create(0),
+                            \setasign\Fpdi\PdfParser\Type\PdfNumeric::create(1),
+                            \setasign\Fpdi\PdfParser\Type\PdfNumeric::create(0),
+                            \setasign\Fpdi\PdfParser\Type\PdfNumeric::create(0)
+                        ]);
+                    }
+                }
+                // --------------------------------------------------------------------------------------------------
+
                 $rect = \setasign\Fpdi\PdfParser\Type\PdfType::resolve(\setasign\Fpdi\PdfParser\Type\PdfDictionary::get($annotDict, 'Rect'), $parser);
                 if (!($rect instanceof \setasign\Fpdi\PdfParser\Type\PdfArray) || count($rect->value) !== 4) return false;
 
@@ -83,6 +103,80 @@ function ep_signature_define_fpdi_class() {
                 }
 
                 $rel_x = ($lx - $llx); $rel_y_top = ($uy - $lly);
+
+                // --- FUSIÓN DE RECURSOS PARA EVITAR ACROBAT ERROR 18 ---
+                if ($n->value instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary) {
+                    // 1. Obtener los recursos de la página original
+                    $pageDict = $page->getPageDictionary();
+                    $pageResources = null;
+                    if (isset($pageDict->value['Resources'])) {
+                        $pageResources = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($pageDict->value['Resources'], $parser);
+                    }
+
+                    // 2. Obtener los recursos globales de AcroForm (DR)
+                    $catalog = $parser->getCatalog();
+                    $acroForm = null;
+                    $drResources = null;
+                    if (isset($catalog->value['AcroForm'])) {
+                        $acroForm = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($catalog->value['AcroForm'], $parser);
+                        if ($acroForm instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary && isset($acroForm->value['DR'])) {
+                            $drResources = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($acroForm->value['DR'], $parser);
+                        }
+                    }
+
+                    // 3. Obtener o crear el diccionario de recursos de la anotación
+                    $annotResources = null;
+                    if (isset($n->value->value['Resources'])) {
+                        $annotResources = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($n->value->value['Resources'], $parser);
+                    }
+                    if (!($annotResources instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary)) {
+                        $annotResources = \setasign\Fpdi\PdfParser\Type\PdfDictionary::create([]);
+                    }
+
+                    // Lista de claves estándar válidas para un diccionario /Resources (PDF Reference Table 3.35)
+                    $allowedKeys = ['ExtGState', 'ColorSpace', 'Pattern', 'Shading', 'XObject', 'Font', 'ProcSet', 'Properties'];
+
+                    // Función auxiliar para fusionar diccionarios de recursos de forma recursiva/segura
+                    $mergeResources = function($sourceRes, &$targetRes) use ($parser, $allowedKeys) {
+                        if ($sourceRes instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary) {
+                            foreach ($sourceRes->value as $resKey => $resVal) {
+                                // FILTRADO: Copiar únicamente claves estándar para evitar corromper el diccionario /Resources
+                                if (!in_array($resKey, $allowedKeys)) {
+                                    continue;
+                                }
+
+                                $resValResolved = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($resVal, $parser);
+                                if ($resValResolved instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary) {
+                                    $targetResItem = null;
+                                    if (isset($targetRes->value[$resKey])) {
+                                        $targetResItem = \setasign\Fpdi\PdfParser\Type\PdfType::resolve($targetRes->value[$resKey], $parser);
+                                    }
+                                    if ($targetResItem instanceof \setasign\Fpdi\PdfParser\Type\PdfDictionary) {
+                                        foreach ($resValResolved->value as $subKey => $subVal) {
+                                            if (!isset($targetResItem->value[$subKey])) {
+                                                $targetResItem->value[$subKey] = $subVal;
+                                            }
+                                        }
+                                    } else {
+                                        $targetRes->value[$resKey] = $resValResolved;
+                                    }
+                                } else {
+                                    if (!isset($targetRes->value[$resKey])) {
+                                        $targetRes->value[$resKey] = $resVal;
+                                    }
+                                }
+                            }
+                        }
+                    };
+
+                    // Fusionar recursos globales de AcroForm (DR) y de la página en la anotación
+                    $mergeResources($drResources, $annotResources);
+                    $mergeResources($pageResources, $annotResources);
+
+                    // Asignar el diccionario de recursos fusionados de vuelta al stream de apariencia de la anotación
+                    $n->value->value['Resources'] = $annotResources;
+                }
+                // --------------------------------------------------------
 
                 $tplId = 'ANN_TPL_' . $this->getNextTemplateId();
                 $this->importedPages[$tplId] = [
@@ -119,6 +213,8 @@ class EP_App_Signature_V4 implements EP_App_Interface
         add_action('wp_ajax_ep_app_signature', array($this, 'handle_ajax'));
         add_action('wp_ajax_ep_app_signature_save_user_signature', [$this, 'handle_save_user_signature']);
         add_action('wp_ajax_ep_app_signature_get_user_signature', [$this, 'handle_get_user_signature']);
+        add_action('wp_ajax_ep_app_signature_save_user_logo', [$this, 'handle_save_user_logo']);
+        add_action('wp_ajax_ep_app_signature_get_user_logo', [$this, 'handle_get_user_logo']);
 
         // Debug mail failures
         add_action('wp_mail_failed', function ($error) {
@@ -167,6 +263,29 @@ class EP_App_Signature_V4 implements EP_App_Interface
     public function get_icon()
     {
         return 'fa-solid fa-file-signature';
+    }
+
+    /**
+     * Código Seguro de Verificación de un documento.
+     *
+     * Debe ser idéntico al preparar el PDF (cuando se imprime en el pie y en el QR)
+     * y al guardarlo firmado (cuando se almacena en base de datos), por eso se deriva
+     * en servidor a partir del id de la solicitud y no del contenido del fichero.
+     * Para firmas sueltas sin solicitud previa se mantiene el hash del documento.
+     */
+    public static function build_csv_for_request($request_id, $fallback_hash = '')
+    {
+        $request_id = absint($request_id);
+        if (!$request_id) {
+            return (string) $fallback_hash;
+        }
+
+        $csv = strtoupper(substr(hash_hmac('sha256', 'ep_sig_csv|' . $request_id, wp_salt('auth')), 0, 32));
+
+        // Otros módulos pueden haber impreso ya un CSV propio en el documento
+        // (por ejemplo el pie de las liquidaciones de gastos). En ese caso manda
+        // el suyo, para que lo impreso y lo almacenado coincidan.
+        return (string) apply_filters('ep_signature_csv_for_request', $csv, $request_id);
     }
 
     private function get_encryption_key()
@@ -237,9 +356,21 @@ class EP_App_Signature_V4 implements EP_App_Interface
 
     public function delete_temp_file($file_path)
     {
-        if (file_exists($file_path) && strpos($file_path, 'tmp_') !== false) {
-            ep_error_log("EP_App_Signature_V4: Cleaning up temp attachment: $file_path");
-            @unlink($file_path);
+        if (empty($file_path)) {
+            return;
+        }
+
+        // Protección anti-path-traversal: verificar que el archivo esté dentro del directorio uploads
+        $upload_dir = wp_upload_dir();
+        $base_dir   = realpath($upload_dir['basedir']);
+        $real_path  = realpath($file_path);
+
+        if ($real_path !== false && $base_dir !== false && strpos($real_path, $base_dir) === 0) {
+            // SIG-04: Permitir la eliminación de archivos ZIP temporales (firma_...) además de los tmp_
+            if (file_exists($real_path) && (strpos($real_path, 'tmp_') !== false || strpos($real_path, 'firma_') !== false || strpos($real_path, 'mail_tmp_') !== false)) {
+                ep_error_log("EP_App_Signature_V4: Cleaning up temp file: $real_path");
+                @unlink($real_path);
+            }
         }
     }
 
@@ -270,7 +401,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
         wp_enqueue_script('fds-autoscript', $this->base_url . 'libs/autoscript.js', array('jquery'), '1.0.4');
         wp_enqueue_script('pdfjs', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.12.313/pdf.min.js', array(), '2.12.313');
 
-        wp_enqueue_script('ep-signature-js', $this->base_url . 'assets/js/ep-signature.js', array('jquery', 'fds-autoscript'), '1.1.2');
+        wp_enqueue_script('ep-signature-js', $this->base_url . 'assets/js/ep-signature.js', array('jquery', 'fds-autoscript'), '1.1.4');
 
         // Get permission level
         global $ep_app_manager;
@@ -481,6 +612,58 @@ class EP_App_Signature_V4 implements EP_App_Interface
 
             $visible_signature_type = isset($_POST['visible_signature_type']) ? sanitize_text_field($_POST['visible_signature_type']) : 'none';
             $pdf_hash_original = isset($_POST['pdf_hash_original']) ? sanitize_text_field($_POST['pdf_hash_original']) : null;
+            $stamp_footer = isset($_POST['stamp_footer']) ? $_POST['stamp_footer'] === '1' : true;
+
+            // Liquidaciones de gastos: el empleado firma sin CSV/QR (es una presentación),
+            // y el documento de abono ya se genera con su propio pie desde la app
+            // de gastos, así que aquí nunca hay que volver a estamparlo.
+            $request_id = isset($_POST['request_id']) ? absint($_POST['request_id']) : 0;
+            if ($request_id) {
+                global $wpdb;
+                $liq_table = $wpdb->prefix . 'ep_liquidations';
+                $has_liq_table = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $liq_table)) === $liq_table;
+                if ($has_liq_table) {
+                    $is_employee_sig = $wpdb->get_var($wpdb->prepare(
+                        "SELECT COUNT(*) FROM $liq_table WHERE signature_request_id = %d",
+                        $request_id
+                    ));
+                    if ($is_employee_sig > 0) {
+                        $stamp_footer = false;
+                    }
+
+                    // El documento de abono ya se genera con su pie de sede
+                    // electrónica (CSV y QR) desde la app de gastos: no se puede
+                    // volver a estampar aquí sin duplicarlo.
+                    $is_admin_sig = $wpdb->get_var($wpdb->prepare(
+                        "SELECT COUNT(*) FROM $liq_table WHERE admin_signature_request_id = %d",
+                        $request_id
+                    ));
+                    if ($is_admin_sig > 0) {
+                        $stamp_footer = false;
+                    }
+                }
+
+                // Lo mismo para los tickets individuales de gasto.
+                $exp_table = $wpdb->prefix . 'ep_expenses';
+                $has_exp_table = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $exp_table)) === $exp_table;
+                if ($has_exp_table) {
+                    $is_expense_sig = $wpdb->get_var($wpdb->prepare(
+                        "SELECT COUNT(*) FROM $exp_table
+                         WHERE signature_request_id = %d OR admin_signature_request_id = %d",
+                        $request_id,
+                        $request_id
+                    ));
+                    if ($is_expense_sig > 0) {
+                        $stamp_footer = false;
+                    }
+                }
+            }
+
+            // Código Seguro de Verificación: estable entre la preparación y el guardado,
+            // derivado en servidor. Antes el QR llevaba el hash previo a la firma y en
+            // base de datos se guardaba el posterior, así que el enlace nunca resolvía.
+            $csv_code = self::build_csv_for_request($request_id, $pdf_hash_original);
+
             $stamps_json = isset($_POST['stamps']) ? wp_unslash($_POST['stamps']) : null;
             $stamps = [];
 
@@ -550,6 +733,25 @@ class EP_App_Signature_V4 implements EP_App_Interface
             }
 
             ep_error_log('EP_App_Signature_V4: [LIBS] Todas las librerías cargadas. EP_Fpdi_V4 disponible.');
+
+            // --- DETECCIÓN DE FIRMAS DIGITALES EXISTENTES ---
+            // Buscamos si el PDF ya está firmado criptográficamente para no dañar las firmas anteriores.
+            $is_already_signed = (
+                strpos($pdf_content, '/Type /Sig') !== false || 
+                strpos($pdf_content, '/Type/Sig') !== false ||
+                strpos($pdf_content, '/ByteRange') !== false
+            );
+
+            if ($is_already_signed) {
+                ep_error_log('EP_App_Signature_V4: [INFO] El PDF ya contiene firmas criptográficas previas. Saltando la preparación en el servidor para conservar las firmas anteriores.');
+                wp_send_json_success([
+                    'pdf_data_to_sign_base64' => base64_encode($pdf_content),
+                    'message' => 'El documento ya está firmado digitalmente. Se firmará de forma incremental para conservar las firmas anteriores.',
+                    'skipped_prep' => true
+                ]);
+                return;
+            }
+
             $pdf = new EP_Fpdi_V4();
             $pdf->setPrintHeader(false);
             $pdf->setPrintFooter(false);
@@ -559,23 +761,19 @@ class EP_App_Signature_V4 implements EP_App_Interface
             try {
                 $page_count = $pdf->setSourceFile($stream);
             } catch (\Throwable $e) {
-                ep_error_log('EP_App_Signature_V4: [WARN] Fallo en apertura de PDF (¿protegido?): ' . $e->getMessage());
-                // Si el PDF está encriptado/protegido, permitimos firmar el original como fallback
-                $error_msg = $e->getMessage();
-                if (stripos($error_msg, 'encrypted') !== false || stripos($error_msg, 'permission') !== false || stripos($error_msg, 'authenticated') !== false) {
-                    wp_send_json_success([
-                        'pdf_data_to_sign_base64' => base64_encode($pdf_content),
-                        'message' => 'Documento protegido: No se puede añadir el pie de página, se firmará el original.',
-                        'skipped_prep' => true
-                    ]);
-                    return;
-                }
-                throw $e;
+                ep_error_log('EP_App_Signature_V4: [WARN] Fallo en apertura de PDF (¿protegido o ya firmado?): ' . $e->getMessage());
+                // Si el PDF está encriptado, protegido o ya firmado, permitimos firmar el original como fallback
+                wp_send_json_success([
+                    'pdf_data_to_sign_base64' => base64_encode($pdf_content),
+                    'message' => 'Documento protegido o ya firmado: se firmará el archivo original conservando firmas anteriores.',
+                    'skipped_prep' => true
+                ]);
+                return;
             }
 
             $qr_img = null;
-            if ($pdf_hash_original && class_exists('QRcode')) {
-                $verify_url = home_url('?view=signature&sub_action=verify&csv=' . $pdf_hash_original);
+            if ($csv_code && class_exists('QRcode')) {
+                $verify_url = home_url('?view=signature&sub_action=verify&csv=' . $csv_code);
                 ob_start();
                 \QRcode::png($verify_url, null, QR_ECLEVEL_L, 3, 1);
                 $qr_img = ob_get_clean();
@@ -589,18 +787,18 @@ class EP_App_Signature_V4 implements EP_App_Interface
                 $orientation = ($size['width'] > $size['height']) ? 'L' : 'P';
                 $pdf->AddPage($orientation, [$size['width'], $size['height']]);
                 
-                // --- ESCALADO AL 95% PARA EL PIE ---
-                $scale = 0.95;
+                // --- ESCALADO AL 90% PARA EL PIE ---
+                $scale = 0.90;
                 $new_width = $size['width'] * $scale;
                 $new_height = $size['height'] * $scale;
                 $offset_x = ($size['width'] - $new_width) / 2;
-                $offset_y = 5; // Un pequeño margen superior
+                $offset_y = 4; // Un pequeño margen superior
                 
                 // Dibujamos la página original escalada
                 $pdf->useTemplate($template_id, $offset_x, $offset_y, $new_width, $new_height);
                 
                 // --- PIE DE PÁGINA PROFESIONAL (ESTILO SEDE ELECTRÓNICA) ---
-                if ($qr_img) {
+                if ($qr_img && $stamp_footer) {
                     $footer_base_y = $size['height'] - 20;
                     $footer_margin = 10;
                     $table_width = $size['width'] - ($footer_margin * 2) - 25; // Espacio para el QR
@@ -633,7 +831,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
                     $pdf->SetFont('helvetica', 'B', 6);
                     $pdf->Text($col2_x, $footer_base_y, "CSV:");
                     $pdf->SetFont('helvetica', '', 5); // Fuente más pequeña para el hash largo
-                    $pdf->Text($col2_x + 8, $footer_base_y, $pdf_hash_original);
+                    $pdf->Text($col2_x + 8, $footer_base_y, $csv_code);
 
                     // Código QR a la derecha
                     $pdf->Image('@' . $qr_img, $size['width'] - $footer_margin - 12, $footer_base_y - 1, 12, 12, 'PNG');
@@ -647,7 +845,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
                     $pdf->StopTransform();
                 }
 
-                // --- APLANADO VISUAL (Firmas previas) ---
+                // --- APLANADO VISUAL (Reactivado con fusión de recursos para evitar Acrobat Error 18) ---
                 $annots = $pdf->getPageAnnots($i);
                 if ($annots) {
                     foreach ($annots->value as $index => $annot) {
@@ -692,6 +890,44 @@ class EP_App_Signature_V4 implements EP_App_Interface
                                 $txt = "Firmado por:\n" . ($text_info['name'] ?? '---') . "\nDNI/CIF: " . ($text_info['dni'] ?? '---');
                                 $pdf->MultiCell(50 * $scale, 15 * $scale, $txt, 1, 'L', true, 1, $x_mm - (25 * $scale), $y_mm - (7.5 * $scale), true);
                             }
+                        } elseif ($stamp['type'] === 'details' && !empty($stamp['data'])) {
+                            $text_info = json_decode($stamp['data'], true);
+                            if ($text_info) {
+                                $pdf->SetFont('helvetica', '', 5.5 * $scale);
+                                $pdf->SetTextColor(0, 0, 0);
+                                $pdf->SetFillColor(245, 245, 245);
+                                $pdf->SetDrawColor(0, 123, 255);
+                                $pdf->SetLineWidth(0.3 * $scale);
+                                
+                                $fecha_hora = date_i18n('d/m/Y H:i:s');
+                                $name = $text_info['name'] ?? '---';
+                                $dni = $text_info['dni'] ?? '---';
+                                $dnText = "DN: cn=" . $name . ", serialNumber=IDCES-" . $dni . ", o=Cámara Oficial de Comercio, c=ES";
+                                $txt = "Firmado digitalmente por:\n" . $name . "\nDNI/CIF: " . $dni . "\n" . $dnText . "\nFecha: " . $fecha_hora . "\nPortal del Empleado - Cámara de Cáceres";
+                                
+                                $logo_b64 = isset($text_info['logo']) ? $text_info['logo'] : null;
+                                if ($logo_b64 && preg_match('/^data:image\/(png|jpeg|jpg);base64,(.*)/i', $logo_b64, $logo_matches)) {
+                                    $logo_data = base64_decode($logo_matches[2]);
+                                    if (!empty($logo_data)) {
+                                        $box_x = $x_mm - (35 * $scale);
+                                        $box_y = $y_mm - (12 * $scale);
+                                        
+                                        // Dibujamos el logo directamente (sin rectángulo de fondo ni bordes)
+                                        $pdf->Image('@' . $logo_data, $box_x + (2 * $scale), $box_y + (3 * $scale), 13 * $scale, 18 * $scale, '', '', '', false, 300, '', false, false, 0, 'CM');
+                                        
+                                        // Dibujamos el texto al lado del logo (transparente, sin bordes)
+                                        $pdf->MultiCell(51 * $scale, 21 * $scale, $txt, 0, 'L', false, 1, $box_x + (17 * $scale), $box_y + (1.5 * $scale), true);
+                                    } else {
+                                        $box_x = $x_mm - (35 * $scale);
+                                        $box_y = $y_mm - (12 * $scale);
+                                        $pdf->MultiCell(70 * $scale, 24 * $scale, $txt, 0, 'L', false, 1, $box_x, $box_y, true);
+                                    }
+                                } else {
+                                    $box_x = $x_mm - (35 * $scale);
+                                    $box_y = $y_mm - (12 * $scale);
+                                    $pdf->MultiCell(70 * $scale, 24 * $scale, $txt, 0, 'L', false, 1, $box_x, $box_y, true);
+                                }
+                            }
                         }
                     }
                 }
@@ -700,8 +936,12 @@ class EP_App_Signature_V4 implements EP_App_Interface
             // Limpiamos cualquier salida previa para evitar corrupción
             if (ob_get_length()) ob_clean();
 
+            $prep_pdf_data = $pdf->Output('', 'S');
+            $upload_dir = wp_upload_dir();
+            file_put_contents($upload_dir['basedir'] . '/fds-documents/prep_test.pdf', $prep_pdf_data);
+
             wp_send_json_success([
-                'pdf_data_to_sign_base64' => base64_encode($pdf->Output('', 'S')),
+                'pdf_data_to_sign_base64' => base64_encode($prep_pdf_data),
                 'message' => 'PDF preparado para la firma'
             ]);
 
@@ -714,9 +954,13 @@ class EP_App_Signature_V4 implements EP_App_Interface
     private function handle_save_signed_pdf()
     {
         try {
+            // SIG-02: Forzar inicio de sesión antes de realizar cualquier acción de guardado
+            if (!is_user_logged_in()) {
+                wp_send_json_error(['message' => 'Acceso denegado. Debe iniciar sesión.']);
+            }
+
             $signature_b64 = isset($_POST['signature']) ? $_POST['signature'] : '';
             $filename = isset($_POST['filename']) ? sanitize_file_name($_POST['filename']) : 'documento_firmado.pdf';
-            $original_hash = isset($_POST['pdf_hash']) ? sanitize_text_field($_POST['pdf_hash']) : '';
             $request_id = isset($_POST['request_id']) ? absint($_POST['request_id']) : 0;
             $cert_info_json = isset($_POST['cert_info']) ? wp_unslash($_POST['cert_info']) : null;
             $send_to_sender = isset($_POST['send_to_sender']) && $_POST['send_to_sender'] === '1';
@@ -724,6 +968,34 @@ class EP_App_Signature_V4 implements EP_App_Interface
             if (empty($signature_b64)) {
                 wp_send_json_error(['message' => 'Faltan los datos de la firma.']);
             }
+
+            global $wpdb, $ep_app_manager;
+            $table_name = $wpdb->prefix . 'fds_documentos';
+            $current_user_id = get_current_user_id();
+
+            // --- FIX SIG-02: Control de acceso al guardar la firma ---
+            if ($request_id) {
+                $old_doc = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $request_id));
+                if (!$old_doc) {
+                    wp_send_json_error(['message' => 'Solicitud de firma no encontrada.']);
+                }
+                
+                $can_manage = $ep_app_manager->get_user_permission($this->get_id()) === 'write';
+                $is_recipient = (int) $old_doc->usuario_id === $current_user_id;
+
+                if (!$can_manage && !$is_recipient) {
+                    wp_send_json_error(['message' => 'No tienes permiso para completar esta solicitud de firma.']);
+                }
+            }
+            // ---------------------------------------------------------
+
+            // --- FIX SIG-03: Recalcular Hash en Servidor en base al PDF real firmado ---
+            $decoded_pdf = base64_decode(trim($signature_b64));
+            if (!$decoded_pdf) {
+                wp_send_json_error(['message' => 'Datos de firma dañados o no válidos.']);
+            }
+            $server_hash = hash('sha256', $decoded_pdf);
+            // ---------------------------------------------------------
 
             $signer_name = wp_get_current_user()->display_name;
             if ($cert_info_json) {
@@ -744,27 +1016,25 @@ class EP_App_Signature_V4 implements EP_App_Interface
             $final_filename = sanitize_file_name(wp_get_current_user()->user_nicename . '_' . date('Ymd_His') . '_' . $filename);
             $file_path = $fds_dir . $final_filename;
 
-            if (file_put_contents($file_path, base64_decode(trim($signature_b64)))) {
+            if (file_put_contents($file_path, $decoded_pdf)) {
                 $this->encrypt_file($file_path);
-                global $wpdb;
-                $table_name = $wpdb->prefix . 'fds_documentos';
 
                 $data = array(
                     'nombre_documento' => $final_filename,
                     'nombre_archivo_original' => $filename,
                     'ruta_documento_firmado' => $file_path,
                     'url_documento_firmado' => $upload_dir['baseurl'] . '/fds-documents/' . $final_filename,
-                    'hash_documento_original' => $original_hash,
-                    'usuario_id' => get_current_user_id(),
+                    'hash_documento_original' => $server_hash, // Hash real
+                    'usuario_id' => $current_user_id,
                     'nombre_firmante' => $signer_name,
                     'certificado_info' => $cert_info_json,
                     'fecha_firma' => current_time('mysql'),
                     'estado' => 'firmado',
-                    'csv_documento' => $original_hash
+                    // Debe coincidir con el CSV impreso en el pie y codificado en el QR
+                    'csv_documento' => self::build_csv_for_request($request_id, $server_hash)
                 );
 
                 if ($request_id) {
-                    $old_doc = $wpdb->get_row($wpdb->prepare("SELECT solicitante_id FROM $table_name WHERE id = %d", $request_id));
                     $wpdb->update($table_name, $data, ['id' => $request_id]);
                     $id_to_return = $request_id;
 
@@ -813,7 +1083,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
                 wp_send_json_success([
                     'id' => $id_to_return,
                     'message' => 'Documento guardado y firmado correctamente.',
-                    'download_url' => admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $id_to_return . '&nonce=' . wp_create_nonce('ep_signature_nonce')
+                    'download_url' => admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $id_to_return . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time()
                 ]);
             }
         } catch (\Throwable $e) {
@@ -885,6 +1155,33 @@ class EP_App_Signature_V4 implements EP_App_Interface
         }
 
         wp_send_json_success(['signature_base64' => $signature_base64]);
+    }
+
+    public function handle_save_user_logo()
+    {
+        check_ajax_referer('ep_signature_nonce', 'nonce');
+        $user_id = get_current_user_id();
+        $logo_base64 = isset($_POST['logo_base64']) ? $_POST['logo_base64'] : '';
+
+        if (empty($logo_base64)) {
+            wp_send_json_error(['message' => 'No se ha proporcionado ninguna imagen para el logo.']);
+        }
+
+        update_user_meta($user_id, '_ep_signature_logo', $logo_base64);
+        wp_send_json_success(['message' => 'Logo guardado correctamente.']);
+    }
+
+    public function handle_get_user_logo()
+    {
+        check_ajax_referer('ep_signature_nonce', 'nonce');
+        $user_id = get_current_user_id();
+        $logo_base64 = get_user_meta($user_id, '_ep_signature_logo', true);
+
+        if (empty($logo_base64)) {
+            wp_send_json_error(['message' => 'No hay un logo guardado.']);
+        }
+
+        wp_send_json_success(['logo_base64' => $logo_base64]);
     }
 
     private function handle_get_users()
@@ -1003,36 +1300,92 @@ class EP_App_Signature_V4 implements EP_App_Interface
 
         check_ajax_referer('ep_signature_nonce', 'nonce');
 
+        // SIG-01: Control estricto de sesión
+        if (!is_user_logged_in()) {
+            wp_die('Acceso denegado. Debe iniciar sesión.');
+        }
+
         global $wpdb, $ep_app_manager;
         $table = $wpdb->prefix . 'fds_documentos';
         $doc = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $id));
 
         if (!$doc) wp_die('Documento no encontrado');
 
-        $user_id = get_current_user_id();
+        // --- FIX SIG-01: Control estricto de acceso al PDF ---
+        $current_user_id = get_current_user_id();
         $can_manage = $ep_app_manager->get_user_permission($this->get_id()) === 'write';
+        $is_owner = (int) $doc->usuario_id === $current_user_id;
+        $is_solicitor = (int) $doc->solicitante_id === $current_user_id;
 
-        if (!$can_manage && (int) $doc->usuario_id !== $user_id && (int) $doc->solicitante_id !== $user_id) {
-            wp_die('Acceso denegado');
+        if (!$can_manage && !$is_owner && !$is_solicitor) {
+            wp_die('Acceso denegado: No tienes permisos para visualizar o descargar este documento.');
+        }
+        // -----------------------------------------------------
+
+        $file_to_serve = '';
+        if (!empty($doc->ruta_documento_firmado) && file_exists($doc->ruta_documento_firmado)) {
+            $file_to_serve = $doc->ruta_documento_firmado;
+        } else {
+            $upload_dir = wp_upload_dir();
+            $fds_dir = $upload_dir['basedir'] . '/fds-documents/';
+            $original_path = $fds_dir . $doc->nombre_documento;
+            if (file_exists($original_path)) {
+                $file_to_serve = $original_path;
+            }
         }
 
-        if (!empty($doc->ruta_documento_firmado) && file_exists($doc->ruta_documento_firmado)) {
-            $content = $this->decrypt_file_content($doc->ruta_documento_firmado);
-            if ($content === false) wp_die('Error al desencriptar');
+        if ($file_to_serve) {
+            // Start output buffering to capture any warnings/notices/BOM/whitespace
+            ob_start();
 
-            while (ob_get_level()) ob_end_clean();
+            $content = $this->decrypt_file_content($file_to_serve);
+            if ($content === false) {
+                while (ob_get_level()) {
+                    ob_end_clean();
+                }
+                wp_die('Error al desencriptar');
+            }
 
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . $doc->nombre_archivo_original . '"');
-            header('Content-Length: ' . mb_strlen($content, '8bit'));
-            
-            // Log to stats
+            // Neutralizar cualquier orden de auto-impresión o acción automática incrustada en el PDF
+            // Preservamos el tamaño de bytes exacto para evitar dañar la tabla de offsets (xref) del PDF
+            $content = str_replace('/Print', '/None ', $content);
+            $content = str_replace('this.print(', 'this.non_e(', $content);
+            $content = str_replace('print(', 'non_e(', $content);
+            $content = str_replace('print (', 'non_e (', $content);
+            $content = str_replace('Print(', 'Non_e(', $content);
+            $content = str_replace('Print (', 'Non_e (', $content);
+            $content = str_replace('/OpenAction', '/NoneAction', $content);
+            $content = str_replace('/AA', '/XX', $content);
+            $content = str_replace('/JavaScript', '/NoneScript', $content);
+            $content = str_replace('/JS', '/XX', $content);
+
+            // Log to stats before we clean buffers and send headers
             if (function_exists('ep_stats_log')) {
                 ep_stats_log('signature', 'document_download', get_current_user_id(), [
                     'doc_id' => $id,
                     'filename' => $doc->nombre_archivo_original
                 ]);
             }
+
+            // Clean all active output buffers to discard any warnings/notices/BOM/whitespace
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            $safe_filename = sanitize_file_name($doc->nombre_archivo_original);
+            if (empty($safe_filename) || strpos($safe_filename, '.') === false) {
+                $safe_filename = 'documento.pdf';
+            }
+
+            // Con 'inline' el documento se puede previsualizar dentro del portal
+            // (visor en modal). Sin el parámetro se mantiene la descarga de siempre.
+            $disposition = (isset($_GET['inline']) && $_GET['inline'] === '1') ? 'inline' : 'attachment';
+
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: ' . $disposition . '; filename="' . $safe_filename . '"; filename*=UTF-8\'\'' . rawurlencode($doc->nombre_archivo_original));
+            header('Content-Length: ' . mb_strlen($content, '8bit'));
+            header('Cache-Control: private, max-age=0, must-revalidate');
+            header('Pragma: public');
 
             echo $content;
             exit;
@@ -1063,7 +1416,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
             echo '<thead><tr><th><input type="checkbox" class="select-all"></th><th>Firmante</th><th>Documento</th><th>Fecha</th><th>Acciones</th></tr></thead>';
             echo '<tbody>';
             foreach ($results as $doc) {
-                $download_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce');
+                $download_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time();
                 echo '<tr>';
                 echo '<td><input type="checkbox" class="doc-checkbox" value="' . $doc->id . '"></td>';
                 echo '<td>' . esc_html($doc->nombre_firmante ?: 'Pendiente') . '</td>';
@@ -1140,7 +1493,7 @@ class EP_App_Signature_V4 implements EP_App_Interface
                 if (!$doc->solicitante_id)
                     $participant = '<i class="fa-solid fa-user"></i> Personal';
 
-                $download_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce');
+                $download_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time();
                 echo '<tr>';
                 echo '<td><input type="checkbox" class="doc-checkbox" value="' . $doc->id . '"></td>';
                 echo '<td>' . esc_html($doc->nombre_archivo_original) . '</td>';
@@ -1277,6 +1630,11 @@ class EP_App_Signature_V4 implements EP_App_Interface
         }
 
         clearstatcache(true, $zip_path);
+
+        // --- FIX SIG-04: Autolimpieza de archivo ZIP (eliminación retardada a los 10 minutos) ---
+        wp_schedule_single_event(time() + 600, 'ep_cleanup_temp_file', [$zip_path]);
+        // ----------------------------------------------------------------------------------------
+
         wp_send_json_success(['url' => $upload_dir['baseurl'] . '/fds-documents/' . $zip_name]);
     }
 
@@ -1460,4 +1818,45 @@ add_action('ep_register_apps', function($manager) {
         ep_error_log("[FDS-NUCLEAR-V4]: ERROR - La clase EP_App_Signature_V4 no existe!");
     }
 });
+
+// Register cron event for 48h pending signature reminders
+add_action('ep_signature_pending_reminders_cron', 'ep_signature_send_pending_reminders');
+
+if (!wp_next_scheduled('ep_signature_pending_reminders_cron')) {
+    wp_schedule_event(time(), 'daily', 'ep_signature_pending_reminders_cron');
+}
+
+function ep_signature_send_pending_reminders() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'fds_documentos';
+    if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+        return;
+    }
+
+    $two_days_ago = date('Y-m-d H:i:s', strtotime('-48 hours'));
+
+    // Find pending docs created over 48h ago
+    $pending_docs = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM $table WHERE estado = 'pendiente' AND fecha_creacion <= %s",
+        $two_days_ago
+    ));
+
+    if (empty($pending_docs)) {
+        return;
+    }
+
+    foreach ($pending_docs as $doc) {
+        $user_id = $doc->user_id;
+        $title = $doc->nombre_archivo ?: 'Documento';
+
+        if ($user_id && class_exists('EP_Notifications')) {
+            EP_Notifications::add_notification($user_id, array(
+                'type'    => 'warning',
+                'title'   => '✍️ Recordatorio: Firma Pendiente',
+                'message' => 'Tienes el documento "' . $title . '" pendiente de firma desde hace más de 48 horas.',
+                'link'    => '?view=signature'
+            ));
+        }
+    }
+}
 

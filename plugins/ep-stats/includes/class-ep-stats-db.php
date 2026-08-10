@@ -262,6 +262,167 @@ class EP_Stats_DB
         ];
     }
 
+    public static function cleanup_stale_sessions()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'ep_stats_sessions';
+        $wpdb->query($wpdb->prepare(
+            "UPDATE $table_name 
+             SET status = 'closed',
+                 logout_time = last_activity,
+                 duration_seconds = GREATEST(duration_seconds, TIMESTAMPDIFF(SECOND, login_time, last_activity))
+             WHERE status = 'active' 
+             AND last_activity < DATE_SUB(%s, INTERVAL 20 MINUTE)",
+            current_time('mysql')
+        ));
+    }
+
+    public static function get_executive_kpis($filters = [])
+    {
+        global $wpdb;
+        self::cleanup_stale_sessions();
+
+        $events_table = $wpdb->prefix . 'ep_stats_events';
+        $sessions_table = $wpdb->prefix . 'ep_stats_sessions';
+
+        $days = 30;
+        if (isset($filters['days']) && is_numeric($filters['days'])) {
+            $days = intval($filters['days']);
+        }
+
+        $where_events = "1=1";
+        $params_events = [];
+        $where_sessions = "1=1";
+        $params_sessions = [];
+
+        if (!empty($filters['date_from'])) {
+            $where_events .= " AND event_time >= %s";
+            $params_events[] = $filters['date_from'] . ' 00:00:00';
+            $where_sessions .= " AND login_time >= %s";
+            $params_sessions[] = $filters['date_from'] . ' 00:00:00';
+        } elseif ($days) {
+            $where_events .= " AND event_time >= DATE_SUB(NOW(), INTERVAL %d DAY)";
+            $params_events[] = $days;
+            $where_sessions .= " AND login_time >= DATE_SUB(NOW(), INTERVAL %d DAY)";
+            $params_sessions[] = $days;
+        }
+
+        if (!empty($filters['date_to'])) {
+            $where_events .= " AND event_time <= %s";
+            $params_events[] = $filters['date_to'] . ' 23:59:59';
+            $where_sessions .= " AND login_time <= %s";
+            $params_sessions[] = $filters['date_to'] . ' 23:59:59';
+        }
+
+        if (!empty($filters['user_id'])) {
+            $where_events .= " AND user_id = %d";
+            $params_events[] = intval($filters['user_id']);
+            $where_sessions .= " AND user_id = %d";
+            $params_sessions[] = intval($filters['user_id']);
+        }
+
+        if (!empty($filters['department'])) {
+            $dept = sanitize_text_field($filters['department']);
+            $dept_user_ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'ep_department' AND meta_value = %s",
+                $dept
+            ));
+            if (empty($dept_user_ids)) {
+                $dept_user_ids = [0];
+            }
+            $id_placeholders = implode(',', array_map('intval', $dept_user_ids));
+            $where_events .= " AND user_id IN ($id_placeholders)";
+            $where_sessions .= " AND user_id IN ($id_placeholders)";
+        }
+
+        // 1. Unique Active Users
+        $active_users = $wpdb->get_var(empty($params_events) ? "SELECT COUNT(DISTINCT user_id) FROM $events_table WHERE $where_events" : $wpdb->prepare("SELECT COUNT(DISTINCT user_id) FROM $events_table WHERE $where_events", ...$params_events));
+
+        // 2. Total Portal Hours
+        $total_seconds = $wpdb->get_var(empty($params_sessions) ? "SELECT COALESCE(SUM(duration_seconds), 0) FROM $sessions_table WHERE $where_sessions" : $wpdb->prepare("SELECT COALESCE(SUM(duration_seconds), 0) FROM $sessions_table WHERE $where_sessions", ...$params_sessions));
+        $total_hours = round(intval($total_seconds) / 3600, 1);
+
+        // 3. Signed Documents Count
+        $signed_docs = $wpdb->get_var(empty($params_events) ? "SELECT COUNT(*) FROM $events_table WHERE $where_events AND app_id = 'signature' AND event_type = 'document_signed'" : $wpdb->prepare("SELECT COUNT(*) FROM $events_table WHERE $where_events AND app_id = 'signature' AND event_type = 'document_signed'", ...$params_events));
+
+        // 4. Resolved Tickets Count
+        $resolved_tickets = $wpdb->get_var(empty($params_events) ? "SELECT COUNT(*) FROM $events_table WHERE $where_events AND app_id = 'tickets' AND (event_type = 'ticket_resolved' OR event_type = 'ticket_created')" : $wpdb->prepare("SELECT COUNT(*) FROM $events_table WHERE $where_events AND app_id = 'tickets' AND (event_type = 'ticket_resolved' OR event_type = 'ticket_created')", ...$params_events));
+
+        // 5. Security Alerts Count
+        $security_alerts = $wpdb->get_var(empty($params_events) ? "SELECT COUNT(*) FROM $events_table WHERE $where_events AND event_type = 'security_alert'" : $wpdb->prepare("SELECT COUNT(*) FROM $events_table WHERE $where_events AND event_type = 'security_alert'", ...$params_events));
+
+        // 6. Total Events & Growth Percentage vs Previous Period
+        $total_events = $wpdb->get_var(empty($params_events) ? "SELECT COUNT(*) FROM $events_table WHERE $where_events" : $wpdb->prepare("SELECT COUNT(*) FROM $events_table WHERE $where_events", ...$params_events));
+
+        $prev_days = $days ?: 30;
+        $prev_events = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $events_table WHERE event_time >= DATE_SUB(DATE_SUB(NOW(), INTERVAL %d DAY), INTERVAL %d DAY) AND event_time < DATE_SUB(NOW(), INTERVAL %d DAY)",
+            $prev_days, $prev_days, $prev_days
+        ));
+
+        $diff = intval($total_events) - intval($prev_events);
+        $growth_pct = ($prev_events > 0) ? round(($diff / $prev_events) * 100, 1) : ($total_events > 0 ? 100 : 0);
+
+        return [
+            'active_users'     => intval($active_users),
+            'total_hours'      => $total_hours,
+            'signed_docs'      => intval($signed_docs),
+            'resolved_tickets' => intval($resolved_tickets),
+            'security_alerts'  => intval($security_alerts),
+            'total_events'     => intval($total_events),
+            'growth_pct'       => $growth_pct
+        ];
+    }
+
+    public static function get_hourly_distribution($filters = [])
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'ep_stats_events';
+
+        $days = isset($filters['days']) ? intval($filters['days']) : 30;
+        $where_base = "1=1";
+        $params = [];
+
+        if (!empty($filters['date_from'])) {
+            $where_base .= " AND event_time >= %s";
+            $params[] = $filters['date_from'] . ' 00:00:00';
+        } elseif ($days) {
+            $where_base .= " AND event_time >= DATE_SUB(NOW(), INTERVAL %d DAY)";
+            $params[] = $days;
+        }
+
+        if (!empty($filters['date_to'])) {
+            $where_base .= " AND event_time <= %s";
+            $params[] = $filters['date_to'] . ' 23:59:59';
+        }
+
+        if (!empty($filters['app_id'])) {
+            $where_base .= " AND app_id = %s";
+            $params[] = $filters['app_id'];
+        }
+
+        if (!empty($filters['user_id'])) {
+            $where_base .= " AND user_id = %d";
+            $params[] = intval($filters['user_id']);
+        }
+
+        $raw = $wpdb->get_results(empty($params) ? "SELECT HOUR(event_time) as hour, COUNT(*) as count FROM $table_name WHERE $where_base GROUP BY HOUR(event_time) ORDER BY hour ASC" : $wpdb->prepare(
+            "SELECT HOUR(event_time) as hour, COUNT(*) as count 
+             FROM $table_name 
+             WHERE $where_base
+             GROUP BY HOUR(event_time)
+             ORDER BY hour ASC",
+            ...$params
+        ));
+
+        $hourly = array_fill(0, 24, 0);
+        foreach ($raw as $row) {
+            $hourly[intval($row->hour)] = intval($row->count);
+        }
+
+        return $hourly;
+    }
+
     public static function start_session($user_id)
     {
         global $wpdb;
@@ -447,9 +608,11 @@ class EP_Stats_DB
         return $wpdb->get_results($wpdb->prepare($sql, $limit, $offset));
     }
 
-    public static function get_users_summary($limit = 50, $offset = 0, $days = 30)
+    public static function get_users_summary($limit = 50, $offset = 0, $days = 30, $search = '', $department = '', $orderby = '', $order = 'DESC')
     {
         global $wpdb;
+        self::cleanup_stale_sessions();
+
         $events_table = $wpdb->prefix . 'ep_stats_events';
         $sessions_table = $wpdb->prefix . 'ep_stats_sessions';
 
@@ -460,16 +623,26 @@ class EP_Stats_DB
             $date_limit = date('Y-m-d H:i:s', strtotime("-{$days} days", strtotime(current_time('mysql'))));
         }
 
+        $user_where = "WHERE 1=1";
+        $user_params = [];
+
+        if (!empty($search)) {
+            $user_where .= " AND (u.display_name LIKE %s OR u.user_email LIKE %s)";
+            $like = '%' . $wpdb->esc_like($search) . '%';
+            $user_params[] = $like;
+            $user_params[] = $like;
+        }
+
+        if (!empty($department)) {
+            $user_where .= " AND u.ID IN (SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'ep_department' AND meta_value = %s)";
+            $user_params[] = $department;
+        }
+
         $sql = "SELECT 
                     u.ID as user_id, 
                     u.display_name,
                     COALESCE(
-                        (SELECT SUM(
-                            CASE WHEN ls.status = 'active' 
-                                 THEN GREATEST(ls.duration_seconds, TIMESTAMPDIFF(SECOND, ls.login_time, %s))
-                                 ELSE ls.duration_seconds 
-                            END
-                        ) FROM $sessions_table ls WHERE ls.user_id = u.ID AND ls.login_time >= %s),
+                        (SELECT SUM(ls.duration_seconds) FROM $sessions_table ls WHERE ls.user_id = u.ID AND ls.login_time >= %s),
                         0
                     ) as total_duration,
                     COALESCE(
@@ -481,7 +654,7 @@ class EP_Stats_DB
                         'unknown'
                     ) as session_status,";
 
-        $params = [current_time('mysql'), $date_limit];
+        $params = [$date_limit];
 
         // Check if teams_available_seconds column exists
         $teams_col = $wpdb->get_results("SHOW COLUMNS FROM $sessions_table LIKE 'teams_available_seconds'");
@@ -510,14 +683,37 @@ class EP_Stats_DB
                     (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'contratos' AND e.event_time >= %s) as contratos_count,
                     (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'gdpr' AND e.event_time >= %s) as gdpr_count,
                     (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'calendar' AND e.event_time >= %s) as calendar_count,
-                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'avisos' AND e.event_time >= %s) as avisos_count
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'avisos' AND e.event_time >= %s) as avisos_count,
+                    (SELECT COUNT(*) FROM $events_table e WHERE e.user_id = u.ID AND e.app_id = 'expenses' AND e.event_time >= %s) as expenses_count
                 FROM {$wpdb->users} u
-                ORDER BY (SELECT ls2.login_time FROM $sessions_table ls2 WHERE ls2.user_id = u.ID ORDER BY ls2.login_time DESC LIMIT 1) DESC
-                LIMIT %d OFFSET %d";
+                $user_where";
 
-        // Add parameters for the app counts (13 apps total now)
-        for ($i = 0; $i < 13; $i++) {
+        $order_dir = (strtoupper($order) === 'ASC') ? 'ASC' : 'DESC';
+        switch ($orderby) {
+            case 'name':
+                $sql .= " ORDER BY u.display_name $order_dir";
+                break;
+            case 'portal_time':
+                $sql .= " ORDER BY total_duration $order_dir";
+                break;
+            case 'teams':
+                $sql .= " ORDER BY teams_seconds $order_dir";
+                break;
+            default:
+                $sql .= " ORDER BY (SELECT ls2.login_time FROM $sessions_table ls2 WHERE ls2.user_id = u.ID ORDER BY ls2.login_time DESC LIMIT 1) $order_dir";
+                break;
+        }
+
+        $sql .= " LIMIT %d OFFSET %d";
+
+        // Add parameters for the app counts (14 apps total)
+        for ($i = 0; $i < 14; $i++) {
             $params[] = $date_limit;
+        }
+
+        // Add user where parameters if any
+        if (!empty($user_params)) {
+            $params = array_merge($params, $user_params);
         }
 
         $params[] = $limit;
@@ -559,6 +755,9 @@ class EP_Stats_DB
             }
 
             $now = current_time('mysql');
+
+            // Actualizar synced_at para todos los registros del periodo
+            $wpdb->query($wpdb->prepare("UPDATE $table SET synced_at = %s WHERE report_period = %s", $now, $period));
 
             foreach ($report as $email => $data) {
                 // UPSERT: INSERT or UPDATE if user+period already exists

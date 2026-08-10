@@ -151,11 +151,16 @@ $ajax_url     = admin_url('admin-ajax.php');
         <span class="ep-close ep-close-modal-trigger" data-modal="epContratoFormModal">&times;</span>
         <h2 id="epFormModalTitle" style="margin:0 0 8px 0;">Nuevo Contrato</h2>
         <p style="margin:0 0 24px 0; font-size:0.88rem; color:var(--ep-text-muted);">
-            El número de contrato se asignará automáticamente.
+            El número de contrato se propone automáticamente pero se puede editar.
         </p>
         <input type="hidden" id="epFormContratoId" value="0">
 
         <div class="ep-contratos-form-grid">
+            <!-- Número de contrato -->
+            <div class="form-group">
+                <label for="epFormNumero"><i class="fa-solid fa-hashtag"></i> Número de contrato <span style="color:var(--ep-primary)">*</span></label>
+                <input type="text" id="epFormNumero" name="numero" placeholder="001/26" required>
+            </div>
             <!-- Fecha -->
             <div class="form-group">
                 <label for="epFormFecha"><i class="fa-regular fa-calendar"></i> Fecha <span style="color:var(--ep-primary)">*</span></label>
@@ -477,9 +482,48 @@ $ajax_url     = admin_url('admin-ajax.php');
         document.getElementById('epFormImporte').value    = isEdit ? (contrato.importe || '') : '';
         document.getElementById('epFormIdentidad').value  = isEdit ? contrato.identidad : '';
 
-        // Fecha por defecto: hoy
+        const numInput = document.getElementById('epFormNumero');
+
         if (!isEdit) {
             document.getElementById('epFormFecha').value = new Date().toISOString().split('T')[0];
+            
+            numInput.value = '';
+            numInput.disabled = true;
+            numInput.placeholder = 'Cargando número sugerido...';
+
+            const fd = new FormData();
+            fd.append('action', 'ep_contratos_get_next_number_options');
+            fd.append('nonce', NONCE);
+
+            fetch(AJAX_URL, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(resp => {
+                    numInput.disabled = false;
+                    numInput.placeholder = '001/26';
+                    if (resp.success) {
+                        const { suggested_gap, next_correlative } = resp.data;
+                        if (suggested_gap) {
+                            if (confirm(`Se ha detectado un hueco libre en la numeración: ${suggested_gap}.\n\n¿Es este el número de tu contrato?\n\n(Si seleccionas 'Cancelar', se asignará el siguiente correlativo: ${next_correlative})`)) {
+                                numInput.value = suggested_gap;
+                            } else {
+                                numInput.value = next_correlative;
+                            }
+                        } else {
+                            numInput.value = next_correlative;
+                        }
+                    } else {
+                        console.error('Error al obtener la numeración sugerida:', resp.data.message);
+                    }
+                })
+                .catch(err => {
+                    numInput.disabled = false;
+                    numInput.placeholder = '001/26';
+                    console.error('Error de red al obtener la numeración:', err);
+                });
+        } else {
+            numInput.value = contrato.numero;
+            numInput.disabled = false;
+            numInput.placeholder = '001/26';
         }
 
         openModal('epContratoFormModal');
@@ -499,45 +543,63 @@ $ajax_url     = admin_url('admin-ajax.php');
                 const id    = parseInt(document.getElementById('epFormContratoId').value);
                 const isNew = id === 0;
 
+                const numero    = document.getElementById('epFormNumero').value.trim();
                 const fecha     = document.getElementById('epFormFecha').value.trim();
                 const objeto    = document.getElementById('epFormObjeto').value.trim();
                 const identidad = document.getElementById('epFormIdentidad').value.trim();
 
-                if (!fecha || !objeto || !identidad) {
-                    alert('Por favor completa los campos obligatorios: Fecha, Objeto e Identidad.');
+                if (!numero || !fecha || !objeto || !identidad) {
+                    alert('Por favor completa los campos obligatorios: Número de contrato, Fecha, Objeto e Identidad.');
                     return;
                 }
 
-                setLoading(btnFormGuardar, true);
+                if (!/^\d{3,4}\/\d{2}$/.test(numero)) {
+                    alert('El formato del número de contrato no es válido. Debe ser del tipo 001/26 o 0001/26.');
+                    return;
+                }
 
-                const fd = new FormData();
-                fd.append('action', isNew ? 'ep_contratos_create' : 'ep_contratos_edit');
-                fd.append('nonce', NONCE);
-                if (!isNew) fd.append('id', id);
-                fd.append('fecha',       fecha);
-                fd.append('siglas',      document.getElementById('epFormSiglas').value.trim());
-                fd.append('objeto',      objeto);
-                fd.append('codigo_curso', document.getElementById('epFormCodigo').value.trim());
-                fd.append('duracion',    document.getElementById('epFormDuracion').value.trim());
-                fd.append('importe',     document.getElementById('epFormImporte').value.trim());
-                fd.append('identidad',   identidad);
+                function enviarContrato(confirmSkip = false) {
+                    setLoading(btnFormGuardar, true);
 
-                fetch(AJAX_URL, { method: 'POST', body: fd })
-                    .then(r => r.json())
-                    .then(resp => {
-                        setLoading(btnFormGuardar, false);
-                        if (resp.success) {
-                            closeModal('epContratoFormModal');
-                            showToast(resp.data.message);
-                            loadContratos(isNew ? 1 : currentPage);
-                        } else {
-                            alert('Error: ' + (resp.data.message ?? 'Error desconocido'));
-                        }
-                    })
-                    .catch(() => {
-                        setLoading(btnFormGuardar, false);
-                        alert('Error de conexión. Inténtalo de nuevo.');
-                    });
+                    const fd = new FormData();
+                    fd.append('action', isNew ? 'ep_contratos_create' : 'ep_contratos_edit');
+                    fd.append('nonce', NONCE);
+                    if (!isNew) fd.append('id', id);
+                    fd.append('numero',      numero);
+                    fd.append('fecha',       fecha);
+                    fd.append('siglas',      document.getElementById('epFormSiglas').value.trim());
+                    fd.append('objeto',      objeto);
+                    fd.append('codigo_curso', document.getElementById('epFormCodigo').value.trim());
+                    fd.append('duracion',    document.getElementById('epFormDuracion').value.trim());
+                    fd.append('importe',     document.getElementById('epFormImporte').value.trim());
+                    fd.append('identidad',   identidad);
+                    if (confirmSkip) {
+                        fd.append('confirm_skip', '1');
+                    }
+
+                    fetch(AJAX_URL, { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(resp => {
+                            setLoading(btnFormGuardar, false);
+                            if (resp.success) {
+                                closeModal('epContratoFormModal');
+                                showToast(resp.data.message);
+                                loadContratos(isNew ? 1 : currentPage);
+                            } else if (resp.data && resp.data.code === 'skip_warning') {
+                                if (confirm(resp.data.message)) {
+                                    enviarContrato(true);
+                                }
+                            } else {
+                                alert('Error: ' + (resp.data.message ?? 'Error desconocido'));
+                            }
+                        })
+                        .catch(() => {
+                            setLoading(btnFormGuardar, false);
+                            alert('Error de conexión. Inténtalo de nuevo.');
+                        });
+                }
+
+                enviarContrato();
             });
         }
 

@@ -1,0 +1,503 @@
+/* ==========================================================================
+   Estilos de la Mini App de Control de Gastos y Dietas (ep-expenses)
+   Alineados con el diseño Glassmorphism y responsive del Portal del Empleado
+   ========================================================================== */
+
+.ep-expenses-app {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+}
+
+/* Header Actions */
+.ep-app-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Tarjetas KPI Resumen */
+.ep-expenses-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.kpi-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px;
+    border-radius: var(--ep-radius);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--ep-shadow-lg);
+}
+
+.kpi-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.kpi-data {
+    display: flex;
+    flex-direction: column;
+}
+
+.kpi-title {
+    font-size: 13px;
+    color: var(--ep-text-muted);
+    font-weight: 500;
+}
+
+.kpi-data h3 {
+    margin: 4px 0 0 0;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ep-text);
+}
+
+/* Banner Alerta Día 27 - Cierre Mensual */
+.ep-alert-closure-card {
+    background: linear-gradient(135deg, rgba(254, 243, 199, 0.95), rgba(253, 230, 138, 0.9));
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-left: 6px solid #f59e0b;
+    padding: 20px 24px;
+    border-radius: var(--ep-radius);
+}
+
+#ep-app-root.dark-mode .ep-alert-closure-card {
+    background: linear-gradient(135deg, rgba(120, 53, 15, 0.85), rgba(180, 83, 9, 0.7));
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fef3c7;
+}
+
+.closure-banner-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.closure-banner-icon {
+    font-size: 32px;
+    color: #d97706;
+    flex-shrink: 0;
+}
+
+#ep-app-root.dark-mode .closure-banner-icon {
+    color: #fbbf24;
+}
+
+.closure-banner-text {
+    flex: 1;
+    min-width: 260px;
+}
+
+.closure-banner-text h4 {
+    margin: 0 0 4px 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: #92400e;
+}
+
+#ep-app-root.dark-mode .closure-banner-text h4 {
+    color: #fef3c7;
+}
+
+.closure-banner-text p {
+    margin: 0;
+    font-size: 14px;
+    color: #78350f;
+}
+
+#ep-app-root.dark-mode .closure-banner-text p {
+    color: #fde68a;
+}
+
+/* Filtros Grid */
+.ep-expenses-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    align-items: end;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ep-text-muted);
+}
+
+.filter-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+}
+
+/* Formulario Modal Grid */
+.ep-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.ep-form-grid .full-width {
+    grid-column: 1 / -1;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ep-text);
+}
+
+.ep-input, .ep-select, .ep-textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius-sm);
+    background: var(--ep-surface);
+    color: var(--ep-text);
+    font-family: var(--ep-font-sans);
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+}
+
+.ep-input:focus, .ep-select:focus, .ep-textarea:focus {
+    outline: none;
+    border-color: var(--ep-primary);
+    box-shadow: 0 0 0 3px rgba(158, 28, 46, 0.15);
+}
+
+/* Subida de foto y cámara */
+.ep-upload-box {
+    padding: 16px;
+    border: 2px dashed var(--ep-border);
+    border-radius: var(--ep-radius-sm);
+    background: var(--ep-glass-bg);
+    text-align: center;
+}
+
+/* Modal Backdrops & Dialogs */
+.ep-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.ep-modal-content {
+    width: 100%;
+    max-width: 650px;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: var(--ep-surface);
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius);
+    box-shadow: var(--ep-shadow-lg);
+    display: flex;
+    flex-direction: column;
+}
+
+.ep-modal-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--ep-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ep-modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ep-text);
+}
+
+.ep-modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--ep-text-muted);
+    cursor: pointer;
+    line-height: 1;
+}
+
+.ep-modal-body {
+    padding: 24px;
+    overflow-y: auto;
+}
+
+.ep-modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--ep-border);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Botones genéricos de acción */
+.ep-btn-success {
+    background: #10b981;
+    color: #ffffff;
+}
+
+.ep-btn-success:hover {
+    background: #059669;
+}
+
+.ep-badge-warning {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.ep-badge-success {
+    background: #d1fae5;
+    color: #059669;
+}
+
+.ep-badge-info {
+    background: #e0f2fe;
+    color: #0284c7;
+}
+
+/* Tabla personalizada */
+.ep-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ep-table th, .ep-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--ep-border);
+}
+
+.ep-table th {
+    background: var(--ep-surface-hover);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ep-text-muted);
+}
+
+/* Responsive UI adjustments */
+@media (max-width: 640px) {
+    .ep-form-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .ep-expenses-filter-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ==========================================================================
+   Nuevos Estilos: Tabs, Liquidaciones de Viaje y Configuración de Administración
+   ========================================================================== */
+
+/* Navegación por Pestañas (Tabs) */
+.ep-expenses-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 2px solid var(--ep-border);
+    margin-bottom: 20px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.ep-tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 12px 18px;
+    color: var(--ep-text-muted);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.ep-tab-btn:hover {
+    color: var(--ep-text);
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.ep-tab-btn.active {
+    color: var(--ep-primary);
+    border-bottom-color: var(--ep-primary);
+}
+
+/* Contenedores de Tab */
+.ep-tab-content {
+    display: none;
+    animation: fadeInTab 0.3s ease-in-out;
+}
+
+.ep-tab-content.active {
+    display: block;
+}
+
+@keyframes fadeInTab {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Formulario de Tablas Dinámicas */
+.dynamic-table {
+    margin-top: 10px;
+    margin-bottom: 15px;
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius-sm);
+    overflow: hidden;
+}
+
+.dynamic-table th {
+    background: rgba(0, 0, 0, 0.03);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 12px;
+}
+
+.dynamic-table td {
+    padding: 6px 12px;
+    vertical-align: middle;
+}
+
+.dynamic-table input {
+    margin: 0;
+    background: transparent;
+    border: 1px solid rgba(0,0,0,0.08);
+}
+
+.dynamic-table input:focus {
+    background: var(--ep-surface);
+}
+
+/* Tarjetas de Resumen / Cálculo Desgloses */
+.closure-details-card {
+    background: rgba(0, 0, 0, 0.02);
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius);
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.closure-details-card .detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    background: var(--ep-surface);
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius-sm);
+}
+
+.closure-details-card .detail-item span {
+    font-size: 11px;
+    color: var(--ep-text-muted);
+    font-weight: 500;
+}
+
+.closure-details-card .detail-item strong {
+    font-size: 16px;
+    color: var(--ep-text);
+}
+
+.closure-details-card .detail-item.highlight {
+    background: var(--ep-primary-light, rgba(158, 28, 46, 0.05));
+    border-color: var(--ep-primary);
+}
+
+.closure-details-card .detail-item.highlight strong {
+    color: var(--ep-primary);
+    font-size: 20px;
+}
+
+/* Configuraciones de sedes y trabajadores */
+.worker-row:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.cfg-sede-name, .cfg-sede-prefix, .cfg-sede-next, .cfg-w-km, .cfg-w-irpf, .cfg-w-ss {
+    padding: 6px 10px;
+    font-size: 13px;
+    background: var(--ep-surface);
+}
+
+.ep-btn-sm {
+    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+/* Estilo para los Badges */
+.ep-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+/* Botones Corporativos (Granate/Cámara de Comercio de Cáceres) */
+.ep-btn-primary {
+    background-color: #9e1c2e !important;
+    border-color: #9e1c2e !important;
+    color: #ffffff !important;
+}
+
+.ep-btn-primary:hover, .ep-btn-primary:focus {
+    background-color: #7f1220 !important;
+    border-color: #7f1220 !important;
+    color: #ffffff !important;
+}
+
+/* Forzar que el visor individual se superponga por encima de la galería */
+#ep-modal-viewer {
+    z-index: 100005 !important;
+}
+

@@ -9,6 +9,17 @@ $department = (string) ($current_user->ep_department ?? '');
 $is_manager = ($permission === 'write') || !empty($manageable_tickets) || !empty($closed_manageable_tickets) || (strpos($department, 'TRANSFORMACI') !== false || strpos($department, 'Comunicaci') !== false);
 $queues = EP_Tickets::get_department_queues();
 $stats = EP_Tickets::get_stats();
+
+$js_queue_counts = [
+    'IT' => 0,
+    'Communication' => 0,
+    'Web' => 0
+];
+foreach ($queues as $q) {
+    if ($q['label'] === 'Soporte Informático') $js_queue_counts['IT'] = $q['count'];
+    if ($q['label'] === 'Comunicación') $js_queue_counts['Communication'] = $q['count'];
+    if ($q['label'] === 'Desarrollo/Soporte Web') $js_queue_counts['Web'] = $q['count'];
+}
 ?>
 
 <div class="ep-content-grid">
@@ -351,11 +362,67 @@ $stats = EP_Tickets::get_stats();
                     </div>
 
                     <label>Tipo de Incidencia</label>
-                    <select name="ticket_type" style="width:100%; margin-bottom: 1rem;">
+                    <select name="ticket_type" id="epTicketTypeSelect" style="width:100%; margin-bottom: 1rem;">
                         <option value="IT">Soporte Informático</option>
                         <option value="Web">Desarrollo/Soporte Web</option>
                         <option value="Communication">Comunicación</option>
                     </select>
+
+                    <?php
+                    $my_equipment = get_posts(array(
+                        'post_type' => 'ep_inventory_item',
+                        'posts_per_page' => -1,
+                        'meta_query' => array(
+                            'relation' => 'OR',
+                            array('key' => '_ep_item_assigned_to', 'value' => $current_user->ID),
+                            array('key' => '_ep_item_loaned_to', 'value' => $current_user->ID),
+                            array('key' => '_ep_assigned_user_id', 'value' => $current_user->ID)
+                        )
+                    ));
+                    if (empty($my_equipment)) {
+                        $my_equipment = get_posts(array(
+                            'post_type' => 'ep_inventory_item',
+                            'posts_per_page' => 100,
+                            'orderby' => 'title',
+                            'order' => 'ASC'
+                        ));
+                    }
+                    ?>
+                    <div id="epEquipmentGroup" style="display: block;">
+                        <label><i class="fa-solid fa-laptop"></i> Equipo o Periférico Afectado (Opcional)</label>
+                        <select name="ticket_asset" style="width:100%; margin-bottom: 1rem;">
+                            <option value="">-- Ninguno / Consulta General --</option>
+                            <?php foreach ($my_equipment as $eq): 
+                                $serial = get_post_meta($eq->ID, '_ep_item_serial', true) ?: get_post_meta($eq->ID, '_ep_inventory_serial', true);
+                            ?>
+                                <option value="<?php echo $eq->ID; ?>">
+                                    <?php echo esc_html($eq->post_title . ($serial ? ' (SN: ' . $serial . ')' : '')); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const typeSelect = document.getElementById('epTicketTypeSelect');
+                            const eqGroup = document.getElementById('epEquipmentGroup');
+                            if (typeSelect && eqGroup) {
+                                typeSelect.addEventListener('change', function() {
+                                    eqGroup.style.display = (this.value === 'IT') ? 'block' : 'none';
+                                });
+                            }
+                        });
+                    </script>
+
+                    <!-- Aviso dinámico de carga de trabajo por departamento -->
+                    <div id="epTicketWorkloadNotice" style="display: none; margin-bottom: 1.2rem; padding: 12px 15px; border-radius: 8px; border-left: 4px solid var(--ep-primary); background: #f0f7ff; color: #1e3a8a; font-size: 0.85rem; transition: opacity 0.3s ease;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div class="notice-icon" style="font-size: 1.1rem;"><i class="fa-solid fa-circle-info"></i></div>
+                            <div class="notice-text">
+                                <span id="epWorkloadText"></span>
+                            </div>
+                        </div>
+                    </div>
 
                     <label>Mensaje / Descripción</label>
                     <textarea name="ticket_message" required rows="5"
@@ -439,7 +506,34 @@ $stats = EP_Tickets::get_stats();
 
         <div class="ep-modal-body">
             <p><strong>Solicitante:</strong> <span id="modalTicketUser"></span></p>
-            <p><strong>Prioridad:</strong> <span id="modalTicketPriority"></span></p>
+            <p>
+                <strong>Prioridad:</strong> <span id="modalTicketPriority"></span>
+                <?php if (EP_Tickets::is_staff($current_user->ID)): ?>
+                    <button type="button" id="btnEditPriority" class="ep-btn ep-btn-sm ep-btn-secondary" style="margin-left: 10px; padding: 2px 8px; font-size: 0.8rem;">
+                        <i class="fa-solid fa-pen"></i> Cambiar
+                    </button>
+                <?php endif; ?>
+            </p>
+            <?php if (EP_Tickets::is_staff($current_user->ID)): ?>
+                <div id="editPriorityContainer" style="display: none; background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #e2e8f0;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                        <label for="newPrioritySelect" style="margin: 0; font-weight: 600; font-size: 0.9rem;">Nueva Prioridad:</label>
+                        <select id="newPrioritySelect" style="padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.9rem;">
+                            <option value="Baja">Baja</option>
+                            <option value="Normal">Normal</option>
+                            <option value="Alta">Alta</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label for="priorityReasonText" style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem;">Motivo del cambio (Opcional):</label>
+                        <textarea id="priorityReasonText" placeholder="Escribe el motivo del cambio de prioridad..." rows="2" style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1; padding: 8px; font-size: 0.9rem; resize: vertical;"></textarea>
+                    </div>
+                    <div style="text-align: right; display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button" id="btnCancelPriorityChange" class="ep-btn ep-btn-sm ep-btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Cancelar</button>
+                        <button type="button" id="btnSavePriorityChange" class="ep-btn ep-btn-sm ep-btn-primary" style="padding: 4px 10px; font-size: 0.8rem;">Guardar</button>
+                    </div>
+                </div>
+            <?php endif; ?>
             <p><strong>Estado:</strong> <span id="modalTicketStatus"></span></p>
             <hr>
             <p><strong>Descripción:</strong></p>
@@ -561,6 +655,76 @@ $stats = EP_Tickets::get_stats();
             });
         }
 
+        // 2b. Priority Change Logic (Staff Only)
+        const btnEditPriority = document.getElementById('btnEditPriority');
+        const editPriorityContainer = document.getElementById('editPriorityContainer');
+        const btnCancelPriorityChange = document.getElementById('btnCancelPriorityChange');
+        const btnSavePriorityChange = document.getElementById('btnSavePriorityChange');
+
+        if (btnEditPriority && editPriorityContainer) {
+            btnEditPriority.addEventListener('click', function(e) {
+                e.preventDefault();
+                const currentPriority = document.getElementById('modalTicketPriority').textContent.trim();
+                const select = document.getElementById('newPrioritySelect');
+                if (select) {
+                    select.value = currentPriority;
+                }
+                const reasonText = document.getElementById('priorityReasonText');
+                if (reasonText) {
+                    reasonText.value = '';
+                }
+                editPriorityContainer.style.display = 'block';
+            });
+        }
+
+        if (btnCancelPriorityChange && editPriorityContainer) {
+            btnCancelPriorityChange.addEventListener('click', function(e) {
+                e.preventDefault();
+                editPriorityContainer.style.display = 'none';
+            });
+        }
+
+        if (btnSavePriorityChange && editPriorityContainer) {
+            btnSavePriorityChange.addEventListener('click', function(e) {
+                e.preventDefault();
+                const id = document.getElementById('modalTicketID').textContent;
+                const newPriority = document.getElementById('newPrioritySelect').value;
+                const reason = document.getElementById('priorityReasonText').value.trim();
+
+                this.disabled = true;
+                this.textContent = 'Guardando...';
+
+                const fd = new FormData();
+                fd.append('action', 'ep_app_ajax');
+                fd.append('app', 'tickets');
+                fd.append('ep_action', 'change_ticket_priority');
+                fd.append('ticket_id', id);
+                fd.append('priority', newPriority);
+                fd.append('reason', reason);
+
+                fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                    method: 'POST',
+                    body: fd
+                })
+                .then(res => res.json())
+                .then(response => {
+                    if (response.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + response.data);
+                        this.disabled = false;
+                        this.textContent = 'Guardar';
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert('Error de servidor.');
+                    this.disabled = false;
+                    this.textContent = 'Guardar';
+                });
+            });
+        }
+
         // 3. Delegation for Modal Interactions
         document.addEventListener('click', function (e) {
 
@@ -652,6 +816,16 @@ $stats = EP_Tickets::get_stats();
 
                 document.getElementById('replyFormContainer').style.display = (status !== 'closed') ? 'block' : 'none';
 
+                // Resetear panel y botón de edición de prioridad
+                const editPrioContainer = document.getElementById('editPriorityContainer');
+                if (editPrioContainer) {
+                    editPrioContainer.style.display = 'none';
+                }
+                const btnEditPrio = document.getElementById('btnEditPriority');
+                if (btnEditPrio) {
+                    btnEditPrio.style.display = (status !== 'closed') ? 'inline-block' : 'none';
+                }
+
                 const btnTake = document.getElementById('btnTakeTicket');
                 const btnClose = document.getElementById('btnCloseTicket');
                 btnTake.style.display = 'none';
@@ -698,5 +872,44 @@ $stats = EP_Tickets::get_stats();
                 }
             }
         });
+
+        // 4. Dynamic Workload Notice in Ticket Creation Form
+        const epQueueCounts = <?php echo json_encode($js_queue_counts); ?>;
+        const ticketTypeSelect = document.querySelector('select[name="ticket_type"]');
+        const workloadNotice = document.getElementById('epTicketWorkloadNotice');
+        const workloadText = document.getElementById('epWorkloadText');
+
+        function updateWorkloadNotice() {
+            if (!ticketTypeSelect || !workloadNotice || !workloadText) return;
+            const selectedType = ticketTypeSelect.value;
+            const count = epQueueCounts[selectedType] || 0;
+
+            let msg = '';
+            if (count === 0) {
+                msg = 'No hay tickets delante del tuyo en cola. Una vez recibido, se podrá determinar la prioridad de este ticket.';
+                workloadNotice.style.borderLeftColor = 'var(--ep-success, #28a745)';
+                workloadNotice.style.background = '#f0fff4';
+                workloadNotice.style.color = '#155724';
+                workloadNotice.querySelector('.notice-icon').innerHTML = '<i class="fa-solid fa-circle-check" style="color:#28a745;"></i>';
+            } else {
+                msg = `Hay <strong>${count}</strong> ${count === 1 ? 'ticket' : 'tickets'} delante del tuyo en cola. Una vez recibido, se podrá determinar la prioridad de este ticket.`;
+                workloadNotice.style.borderLeftColor = 'var(--ep-warning, #ffc107)';
+                workloadNotice.style.background = '#fffbeb';
+                workloadNotice.style.color = '#856404';
+                workloadNotice.querySelector('.notice-icon').innerHTML = '<i class="fa-solid fa-clock" style="color:#ffc107;"></i>';
+            }
+
+            workloadText.innerHTML = msg;
+            workloadNotice.style.display = 'block';
+            workloadNotice.style.opacity = '0';
+            setTimeout(() => {
+                workloadNotice.style.opacity = '1';
+            }, 50);
+        }
+
+        if (ticketTypeSelect) {
+            ticketTypeSelect.addEventListener('change', updateWorkloadNotice);
+            updateWorkloadNotice();
+        }
     });
 </script>

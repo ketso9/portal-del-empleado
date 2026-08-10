@@ -28,6 +28,13 @@ jQuery(document).ready(function ($) {
     let visibleSignatureImageBase64 = null;
     let savedSignatureBase64 = null;
 
+    // Nuevas variables para el modo desbloqueado
+    let currentPageWidthPoints = 595.276; // A4 por defecto
+    let currentPageHeightPoints = 841.89;
+    let detailsLogoBase64 = null;
+    let savedLogoBase64 = null;
+    let unlockedStampFooter = true; // Por defecto Sí
+
     // Check for saved signature on load
     function checkSavedSignature() {
         $.ajax({
@@ -46,6 +53,25 @@ jQuery(document).ready(function ($) {
         });
     }
     checkSavedSignature();
+
+    // Check for saved logo on load
+    function checkSavedLogo() {
+        $.ajax({
+            url: ep_signature_vars.ajax_url,
+            method: 'POST',
+            data: {
+                action: 'ep_app_signature_get_user_logo',
+                nonce: ep_signature_vars.nonce
+            },
+            success: (response) => {
+                if (response.success && response.data.logo_base64) {
+                    savedLogoBase64 = response.data.logo_base64;
+                    $('#fds-btn-use-saved-logo').fadeIn();
+                }
+            }
+        });
+    }
+    checkSavedLogo();
 
     // --- Selectors ---
     const $canvas = $('#fds-pdf-canvas');
@@ -228,6 +254,15 @@ jQuery(document).ready(function ($) {
                 canvasElement.height = viewport.height;
                 canvasElement.width = viewport.width;
 
+                // Guardar tamaño original en puntos PDF
+                if (page.view) {
+                    currentPageWidthPoints = page.view[2] - page.view[0];
+                    currentPageHeightPoints = page.view[3] - page.view[1];
+                } else {
+                    currentPageWidthPoints = page.width || (viewport.width / scale);
+                    currentPageHeightPoints = page.height || (viewport.height / scale);
+                }
+
                 const renderContext = {
                     canvasContext: canvasContext,
                     viewport: viewport
@@ -353,6 +388,14 @@ jQuery(document).ready(function ($) {
                 name: userName,
                 dni: userDni
             });
+        } else if (type === 'details') {
+            const userName = $('#fds-user-display-name').val();
+            const userDni = $('#fds-user-dni').val();
+            stampData = JSON.stringify({
+                name: userName,
+                dni: userDni,
+                logo: detailsLogoBase64
+            });
         }
 
         const newStamp = {
@@ -460,15 +503,90 @@ jQuery(document).ready(function ($) {
 
     $('input[name="fds_visible_signature_type"]').on('change', function () {
         const val = $(this).val();
-        $('#fds-visible-signature-user-data-area').toggle(val === 'text');
+        $('#fds-visible-signature-user-data-area').toggle(val === 'text' || val === 'details');
+        $('#fds-details-logo-area').toggle(val === 'details');
+        $('#fds-btn-config-unlocked').toggle(val === 'details');
         $('#fds-visible-signature-image-upload-area').toggle(val === 'image');
         $('#fds-visible-signature-positioning-area').toggle(val !== 'none');
+        
+        if (val === 'details') {
+            $('#fds-unlocked-modal').fadeIn();
+        }
+
         if (val === 'none') {
             signatureStamps = [];
             renderMarkers();
             updateCoordsDisplay();
         }
     });
+
+    // Eventos del Modal de Firma Desbloqueada
+    $('#fds-btn-config-unlocked').on('click', function (e) {
+        e.preventDefault();
+        $('#fds-unlocked-modal').fadeIn();
+    });
+
+    $('#fds-close-unlocked-modal').on('click', function () {
+        $('#fds-unlocked-modal').fadeOut();
+    });
+
+    $('#fds-confirm-unlocked').on('click', function () {
+        unlockedStampFooter = $('input[name="fds_unlocked_stamp_footer"]:checked').val() === 'yes';
+        $('#fds-unlocked-modal').fadeOut();
+    });
+
+    // Gestión del Logo de Sello
+    $('#fds-details-logo-file').on('change', function (e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                detailsLogoBase64 = ev.target.result;
+                $('#fds-details-logo-preview').attr('src', detailsLogoBase64).fadeIn();
+                $('#fds-save-logo-container').fadeIn();
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    $('#fds-save-logo-checkbox').on('change', function() {
+        if (this.checked && detailsLogoBase64) {
+            saveLogoToServer(detailsLogoBase64);
+        }
+    });
+
+    $('#fds-btn-use-saved-logo').on('click', function() {
+        if (savedLogoBase64) {
+            detailsLogoBase64 = savedLogoBase64;
+            $('#fds-details-logo-preview').attr('src', detailsLogoBase64).fadeIn();
+            $('#fds-save-logo-container').hide();
+            
+            // Feedback visual
+            $(this).html('<i class="fa-solid fa-check"></i> Cargado').addClass('ep-btn-success').delay(2000).queue(function(next){
+                $(this).html('<i class="fa-solid fa-bookmark"></i> Usar guardado').removeClass('ep-btn-success');
+                next();
+            });
+        }
+    });
+
+    function saveLogoToServer(base64) {
+        $.ajax({
+            url: ep_signature_vars.ajax_url,
+            method: 'POST',
+            data: {
+                action: 'ep_app_signature_save_user_logo',
+                nonce: ep_signature_vars.nonce,
+                logo_base64: base64
+            },
+            success: (response) => {
+                if (response.success) {
+                    savedLogoBase64 = base64;
+                    $('#fds-btn-use-saved-logo').fadeIn();
+                    console.log('Logo guardado con éxito en el servidor');
+                }
+            }
+        });
+    }
 
     $('#fds-visible-signature-image-file').on('change', function (e) {
         const file = e.target.files[0];
@@ -532,6 +650,22 @@ jQuery(document).ready(function ($) {
     $signButton.on('click', async function () {
         if (isSigning || fileQueue.length === 0) return;
 
+        // Actualizar datos de marcas dinámicamente con los valores actuales antes de firmar
+        signatureStamps.forEach(stamp => {
+            if (stamp.type === 'text') {
+                stamp.data = JSON.stringify({
+                    name: $('#fds-user-display-name').val(),
+                    dni: $('#fds-user-dni').val()
+                });
+            } else if (stamp.type === 'details') {
+                stamp.data = JSON.stringify({
+                    name: $('#fds-user-display-name').val(),
+                    dni: $('#fds-user-dni').val(),
+                    logo: detailsLogoBase64
+                });
+            }
+        });
+
         // Ensure current stamps are saved
         fileQueue[currentFileIndex].stamps = [...signatureStamps];
 
@@ -548,8 +682,14 @@ jQuery(document).ready(function ($) {
 
         const targetUserType = $('input[name="fds_target_user_type"]:checked').val();
         const recipientId = $('#fds-recipient-id').val();
-
-        if (targetUserType === 'other' && recipientId) {
+ 
+        if (targetUserType === 'other') {
+            if (!recipientId) {
+                alert('Por favor, busca y selecciona un destinatario de la lista (haz clic sobre su nombre en los resultados de búsqueda).');
+                isSigning = false;
+                updateSignBtnState(false);
+                return;
+            }
             requestSignatureBulk(recipientId);
         } else {
             processQueueSign();
@@ -696,6 +836,13 @@ jQuery(document).ready(function ($) {
         formData.append('original_pdf', item.file);
         formData.append('pdf_hash_original', item.hash);
         formData.append('stamps', stampsToSend);
+        if (item.requestId) {
+            formData.append('request_id', item.requestId);
+        }
+        const visibleType = $('input[name="fds_visible_signature_type"]:checked').val();
+        const stampFooter = (visibleType === 'details') ? (unlockedStampFooter ? '1' : '0') : '1';
+        formData.append('stamp_footer', stampFooter);
+
         formData.append('user_name_for_stamp', $('#fds-user-display-name').val());
         formData.append('user_dni_for_stamp', $('#fds-user-dni').val());
         formData.append('pdf_canvas_width', canvasElement.width);
@@ -727,7 +874,11 @@ jQuery(document).ready(function ($) {
                         } else {
                             updateStatus('Esperando respuesta de AutoFirma...', 50);
                         }
-                        const signResults = await signWithAutoFirma(response.data.pdf_data_to_sign_base64);
+                        const signResults = await signWithAutoFirma(
+                            response.data.pdf_data_to_sign_base64,
+                            item,
+                            !!response.data.skipped_prep
+                        );
                         saveSignedDocument(signResults.signature, item, signResults.certificate);
                     } catch (err) {
                         let errorMsg = err;
@@ -807,16 +958,142 @@ jQuery(document).ready(function ($) {
         });
     }
 
-    async function signWithAutoFirma(base64Data) {
-        return new Promise((resolve, reject) => {
+    function generateStampImage(type, userName, userDni, logoBase64) {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 400;
+            canvas.height = 120;
+            const ctx = canvas.getContext('2d');
+
+            // Sin fondo ni borde (transparente estilo Acrobat)
+
+            // Si es details y tiene logo
+            if (type === 'details' && logoBase64) {
+                const img = new Image();
+                img.onload = function() {
+                    // Dibujar logo a la izquierda (escalado para caber)
+                    ctx.drawImage(img, 10, 20, 80, 80);
+                    
+                    // Escribir texto a la derecha
+                    ctx.fillStyle = '#000000';
+                    ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    
+                    const dateStr = new Date().toLocaleString('es-ES');
+                    ctx.fillText('Firmado digitalmente por:', 100, 15);
+                    ctx.font = '11px Arial';
+                    ctx.fillText(userName, 100, 32);
+                    ctx.fillText('NIF/CIF: ' + userDni, 100, 49);
+                    
+                    ctx.font = '7.5px Arial';
+                    ctx.fillStyle = '#444';
+                    const dnText = `DN: cn=${userName}, serialNumber=IDCES-${userDni}, o=Cámara Oficial de Comercio, c=ES`;
+                    ctx.fillText(dnText, 100, 66);
+                    
+                    ctx.font = '10px Arial';
+                    ctx.fillStyle = '#000';
+                    ctx.fillText('Fecha: ' + dateStr, 100, 83);
+                    
+                    ctx.font = 'bold 9px Arial';
+                    ctx.fillStyle = '#666';
+                    ctx.fillText('Portal del Empleado - Cámara de Cáceres', 100, 100);
+                    
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                img.src = logoBase64;
+            } else {
+                // Dibujar solo texto (ocupando todo el ancho)
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                
+                if (type === 'details') {
+                    const dateStr = new Date().toLocaleString('es-ES');
+                    ctx.fillText('Firmado digitalmente por:', 15, 15);
+                    ctx.font = '11px Arial';
+                    ctx.fillText(userName, 15, 32);
+                    ctx.fillText('NIF/CIF: ' + userDni, 15, 49);
+                    
+                    ctx.font = '7.5px Arial';
+                    ctx.fillStyle = '#444';
+                    const dnText = `DN: cn=${userName}, serialNumber=IDCES-${userDni}, o=Cámara Oficial de Comercio, c=ES`;
+                    ctx.fillText(dnText, 15, 66);
+                    
+                    ctx.font = '10px Arial';
+                    ctx.fillStyle = '#000';
+                    ctx.fillText('Fecha: ' + dateStr, 15, 83);
+                    
+                    ctx.font = 'bold 9px Arial';
+                    ctx.fillStyle = '#666';
+                    ctx.fillText('Portal del Empleado - Cámara de Cáceres', 15, 100);
+                } else {
+                    ctx.fillText('Firmado por:', 15, 20);
+                    ctx.font = '11px Arial';
+                    ctx.fillText(userName, 15, 40);
+                    ctx.fillText('DNI/CIF: ' + userDni, 15, 60);
+                }
+                
+                resolve(canvas.toDataURL('image/png'));
+            }
+        });
+    }
+
+    async function signWithAutoFirma(base64Data, item = null, skippedPrep = false) {
+        return new Promise(async (resolve, reject) => {
             try {
-                // AutoScript.sign(dataB64, algorithm, format, params, successCallback, errorCallback)
-                // Usamos parámetros estándar para PAdES
+                let params = "";
+                const visibleType = $('input[name="fds_visible_signature_type"]:checked').val();
+                
+                // Evitamos duplicidad: Solo configuramos la firma visible en el cliente (AutoFirma)
+                // si el servidor se saltó la preparación (skippedPrep === true) por estar el documento firmado/protegido.
+                if (item && item.stamps && item.stamps.length > 0 && skippedPrep) {
+                    const stamp = item.stamps[0];
+                    if (stamp.type !== 'none') {
+                        const w = currentPageWidthPoints;
+                        const h = currentPageHeightPoints;
+                        
+                        const clickX = stamp.x_ratio * w;
+                        const clickY = h - (stamp.y_ratio * h);
+                        
+                        // Hacemos el stamp un poco más grande (200x60 en puntos PDF) para que se lea el DN
+                        const stampW = 200;
+                        const stampH = 60;
+                        const xMin = Math.round(clickX - (stampW / 2));
+                        const xMax = Math.round(clickX + (stampW / 2));
+                        const yMin = Math.round(clickY - (stampH / 2));
+                        const yMax = Math.round(clickY + (stampH / 2));
+                        const pageNum = stamp.page;
+                        
+                        params = `signaturePage=${pageNum}` +
+                                 `\nsignaturePositionOnPageLowerLeftX=${xMin}` +
+                                 `\nsignaturePositionOnPageLowerLeftY=${yMin}` +
+                                 `\nsignaturePositionOnPageUpperRightX=${xMax}` +
+                                 `\nsignaturePositionOnPageUpperRightY=${yMax}`;
+                        
+                        if (stamp.type === 'image' && visibleSignatureImageBase64) {
+                            const cleanB64 = visibleSignatureImageBase64.replace(/^data:image\/(png|jpeg|jpg);base64,/i, "");
+                            params += `\nsignatureRubricImage=${cleanB64}`;
+                        } else if (stamp.type === 'text' || stamp.type === 'details') {
+                            const name = $('#fds-user-display-name').val() || ep_signature_vars.user_info.display_name;
+                            const dni = $('#fds-user-dni').val() || ep_signature_vars.user_info.dni || '';
+                            
+                            // Generar dinámicamente la imagen de firma
+                            const dataUrl = await generateStampImage(stamp.type, name, dni, detailsLogoBase64);
+                            const cleanB64 = dataUrl.replace(/^data:image\/(png|jpeg|jpg);base64,/i, "");
+                            params += `\nsignatureRubricImage=${cleanB64}`;
+                        }
+                    }
+                }
+                
+                console.log('EP_App_Signature: [AutoFirma] Calling sign with params:', params);
+                
                 AutoScript.sign(
                     base64Data,
                     "SHA256withRSA",
                     "PAdES",
-                    "",
+                    params,
                     (signature, certificate) => {
                         if (signature) {
                             resolve({
@@ -891,7 +1168,10 @@ jQuery(document).ready(function ($) {
                 nonce: ep_signature_vars.nonce,
                 sub_action: 'get_inbox'
             },
-            success: (html) => $list.html(html),
+            success: (html) => {
+                $list.html(html);
+                checkAutoSign();
+            },
             error: () => $list.html('<p class="error-msg">Error al cargar el buzón.</p>')
         });
     }
@@ -1241,5 +1521,31 @@ jQuery(document).ready(function ($) {
         if (typeof updateSignButtonText === 'function') {
             updateSignButtonText();
         }
+    }
+
+    // --- Auto-trigger signature from URL parameter ---
+    function checkAutoSign() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const reqId = urlParams.get('request_id');
+        if (reqId) {
+            const $btn = $('.fds-btn-sign-now[data-id="' + reqId + '"]');
+            if ($btn.length) {
+                console.log('EP_App_Signature: Auto-clicking sign now for request ID:', reqId);
+                
+                // Clear request_id from URL so it doesn't trigger again on reload/navigation
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + window.location.search.replace(/&?request_id=[^&]*/, '');
+                window.history.replaceState({ path: newUrl }, '', newUrl);
+
+                $btn.click();
+            }
+        }
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const reqId = urlParams.get('request_id');
+    if (reqId) {
+        console.log('EP_App_Signature: URL request_id found:', reqId);
+        // Switch to the inbox tab automatically which will trigger loadInbox()
+        $('.ep-tab-btn[data-tab="tab-inbox"]').click();
     }
 });

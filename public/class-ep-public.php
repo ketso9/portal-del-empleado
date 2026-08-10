@@ -17,6 +17,10 @@ class EP_Public
         // Dark Mode Persistence
         add_action('wp_ajax_ep_toggle_dark_mode', array($this, 'ajax_toggle_dark_mode'));
 
+        // App Order Customization
+        add_action('wp_ajax_ep_save_app_order', array($this, 'ajax_save_app_order'));
+        add_action('wp_ajax_ep_reset_app_order', array($this, 'ajax_reset_app_order'));
+
         // M365 Real-time Data
         add_action('wp_ajax_ep_get_m365_presence', array($this, 'ajax_get_m365_presence'));
         add_action('wp_ajax_ep_get_m365_events', array($this, 'ajax_get_m365_events'));
@@ -67,6 +71,44 @@ class EP_Public
         update_user_meta($user_id, 'ep_dark_mode', $dark_mode);
 
         wp_send_json_success();
+    }
+
+    /**
+     * AJAX: Save custom user app order
+     */
+    public function ajax_save_app_order()
+    {
+        check_ajax_referer('ep_ajax_nonce', 'nonce');
+
+        $user_id = get_current_user_id();
+        if (!$user_id) {
+            wp_send_json_error('No autorizado');
+        }
+
+        $order = isset($_POST['order']) && is_array($_POST['order']) ? array_map('sanitize_key', $_POST['order']) : array();
+
+        if (empty($order)) {
+            wp_send_json_error('Lista de orden vacía');
+        }
+
+        update_user_meta($user_id, 'ep_user_app_order', $order);
+        wp_send_json_success(array('message' => 'Orden guardado correctamente'));
+    }
+
+    /**
+     * AJAX: Reset user app order to default (A-Z)
+     */
+    public function ajax_reset_app_order()
+    {
+        check_ajax_referer('ep_ajax_nonce', 'nonce');
+
+        $user_id = get_current_user_id();
+        if (!$user_id) {
+            wp_send_json_error('No autorizado');
+        }
+
+        delete_user_meta($user_id, 'ep_user_app_order');
+        wp_send_json_success(array('message' => 'Orden restablecido a A-Z'));
     }
 
     /**
@@ -121,13 +163,26 @@ class EP_Public
         foreach ($presence_data as $presence) {
             $ms_id = $presence['id'];
             if (isset($user_map[$ms_id])) {
+                $target_wp_id = $user_map[$ms_id]['id'];
                 // No mostrar al propio usuario en la lista de compañeros
-                if ($user_map[$ms_id]['id'] == $user_id)
+                if ($target_wp_id == $user_id)
                     continue;
 
+                $availability = $presence['availability'] ?? 'Offline';
+                $activity     = $presence['activity'] ?? '';
+
+                $oof_data = EP_Auth_O365::get_user_oof_data($target_wp_id);
+                $is_oof   = $oof_data['is_oof'] || $availability === 'OutOfOffice' || $activity === 'OutOfOffice';
+
+                if ($is_oof) {
+                    $availability = 'OutOfOffice';
+                }
+
                 $result[] = array_merge($user_map[$ms_id], array(
-                    'availability' => $presence['availability'],
-                    'activity' => $presence['activity']
+                    'availability' => $availability,
+                    'activity'     => $activity,
+                    'is_oof'       => $is_oof,
+                    'oof_message'  => $oof_data['message'] ?? ''
                 ));
             } else {
                 error_log("EP Debug: MS ID $ms_id not found in local user map.");
@@ -383,19 +438,30 @@ class EP_Public
         wp_send_json_success($preview_url);
     }
 
+    /**
+     * Versión de un recurso a partir de su fecha de modificación. Antes se usaba
+     * time(), lo que obligaba a todos los navegadores a volver a descargar el CSS
+     * y el JS en cada carga de página.
+     */
+    private function asset_version($relative_path)
+    {
+        $file = EMPLOYEE_PORTAL_PATH . $relative_path;
+        return file_exists($file) ? filemtime($file) : EMPLOYEE_PORTAL_VERSION;
+    }
+
     public function enqueue_styles()
     {
-        wp_enqueue_style($this->plugin_name, EMPLOYEE_PORTAL_URL . 'public/css/employee-portal.css', array(), time(), 'all');
-        wp_enqueue_style('ep-tickets-extra', EMPLOYEE_PORTAL_URL . 'public/css/tickets-extra.css', array(), time(), 'all');
-        wp_enqueue_style('ep-header-widgets', EMPLOYEE_PORTAL_URL . 'public/css/header-widgets.css', array(), time(), 'all');
-        wp_enqueue_style('ep-dashboard-widgets', EMPLOYEE_PORTAL_URL . 'public/css/dashboard-widgets.css', array(), time(), 'all');
+        wp_enqueue_style($this->plugin_name, EMPLOYEE_PORTAL_URL . 'public/css/employee-portal.css', array(), $this->asset_version('public/css/employee-portal.css'), 'all');
+        wp_enqueue_style('ep-tickets-extra', EMPLOYEE_PORTAL_URL . 'public/css/tickets-extra.css', array(), $this->asset_version('public/css/tickets-extra.css'), 'all');
+        wp_enqueue_style('ep-header-widgets', EMPLOYEE_PORTAL_URL . 'public/css/header-widgets.css', array(), $this->asset_version('public/css/header-widgets.css'), 'all');
+        wp_enqueue_style('ep-dashboard-widgets', EMPLOYEE_PORTAL_URL . 'public/css/dashboard-widgets.css', array(), $this->asset_version('public/css/dashboard-widgets.css'), 'all');
         // FontAwesome for icons
         wp_enqueue_style('ep-font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css', array(), '6.4.0');
     }
 
     public function enqueue_scripts()
     {
-        wp_enqueue_script($this->plugin_name, EMPLOYEE_PORTAL_URL . 'public/js/employee-portal.js', array('jquery'), time(), false);
+        wp_enqueue_script($this->plugin_name, EMPLOYEE_PORTAL_URL . 'public/js/employee-portal.js', array('jquery'), $this->asset_version('public/js/employee-portal.js'), false);
 
         wp_localize_script($this->plugin_name, 'ep_vars', array(
             'ajax_url' => admin_url('admin-ajax.php'),

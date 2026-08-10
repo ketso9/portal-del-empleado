@@ -59,33 +59,35 @@ class EP_Notifications
         $data = wp_parse_args($data, $defaults);
         $data['user_id'] = $user_id;
 
-        ep_error_log("EP_Notifications: add_notification para user $user_id. Título: " . $data['title']);
+        ep_error_log("EP_Notifications: add_notification para user $user_id. Título: " . $data['title'], true);
 
         // Check if notifications are disabled globally
         if (get_option('ep_global_notifications_disabled', 0)) {
-            ep_error_log("EP_Notifications: Notifications are GLOBALLY disabled.");
+            ep_error_log("EP_Notifications: Notifications DESACTIVADAS globalmente.", true);
             return false;
         }
 
         // Check if user wants app notifications
         $app_enabled = get_user_meta($user_id, 'ep_notifications_app', true);
         if ($app_enabled === '0') {
-            ep_error_log("EP_Notifications: App notification disabled for user $user_id");
+            ep_error_log("EP_Notifications: Notificación de app desactivada para user $user_id", true);
             return false;
         }
 
         $inserted = $wpdb->insert($table_name, $data);
 
-        if ($inserted) {
-            $notification_id = $wpdb->insert_id;
-
-            // Send external alerts (Teams/Email) based on preferences
-            self::send_notification_alerts($user_id, $data);
-
-            return $notification_id;
+        if (!$inserted) {
+            ep_error_log("EP_Notifications: FALLO al insertar notificación en BD para user $user_id. DB Error: " . $wpdb->last_error, true);
+            return false;
         }
 
-        return false;
+        $notification_id = $wpdb->insert_id;
+        ep_error_log("EP_Notifications: Notificación #$notification_id insertada correctamente para user $user_id.", true);
+
+        // Send external alerts (Teams/Email) based on preferences
+        self::send_notification_alerts($user_id, $data);
+
+        return $notification_id;
     }
 
     /**
@@ -262,28 +264,29 @@ class EP_Notifications
     {
         // 1. Global disable check
         if (get_option('ep_global_notifications_disabled', 0)) {
-            ep_error_log("EP_Notifications: Email sending BLOCKED globally by setting.");
+            ep_error_log("EP_Notifications: Email BLOQUEADO globalmente.");
             return false;
         }
 
-        // 2. ALWAYS ALLOW emails with attachments (Critical documents like signed PDFs)
+        // 2. SIEMPRE PERMITIR emails con adjuntos (documentos firmados, etc.)
         if (!empty($args['attachments'])) {
-            return null; // Return null to let wp_mail continue
+            return null; // Dejar que wp_mail continúe
         }
 
-        // 3. Handle emails explicitly sent by EP_Notifications (Internal Alerts)
-        // REVERTED BLOCK: We want these to go through as fallback if Teams fails or is not linked.
+        // 3. GUARD ANTI-BUCLE: Si ya estamos enviando una notificación desde el portal,
+        //    NO interceptar este email (evita recursión infinita).
         if (self::$is_sending_notification) {
-             ep_error_log("EP_Notifications: ALLOWING platform alert email as fallback/backup.");
-             return null; // Let wp_mail continue
+            ep_error_log("EP_Notifications: PERMITIENDO email de alerta del portal (fallback).");
+            return null;
         }
 
-        // 4. Bridge external emails (from other plugins) to Portal/Teams
+        // 4. Bridge de emails externos (de otros plugins) al Portal/Teams
         return $this->bridge_and_consume_external_email($args);
     }
 
     /**
-     * Intercepts emails from other plugins, creates a portal notification, and cancels the email.
+     * Intercepta emails de otros plugins, crea una notificación en el portal y cancela el email original.
+     * IMPORTANTE: No se llama cuando $is_sending_notification está activo (guard anti-bucle).
      */
     private function bridge_and_consume_external_email($mail_data)
     {
@@ -296,27 +299,29 @@ class EP_Notifications
 
         foreach ($to as $recipient) {
             $email = trim($recipient);
-            // Extract email from "Name <email@example.com>" format
+            // Extraer email del formato "Nombre <email@example.com>"
             if (preg_match('/<(.*)>/', $email, $matches)) {
                 $email = $matches[1];
             }
 
             $user = get_user_by('email', $email);
-            if ($user && class_exists('EP_Notifications')) {
-                // Bridge to portal notification
+            if ($user) {
+                // Activamos la bandera ANTES de llamar a add_notification para
+                // evitar que el email de alerta interna vuelva a entrar en el gatekeeper.
+                self::$is_sending_notification = true;
                 self::add_notification($user->ID, array(
-                    'type' => 'info',
-                    'title' => $mail_data['subject'],
-                    'message' => $mail_data['message'],
-                    'link' => '?view=dashboard'
+                    'type'    => 'info',
+                    'title'   => $mail_data['subject'],
+                    'message' => is_string($mail_data['message']) ? wp_strip_all_tags($mail_data['message']) : '',
+                    'link'    => '?view=dashboard'
                 ));
+                self::$is_sending_notification = false;
                 $consumed = true;
-                ep_error_log("EP_Notifications: External email to $email bridged and consumed.");
+                ep_error_log("EP_Notifications: Email externo a $email capturado y convertido en notificación de portal.", true);
             }
         }
 
-        // If we successfully bridged it for at least one user, block the original email
-        // to keep inboxes clean as requested.
+        // Si se convirtió para al menos un usuario, bloqueamos el email original.
         return $consumed ? false : null;
     }
 

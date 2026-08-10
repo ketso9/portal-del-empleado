@@ -64,6 +64,16 @@ class EP_Roles
             )
         );
 
+        // Administration Dept Role
+        add_role(
+            'ep_administration',
+            __('Dpto. Administración', 'employee-portal'),
+            array(
+                'read' => true,
+                'edit_posts' => true,
+            )
+        );
+
         // Super Admin Role
         $admin_role = get_role('administrator');
         $admin_caps = $admin_role ? $admin_role->capabilities : array('manage_options' => true, 'read' => true);
@@ -72,6 +82,19 @@ class EP_Roles
             __('Super Administrador', 'employee-portal'),
             $admin_caps
         );
+
+        // Suprimir roles no necesarios
+        $roles_to_remove = array(
+            'pdf_signer',
+            'pdf_verifier',
+            'pdf_admin',
+            'pdf_manager',
+            'ep_empresas_editor',
+            'ep_empresas_viewer'
+        );
+        foreach ($roles_to_remove as $r_id) {
+            remove_role($r_id);
+        }
     }
 
     public static function get_roles_list()
@@ -79,8 +102,12 @@ class EP_Roles
         $wp_roles = wp_roles();
         $roles = array();
 
-        // Core WP roles to exclude from the portal (they're not relevant)
-        $exclude = array('subscriber', 'contributor', 'author', 'editor');
+        // Roles a excluir de la matriz del portal
+        $exclude = array(
+            'subscriber', 'contributor', 'author', 'editor',
+            'pdf_signer', 'pdf_verifier', 'pdf_admin', 'pdf_manager',
+            'ep_empresas_editor', 'ep_empresas_viewer'
+        );
 
         foreach ($wp_roles->roles as $role_id => $role_info) {
             if (in_array($role_id, $exclude)) {

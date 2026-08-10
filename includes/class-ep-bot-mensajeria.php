@@ -59,6 +59,12 @@ class EP_Bot_Mensajeria
             wp_send_json_error(['error' => 'Unauthorized. Missing valid Bearer token.'], 401);
             exit;
         }
+
+        if (!$this->validar_token_microsoft(substr((string)$auth_header, 7))) {
+            ep_error_log('EP Bot SECURITY ALERT: Token Bearer inválido en petición AJAX.', true);
+            wp_send_json_error(['error' => 'Unauthorized. Invalid token.'], 401);
+            exit;
+        }
         
         $this->procesar_peticion_teams();
         exit;
@@ -111,11 +117,19 @@ class EP_Bot_Mensajeria
             return new WP_REST_Response($validation_token, 200, array('Content-Type' => 'text/plain'));
         }
 
-        // Security: Validate Authorization header (Soft match, Microsoft often gets its headers stripped by Apache on shared hosting)
+        // Seguridad: si llega cabecera Authorization, el token DEBE ser válido.
+        // Si no llega, se continúa porque Apache/cPanel la eliminan sin 'CGIPassAuth On',
+        // pero entonces la única salida posible del bot son los dominios oficiales de
+        // Microsoft (ver validar_service_url), así que un payload falsificado no puede
+        // desviar la respuesta ni el token del bot hacia un servidor ajeno.
         $auth_header = $request->get_header('authorization');
-        if (empty($auth_header) || strpos((string)$auth_header, 'Bearer ') !== 0) {
-            ep_error_log('EP Bot SECURITY WARNING: Unauthenticated REST request. Header missing or stripped by Apache. Proceeding anyway.');
-            // Permitimos que continúe porque Apache + cPanel borran el header 'Authorization' por defecto sin 'CGIPassAuth On'
+        if (!empty($auth_header) && strpos((string)$auth_header, 'Bearer ') === 0) {
+            if (!$this->validar_token_microsoft(substr((string)$auth_header, 7))) {
+                ep_error_log('EP Bot SECURITY ALERT: Token Bearer inválido. Petición rechazada.', true);
+                return new WP_REST_Response(['error' => 'Unauthorized'], 401);
+            }
+        } else {
+            ep_error_log('EP Bot: Petición sin cabecera Authorization (probablemente eliminada por Apache).');
         }
 
         $body_raw = $request->get_body();
@@ -501,6 +515,141 @@ class EP_Bot_Mensajeria
         return ['type' => 'message', 'attachments' => [['contentType' => 'application/vnd.microsoft.card.adaptive', 'content' => $card]]];
     }
 
+    /**
+     * Dominios oficiales a los que el bot puede responder. Cualquier otro destino
+     * significa que el serviceUrl del payload ha sido manipulado.
+     */
+    public static function validar_service_url($service_url)
+    {
+        $host = parse_url((string) $service_url, PHP_URL_HOST);
+        $scheme = parse_url((string) $service_url, PHP_URL_SCHEME);
+
+        if (!$host || strtolower((string) $scheme) !== 'https') {
+            return false;
+        }
+
+        $host = strtolower($host);
+        $dominios_permitidos = array(
+            'botframework.com',
+            'trafficmanager.net',
+            'skype.com',
+            'microsoft.com',
+        );
+
+        foreach ($dominios_permitidos as $dominio) {
+            if ($host === $dominio || substr($host, -(strlen($dominio) + 1)) === '.' . $dominio) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Verifica la firma de un token emitido por el Bot Framework contra las claves
+     * públicas publicadas por Microsoft (JWKS), además del emisor, la audiencia
+     * (el id de aplicación del bot) y la caducidad.
+     */
+    private function validar_token_microsoft($jwt)
+    {
+        $partes = explode('.', (string) $jwt);
+        if (count($partes) !== 3) {
+            return false;
+        }
+
+        $decode = function ($b64) {
+            $b64 = strtr($b64, '-_', '+/');
+            $pad = strlen($b64) % 4;
+            if ($pad) {
+                $b64 .= str_repeat('=', 4 - $pad);
+            }
+            return base64_decode($b64);
+        };
+
+        $cabecera = json_decode($decode($partes[0]), true);
+        $carga    = json_decode($decode($partes[1]), true);
+        $firma    = $decode($partes[2]);
+
+        if (!is_array($cabecera) || !is_array($carga) || empty($cabecera['kid'])) {
+            return false;
+        }
+
+        // Emisor, audiencia y ventana temporal
+        $emisores = array('https://api.botframework.com', 'https://api.botframework.us');
+        if (empty($carga['iss']) || !in_array($carga['iss'], $emisores, true)) {
+            return false;
+        }
+
+        $app_id = preg_replace('/^28:/', '', (string) ep_get_option('ep_teams_bot_id'));
+        if (!empty($app_id) && (empty($carga['aud']) || $carga['aud'] !== $app_id)) {
+            return false;
+        }
+
+        $ahora = time();
+        if (!empty($carga['exp']) && $ahora > ((int) $carga['exp'] + 300)) {
+            return false;
+        }
+        if (!empty($carga['nbf']) && $ahora < ((int) $carga['nbf'] - 300)) {
+            return false;
+        }
+
+        $clave_pem = $this->obtener_clave_publica($cabecera['kid']);
+        if (!$clave_pem) {
+            return false;
+        }
+
+        $algoritmo = (isset($cabecera['alg']) && $cabecera['alg'] === 'RS512') ? OPENSSL_ALGO_SHA512 : OPENSSL_ALGO_SHA256;
+        $verificado = openssl_verify($partes[0] . '.' . $partes[1], $firma, $clave_pem, $algoritmo);
+
+        return ($verificado === 1);
+    }
+
+    /**
+     * Devuelve en formato PEM la clave pública del Bot Framework indicada por 'kid'.
+     * El juego de claves se cachea 12 horas.
+     */
+    private function obtener_clave_publica($kid)
+    {
+        $claves = get_transient('ep_bot_jwks');
+
+        if (!is_array($claves) || !isset($claves[$kid])) {
+            $config = wp_remote_get('https://login.botframework.com/v1/.well-known/openidconfiguration', array('timeout' => 15));
+            if (is_wp_error($config)) {
+                return false;
+            }
+            $config = json_decode(wp_remote_retrieve_body($config), true);
+            if (empty($config['jwks_uri'])) {
+                return false;
+            }
+
+            $jwks = wp_remote_get($config['jwks_uri'], array('timeout' => 15));
+            if (is_wp_error($jwks)) {
+                return false;
+            }
+            $jwks = json_decode(wp_remote_retrieve_body($jwks), true);
+            if (empty($jwks['keys'])) {
+                return false;
+            }
+
+            $claves = array();
+            foreach ($jwks['keys'] as $clave) {
+                if (!empty($clave['kid']) && !empty($clave['x5c'][0])) {
+                    $claves[$clave['kid']] = $clave['x5c'][0];
+                }
+            }
+            set_transient('ep_bot_jwks', $claves, 12 * HOUR_IN_SECONDS);
+        }
+
+        if (empty($claves[$kid])) {
+            return false;
+        }
+
+        $certificado = "-----BEGIN CERTIFICATE-----\n" . chunk_split($claves[$kid], 64, "\n") . "-----END CERTIFICATE-----\n";
+        $publica = openssl_pkey_get_public($certificado);
+
+        return $publica ? $publica : false;
+    }
+
     private function enviar_respuesta(string $service_url, string $conversation_id, ?string $reply_to_id, array $actividad)
     {
         $token = $this->obtener_token_bot();
@@ -517,8 +666,16 @@ class EP_Bot_Mensajeria
         $actividad['from'] = ['id' => $from_id, 'name' => 'Portal Empleado Bot'];
         if ($reply_to_id) $actividad['replyToId'] = $reply_to_id;
         
+        // El serviceUrl llega dentro del payload de la petición. Sin esta validación,
+        // una petición falsificada podía apuntarlo a un servidor cualquiera y recibir
+        // el token del bot en la cabecera Authorization.
+        if (!self::validar_service_url($service_url)) {
+            ep_error_log('EP Bot SECURITY ALERT: serviceUrl no permitido, envío abortado: ' . $service_url, true);
+            return;
+        }
+
         $url = rtrim($service_url, '/') . '/v3/conversations/' . rawurlencode($conversation_id) . '/activities';
-        
+
         ep_error_log("EP Bot: Enviando respuesta a $url (Canal: $channel_id)");
         $res = wp_remote_post($url, [
             'headers' => ['Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json'],

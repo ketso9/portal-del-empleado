@@ -42,6 +42,7 @@ class EP_Loader
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-ai-service.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-graph-service.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-mailer.php';
+        require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-hardening.php';
 
         // Admin & Public
         require_once EMPLOYEE_PORTAL_PATH . 'admin/class-ep-admin.php';
@@ -90,6 +91,7 @@ class EP_Loader
         // This is where we would execute the loader if we were using a separate orchestrator class like in the boilerplate
         // For simplicity, we are hooking directly in the constructor/define methods above.
         // But let's instantiate the modules that need early execution
+        new EP_Hardening();
         new EP_Roles();
         new EP_Auth_O365();
         new EP_Teams_Webhook();

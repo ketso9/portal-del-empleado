@@ -34,6 +34,7 @@ class CensoDB
             ENRICH_STATUS varchar(20) DEFAULT 'Pending',
             ENRICH_LOG text,
             ESTADO_INTERNO varchar(20) DEFAULT 'Activo',
+            FUENTE_IMPORTACION varchar(255) DEFAULT NULL,
             ULTIMA_IMPORTACION datetime,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         ";
@@ -59,7 +60,11 @@ class CensoDB
 
                 if (in_array($name, $indexed_fields)) {
                     // Para campos indexados usamos varchar con longitud segura
-                    $sql_type = "varchar(100)";
+                    if ($name === 'RAZON') {
+                        $sql_type = "varchar(255)";
+                    } else {
+                        $sql_type = "varchar(100)";
+                    }
                 } else {
                     // El resto TEXT para evitar el límite de 65KB de fila (MySQL row size limit)
                     $sql_type = 'text';

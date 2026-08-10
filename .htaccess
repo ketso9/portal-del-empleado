@@ -1,10 +1,15 @@
 # Employee Portal Security Hardening
 
 # Block access to sensitive files
-# <FilesMatch "\.(log|ps1|sql|bak|tar|gz|zip|env|json|lock|ssh|key|rsa)$">
-#    Order deny,allow
-#    Deny from all
-# </FilesMatch>
+<FilesMatch "\.(log|ps1|sh|sql|bak|tar|gz|zip|env|json|lock|ssh|key|rsa)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
 
 # Block specific high-risk files
 <Files "wp-config.php">

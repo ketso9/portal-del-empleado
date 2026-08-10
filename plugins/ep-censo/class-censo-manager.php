@@ -39,6 +39,7 @@ class CensoManager
         add_action('wp_ajax_censo_delete_multiple', [$this, 'ajax_delete_multiple']);
         add_action('wp_ajax_censo_reindex', [$this, 'handle_reindex_census']);
         add_action('wp_ajax_censo_update_field', [$this, 'handle_update_field']);
+        add_action('wp_ajax_censo_get_last_reports', [$this, 'handle_get_last_reports']);
 
         // Cron Hook
         add_action('censo_worker_cron_event', [$this, 'run_background_worker']);
@@ -54,7 +55,7 @@ class CensoManager
     public function handle_sync_epigrafes()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options'))
+        if (!$this->can_enrich_and_import())
             wp_send_json_error('No autorizado');
 
         set_time_limit(300); // 5 minutos por lote
@@ -116,7 +117,7 @@ class CensoManager
     public function handle_sync_agrupaciones()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options'))
+        if (!$this->can_enrich_and_import())
             wp_send_json_error('No autorizado');
 
         set_time_limit(300);
@@ -260,6 +261,10 @@ class CensoManager
             $maps = $wpdb->get_var("SELECT COUNT(*) FROM $table_name WHERE MAPS_LINK IS NOT NULL AND MAPS_LINK != ''");
             $enriquecidos = $wpdb->get_var("SELECT COUNT(*) FROM $table_name WHERE ENRICH_STATUS = 'Enriched'");
 
+            $current_year = date('Y');
+            $altas_year = $wpdb->get_var("SELECT COUNT(*) FROM $table_name WHERE FUENTE_IMPORTACION IS NOT NULL AND FUENTE_IMPORTACION != 'Enriquecido-IA'");
+            $bajas = $wpdb->get_var("SELECT COUNT(*) FROM $table_name WHERE ESTADO_INTERNO = 'Baja'");
+
             $stats = [
                 'total' => $total,
                 'municipios' => $municipios,
@@ -268,7 +273,9 @@ class CensoManager
                 'telefonos' => (int) $telefonos,
                 'webs' => (int) $webs,
                 'maps' => (int) $maps,
-                'enriquecidos' => (int) $enriquecidos
+                'enriquecidos' => (int) $enriquecidos,
+                'altas_year' => (int) $altas_year,
+                'bajas' => (int) $bajas
             ];
 
             // Guardar en caché 5 min
@@ -456,25 +463,18 @@ class CensoManager
         // Tabs de navegación simple
         $view = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : 'search';
 
-        $user = wp_get_current_user();
-        $is_trabajador = in_array('trabajador', (array) $user->roles);
-        
-        // El administrador siempre puede, otros roles también excepto si son trabajadores
-        $can_write = (current_user_can('manage_options') || current_user_can('edit_pages')) && !$is_trabajador;
-        
-        // Si can_write() existe en la clase (por si acaso), lo respetamos pero forzamos false para trabajadores
-        if (method_exists($this, 'can_write')) {
-            $can_write = $this->can_write() && !$is_trabajador;
-        }
-        
-        $can_import = $can_write;
+        $can_write_basic = $this->can_write_basic();
+        $can_write_total = $this->can_write_total();
+        $can_write = $can_write_total;
+        $can_enrich = $this->can_enrich_and_import();
+        $can_import = $this->can_enrich_and_import();
         $is_admin = current_user_can('manage_options');
 
         // Vista de Búsqueda
         include plugin_dir_path(__FILE__) . 'censo-search.php';
 
-        // Vista de Configuración (Solo Admin)
-        if ($is_admin) {
+        // Vista de Configuración (Admin o Editor de empresas)
+        if ($can_enrich) {
             include plugin_dir_path(__FILE__) . 'view-censo-settings.php';
         }
 
@@ -515,7 +515,23 @@ class CensoManager
             $params[] = '%' . $wpdb->esc_like($municipio) . '%';
         }
 
-        // 3. Búsqueda Simplificada (Redundante para diagnóstico)
+        // 2. Filtro de KPI
+        $filter_type = isset($_POST['filter_type']) ? sanitize_text_field($_POST['filter_type']) : '';
+        if ($filter_type === 'has_email') {
+            $query_where .= " AND EMAIL_ENRICH IS NOT NULL AND EMAIL_ENRICH != ''";
+        } elseif ($filter_type === 'has_phone') {
+            $query_where .= " AND TELEFONO_ENRICH IS NOT NULL AND TELEFONO_ENRICH != ''";
+        } elseif ($filter_type === 'has_web') {
+            $query_where .= " AND WEB_ENRICH IS NOT NULL AND WEB_ENRICH != ''";
+        } elseif ($filter_type === 'has_maps') {
+            $query_where .= " AND MAPS_LINK IS NOT NULL AND MAPS_LINK != ''";
+        } elseif ($filter_type === 'altas_year') {
+            $query_where .= " AND FUENTE_IMPORTACION IS NOT NULL AND FUENTE_IMPORTACION != 'Enriquecido-IA'";
+        } elseif ($filter_type === 'bajas') {
+            $query_where .= " AND ESTADO_INTERNO = 'Baja'";
+        }
+
+        // 3. Búsqueda Simplificada
         if (!empty($term)) {
             $query_where .= " AND (RAZON LIKE %s OR NIF LIKE %s OR EPIGRAFE LIKE %s OR EPIGRAFE_LIMPIO LIKE %s OR REFERENCIA LIKE %s)";
             $wild = '%' . $wpdb->esc_like($term) . '%';
@@ -560,7 +576,7 @@ class CensoManager
     {
         check_ajax_referer('censo_nonce', 'nonce');
 
-        if (!current_user_can('manage_options') && !current_user_can('edit_pages')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No tienes permisos.');
         }
 
@@ -627,7 +643,7 @@ class CensoManager
     public function handle_save_api_settings()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options'))
+        if (!$this->can_enrich_and_import())
             wp_send_json_error('No autorizado');
 
         update_option(CensoConfig::OPTION_SERPER_KEY, sanitize_text_field($_POST['serper_key']));
@@ -649,7 +665,7 @@ class CensoManager
     public function handle_enrich_batch()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No autorizado');
         }
 
@@ -772,6 +788,7 @@ class CensoManager
 
         // 5. Procesar resultados y guardar en DB
         $count = 0;
+        $enrich_changes = [];
         foreach ($batch_data as $idx => $data) {
             if (!isset($records_array[$idx]))
                 continue; // Seguridad
@@ -821,18 +838,53 @@ class CensoManager
             $final_web = $this->smart_merge_field($existing->WEB_ENRICH ?? '', $new_web, 'web');
 
             $update_data = [
-                'EMAIL_ENRICH' => $final_email,
-                'TELEFONO_ENRICH' => $final_phone,
-                'WEB_ENRICH' => $final_web,
-                'MAPS_LINK' => $maps_link,
-                'SEARCH_DATA' => $data['search_data'] ?? '',
-                'AGRUPACION_ELECTORAL' => $this->get_agrupacion_electoral($records_array[$idx]['EPIGRAFE_LIMPIO'] ?? ''),
-                'ENRICH_STATUS' => $status,
-                'ENRICH_LOG' => $status === 'Not Found' ? 'No se encontraron resultados en búsqueda' : 'Éxito'
+                'EMAIL_ENRICH'        => $final_email,
+                'TELEFONO_ENRICH'     => $final_phone,
+                'WEB_ENRICH'          => $final_web,
+                'MAPS_LINK'           => $maps_link,
+                'SEARCH_DATA'         => $data['search_data'] ?? '',
+                'AGRUPACION_ELECTORAL'=> $this->get_agrupacion_electoral($records_array[$idx]['EPIGRAFE_LIMPIO'] ?? ''),
+                'ENRICH_STATUS'       => $status,
+                'ENRICH_LOG'          => $status === 'Not Found' ? 'No se encontraron resultados en búsqueda' : 'Éxito'
             ];
 
             $wpdb->update($table_name, $update_data, ['id' => $original_id]);
             $count++;
+
+            // Registrar en CSV de enriquecimiento
+            $enrich_changes[] = [
+                'ENRIQUECIMIENTO',
+                '', // REFERENCIA no disponible aquí
+                $records_array[$idx]['NIF'] ?? '',
+                $records_array[$idx]['RAZON'] ?? '',
+                implode(' | ', array_filter([
+                    !empty($final_email)  ? "Email: $final_email"  : '',
+                    !empty($final_phone)  ? "Tel: $final_phone"    : '',
+                    !empty($final_web)    ? "Web: $final_web"      : '',
+                    $maps_link            ? "Maps: OK"             : ''
+                ])),
+                '', '',
+                current_time('Y-m-d H:i:s')
+            ];
+        }
+
+        // Guardar CSV de enriquecimiento (acumulativo por día)
+        if (!empty($enrich_changes)) {
+            $upload_dir_e = wp_upload_dir();
+            $enrich_report_file = $upload_dir_e['basedir'] . '/censo_enriquecimiento_' . date('Y-m-d') . '.csv';
+            $enrich_report_url  = $upload_dir_e['baseurl']  . '/censo_enriquecimiento_' . date('Y-m-d') . '.csv';
+            $write_header = !file_exists($enrich_report_file);
+            $fp_e = fopen($enrich_report_file, 'a');
+            if ($fp_e) {
+                if ($write_header) {
+                    fputs($fp_e, chr(0xEF) . chr(0xBB) . chr(0xBF));
+                    fputcsv($fp_e, ['TIPO', 'REFERENCIA', 'NIF', 'RAZON', 'DATOS_ENCONTRADOS', 'VALOR_ANTERIOR', 'VALOR_NUEVO', 'FECHA'], ';');
+                }
+                foreach ($enrich_changes as $row) fputcsv($fp_e, $row, ';');
+                fclose($fp_e);
+            }
+        } else {
+            $enrich_report_url = null;
         }
 
         // Verificar si quedan más pendientes
@@ -846,13 +898,12 @@ class CensoManager
         }
 
         wp_send_json_success([
-            'count' => count($records_obj),
-            'processed' => array_map(function ($r) {
-                return ['razon' => $r->RAZON, 'nif' => $r->NIF];
-            }, $records_obj),
-            'remaining' => (int) $remaining,
-            'finished' => ($remaining == 0),
-            'new_nonce' => wp_create_nonce('censo_nonce')
+            'count'       => count($records_obj),
+            'processed'   => array_map(function ($r) { return ['razon' => $r->RAZON, 'nif' => $r->NIF]; }, $records_obj),
+            'remaining'   => (int) $remaining,
+            'finished'    => ($remaining == 0),
+            'report_url'  => $enrich_report_url ?? null,
+            'new_nonce'   => wp_create_nonce('censo_nonce')
         ]);
     }
 
@@ -862,7 +913,7 @@ class CensoManager
     public function handle_reset_errors()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No autorizado');
         }
 
@@ -889,7 +940,7 @@ class CensoManager
     public function handle_reset_notfound()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No autorizado');
         }
 
@@ -916,7 +967,7 @@ class CensoManager
     public function handle_toggle_worker()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options'))
+        if (!$this->can_enrich_and_import())
             wp_send_json_error('No autorizado');
 
         $active = !empty($_POST['active']) && $_POST['active'] === 'true';
@@ -1068,7 +1119,7 @@ class CensoManager
     public function handle_get_search_data()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_read()) {
             wp_send_json_error('No autorizado');
         }
 
@@ -1092,7 +1143,7 @@ class CensoManager
     {
         check_ajax_referer('censo_nonce', 'nonce');
 
-        if (!current_user_can('manage_options') && !current_user_can('edit_pages')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No tienes permisos.');
         }
 
@@ -1218,7 +1269,7 @@ class CensoManager
     {
         check_ajax_referer('censo_nonce', 'nonce');
 
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No tienes permisos.');
         }
 
@@ -1349,6 +1400,24 @@ class CensoManager
 
         $is_done = ($new_file_pos >= $total_size || empty($records_to_process));
 
+        if ($file_pos === 0) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+            require_once plugin_dir_path(__FILE__) . 'class-censo-db.php';
+            $censo_db = new CensoDB();
+            $censo_db->create_table(); // dbDelta crea la columna si no existe
+
+            global $wpdb;
+            $table_name = $wpdb->prefix . CensoConfig::TABLE_NAME;
+            $col = $wpdb->get_row("SHOW COLUMNS FROM $table_name LIKE 'FUENTE_IMPORTACION'");
+            if ($col) {
+                $wpdb->query("ALTER TABLE $table_name MODIFY FUENTE_IMPORTACION varchar(255) DEFAULT NULL;");
+            } else {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN FUENTE_IMPORTACION varchar(255) DEFAULT NULL;");
+            }
+            // Ampliar RAZON por NIFs UTE o Asociaciones con nombres extralargos (evita truncation error 1406)
+            $wpdb->query("ALTER TABLE $table_name MODIFY RAZON varchar(255) DEFAULT NULL;");
+        }
+
         if ($mode === 'truncate' && $file_pos === 0) {
             error_log("Censo: Iniciando limpieza de tabla (modo truncate)...");
             $this->db->truncate_iae_table();
@@ -1366,11 +1435,32 @@ class CensoManager
 
         $import_type = sanitize_text_field($_POST['import_type'] ?? 'enrichment');
 
+        // CSV de cambios: ruta del archivo acumulativo por sesión
+        $upload_dir = wp_upload_dir();
+        $report_filename = 'censo_cambios_' . $session_id . '.csv';
+        $report_path = $upload_dir['basedir'] . '/' . $report_filename;
+        $report_url  = $upload_dir['baseurl'] . '/' . $report_filename;
+
+        // Cabecera del CSV solo en el primer batch (file_pos === 0)
+        if ($file_pos === 0 && $mode !== 'truncate') {
+            $fp_report = fopen($report_path, 'w');
+            if ($fp_report) {
+                fputs($fp_report, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM
+                fputcsv($fp_report, ['TIPO', 'REFERENCIA', 'NIF', 'RAZON', 'CAMPO', 'VALOR_ANTERIOR', 'VALOR_NUEVO', 'FECHA'], ';');
+                fclose($fp_report);
+            }
+        }
+
+        $change_rows = [];
+        $now_str = current_time('Y-m-d H:i:s');
+
+        $original_filename = isset($_POST['original_filename']) ? sanitize_text_field($_POST['original_filename']) : '';
+
         foreach ($records_to_process as $item) {
             $parsed_data = $this->parse_line_with_mapping($item, $year, $mapping, $delimiter, $processing_path, $import_type);
             if ($parsed_data) {
-                // Inyectar tipo de importación para que el merge sepa cómo actuar
                 $parsed_data['_import_type'] = $import_type;
+                $parsed_data['_original_filename'] = $original_filename;
             }
 
             if (!$parsed_data) {
@@ -1382,6 +1472,12 @@ class CensoManager
                 $parsed_data['ULTIMA_IMPORTACION'] = current_time('mysql');
                 $parsed_data['ESTADO_INTERNO'] = 'Activo';
                 $parsed_data['AGRUPACION_ELECTORAL'] = $this->get_agrupacion_electoral($parsed_data['EPIGRAFE_LIMPIO'] ?? '');
+                
+                if (!empty($original_filename)) {
+                    $parsed_data['FUENTE_IMPORTACION'] = substr($original_filename, 0, 255);
+                } else {
+                    $parsed_data['FUENTE_IMPORTACION'] = ($import_type === 'standard') ? 'TXT-AEAT' : 'CSV-Enriquecimiento';
+                }
 
                 if ($this->db->insert_iae($parsed_data)) {
                     $stats['inserted']++;
@@ -1390,18 +1486,59 @@ class CensoManager
                 }
             } else {
                 $res = $this->process_merge_line_with_data($parsed_data, $year);
-                if ($res === 'inserted')
+                $action = is_array($res) ? $res['action'] : $res;
+
+                if ($action === 'inserted') {
                     $stats['inserted']++;
-                elseif ($res === 'updated')
+                    $change_rows[] = [
+                        'ALTA',
+                        $parsed_data['REFERENCIA'] ?? '',
+                        $parsed_data['NIF'] ?? '',
+                        $parsed_data['RAZON'] ?? '',
+                        'NUEVO_REGISTRO', '', '', $now_str
+                    ];
+                } elseif ($action === 'updated') {
                     $stats['updated']++;
-                elseif ($res === 'baja')
+                    if (is_array($res) && !empty($res['changes'])) {
+                        foreach ($res['changes'] as $field => $vals) {
+                            $change_rows[] = [
+                                'ACTUALIZACIÓN',
+                                $parsed_data['REFERENCIA'] ?? '',
+                                $parsed_data['NIF'] ?? '',
+                                $parsed_data['RAZON'] ?? '',
+                                $field,
+                                $vals['old'],
+                                $vals['new'],
+                                $now_str
+                            ];
+                        }
+                    }
+                } elseif ($action === 'baja') {
                     $stats['bajas']++;
-                elseif ($res === 'none')
+                    $change_rows[] = [
+                        'BAJA',
+                        $parsed_data['REFERENCIA'] ?? '',
+                        $parsed_data['NIF'] ?? '',
+                        $parsed_data['RAZON'] ?? '',
+                        'ESTADO_INTERNO', 'Activo', 'Baja', $now_str
+                    ];
+                } elseif ($action === 'none') {
                     $stats['ignored']++;
-                elseif ($res === 'error') {
+                } elseif ($action === 'error') {
                     $stats['errors']++;
                     error_log("Censo: Fallo en process_merge_line_with_data para registro: " . ($parsed_data['NIF'] ?? 'SIN NIF'));
                 }
+            }
+        }
+
+        // Volcar filas de cambio al CSV acumulativo
+        if (!empty($change_rows)) {
+            $fp_report = fopen($report_path, 'a');
+            if ($fp_report) {
+                foreach ($change_rows as $row) {
+                    fputcsv($fp_report, $row, ';');
+                }
+                fclose($fp_report);
             }
         }
 
@@ -1409,12 +1546,19 @@ class CensoManager
             ep_stats_log('censo', 'censo_import', null, ['filename' => basename($processing_path)]);
         }
 
+        // Solo devolver report_url al terminar y si hay cambios reales
+        $final_report_url = null;
+        if ($is_done && $mode !== 'truncate' && file_exists($report_path) && filesize($report_path) > 5) {
+            $final_report_url = $report_url;
+        }
+
         wp_send_json_success([
-            'is_done' => $is_done,
-            'new_file_pos' => $new_file_pos,
+            'is_done'          => $is_done,
+            'new_file_pos'     => $new_file_pos,
             'progress_percent' => round(($new_file_pos / $total_size) * 100),
-            'stats' => $stats,
-            'new_nonce' => $new_nonce
+            'stats'            => $stats,
+            'report_url'       => $final_report_url,
+            'new_nonce'        => $new_nonce
         ]);
     }
 
@@ -1457,51 +1601,52 @@ class CensoManager
     }
 
     /**
-     * Procesa la lógica de MERGE sobre datos ya parseados
+     * Procesa la lógica de MERGE sobre datos ya parseados.
+     * Retorna un array ['action' => string, 'changes' => array] en modo merge
+     * o un string simple ('inserted'/'error') para compatibilidad.
      */
     private function process_merge_line_with_data($data, $year)
     {
         $data['ULTIMA_IMPORTACION'] = current_time('mysql');
 
-        // Determinar si es una Baja explícita
         $is_baja = (!empty($data['FECHACESE']) || !empty($data['MOTIVOBAJA']));
         $data['ESTADO_INTERNO'] = $is_baja ? 'Baja' : 'Activo';
 
         $import_type = $data['_import_type'] ?? 'enrichment';
-        unset($data['_import_type']); // Limpiar flag interno
+        $original_filename = $data['_original_filename'] ?? '';
+        unset($data['_import_type'], $data['_original_filename']);
 
-        // Buscar si ya existe
+        // Campos que no queremos en el informe de cambios (metadatos internos)
+        $skip_diff_fields = ['ULTIMA_IMPORTACION', 'updated_at', 'SEARCH_DATA', 'ENRICH_STATUS', 'ENRICH_LOG'];
+
         $existing = null;
 
-        // Prioridad 1: Buscar por REFERENCIA si tenemos el dato (Siempre en Standard, opcional en Enrichment)
         if (!empty($data['REFERENCIA'])) {
             $existing = $this->db->get_by_referencia($data['REFERENCIA']);
         }
 
-        // Prioridad 2: Buscar por NIF/Razón solo si es modo Enrichment o si no se encontró por Referencia
         if (!$existing || $import_type === 'enrichment') {
             $by_nif = !empty($data['NIF']) ? $this->db->get_by_nif($data['NIF']) : null;
-
             if ($by_nif) {
                 $existing = $by_nif;
-            } else if (!empty($data['RAZON'])) {
+            } elseif (!empty($data['RAZON'])) {
                 $existing = $this->db->get_by_razon($data['RAZON']);
             }
         }
 
         if ($existing) {
-            // CRITICAL VALIDATION: Check for REFERENCIA collision
-            // If the record we found (by NIF/Razon) has a different REFERENCIA than the one in the file,
-            // we must ensure the file's REFERENCIA isn't already used by a THIRD record.
             if (!empty($data['REFERENCIA']) && (!isset($existing['REFERENCIA']) || $existing['REFERENCIA'] !== $data['REFERENCIA'])) {
                 $collision = $this->db->get_by_referencia($data['REFERENCIA']);
                 if ($collision && $collision['id'] !== $existing['id']) {
                     error_log("Censo: Reference collision detected for NIF: " . ($data['NIF'] ?? 'Unknown') . ". File Ref: " . $data['REFERENCIA'] . " already belongs to ID: " . $collision['id']);
-                    return 'error';
+                    return ['action' => 'error', 'changes' => []];
                 }
             }
 
-            // Smart Merge (Protección de datos enriquecidos)
+            if (!empty($original_filename)) {
+                $data['FUENTE_IMPORTACION'] = substr($original_filename, 0, 255);
+            }
+
             $protected_fields = ['EMAIL_ENRICH', 'TELEFONO_ENRICH', 'WEB_ENRICH', 'MAPS_LINK', 'AGRUPACION_ELECTORAL', 'DESCRIPCION_EPIGRAFE'];
             foreach ($protected_fields as $f) {
                 if (!empty($existing[$f]) && empty($data[$f])) {
@@ -1509,28 +1654,42 @@ class CensoManager
                 }
             }
 
-            // Detectar cambios reales
-            $has_changes = false;
+            // Detectar cambios campo a campo para el informe
+            $changes = [];
             foreach ($data as $k => $v) {
-                if ($k === 'ULTIMA_IMPORTACION' || $k === 'updated_at')
-                    continue;
+                if (in_array($k, $skip_diff_fields)) continue;
                 if (isset($existing[$k]) && (string) $existing[$k] !== (string) $v) {
-                    $has_changes = true;
-                    break;
+                    $changes[$k] = [
+                        'old' => (string) $existing[$k],
+                        'new' => (string) $v
+                    ];
                 }
             }
 
             $updated = $this->db->update_iae($existing['id'], $data);
             if ($updated === false)
-                return 'error';
+                return ['action' => 'error', 'changes' => []];
 
-            return $is_baja ? 'baja' : ($has_changes ? 'updated' : 'none');
+            if ($is_baja)   return ['action' => 'baja',    'changes' => $changes];
+            if (!empty($changes)) return ['action' => 'updated', 'changes' => $changes];
+            return ['action' => 'none', 'changes' => []];
+
         } else {
-            // Insertar nuevo
+            // Si es una baja y no existe en BD, no la insertamos (no pertenece al censo activo)
+            if ($is_baja) {
+                return ['action' => 'none', 'changes' => []];
+            }
             if (empty($data['REFERENCIA'])) {
                 $data['REFERENCIA'] = !empty($data['NIF']) ? 'NEW-' . $data['NIF'] : 'TMP-' . uniqid();
             }
-            return $this->db->insert_iae($data) ? 'inserted' : 'error';
+            // Marcar fuente de importación con el nombre del archivo
+            if (!empty($original_filename)) {
+                $data['FUENTE_IMPORTACION'] = substr($original_filename, 0, 255);
+            } else {
+                $data['FUENTE_IMPORTACION'] = ($import_type === 'standard') ? 'TXT-AEAT' : 'CSV-Enriquecimiento';
+            }
+            $ok = $this->db->insert_iae($data);
+            return ['action' => $ok ? 'inserted' : 'error', 'changes' => []];
         }
     }
 
@@ -1581,7 +1740,7 @@ class CensoManager
     public function handle_reset_no_evidence()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No autorizado');
         }
 
@@ -1622,7 +1781,7 @@ class CensoManager
     {
         check_ajax_referer('censo_nonce', 'nonce');
 
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('Sin permisos');
         }
 
@@ -1647,7 +1806,7 @@ class CensoManager
     public function handle_reindex_census()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
+        if (!$this->can_enrich_and_import()) {
             wp_send_json_error('No autorizado');
         }
 
@@ -1670,9 +1829,6 @@ class CensoManager
     public function handle_update_field()
     {
         check_ajax_referer('censo_nonce', 'nonce');
-        if (!current_user_can('manage_options') && !current_user_can('edit_pages')) {
-            wp_send_json_error('No autorizado');
-        }
 
         $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
         $field = isset($_POST['field']) ? sanitize_text_field($_POST['field']) : '';
@@ -1681,6 +1837,16 @@ class CensoManager
         $allowed_fields = ['EMAIL_ENRICH', 'TELEFONO_ENRICH', 'WEB_ENRICH'];
         if (!in_array($field, $allowed_fields)) {
             wp_send_json_error('Campo no permitido');
+        }
+
+        if ($field === 'WEB_ENRICH') {
+            if (!$this->can_write_total()) {
+                wp_send_json_error('No autorizado');
+            }
+        } else {
+            if (!$this->can_write_basic()) {
+                wp_send_json_error('No autorizado');
+            }
         }
 
         $res = $this->db->update_iae($id, [$field => $value]);
@@ -1694,6 +1860,55 @@ class CensoManager
             wp_send_json_error('Error al actualizar la base de datos');
         }
     }
+
+    /**
+     * Devuelve las URLs de los últimos CSVs de cambios generados:
+     *  - Último archivo censo_cambios_*.csv (importación)
+     *  - Archivo censo_enriquecimiento_HOY.csv (enriquecimiento)
+     */
+    public function handle_get_last_reports()
+    {
+        check_ajax_referer('censo_nonce', 'nonce');
+        if (!$this->can_enrich_and_import()) {
+            wp_send_json_error('No autorizado');
+        }
+
+        $upload_dir = wp_upload_dir();
+        $base_dir   = $upload_dir['basedir'];
+        $base_url   = $upload_dir['baseurl'];
+
+        // --- Último CSV de importación (el más reciente por fecha de modificación) ---
+        $import_files = glob($base_dir . '/censo_cambios_*.csv');
+        $last_import_url = null;
+        $last_import_date = null;
+        if (!empty($import_files)) {
+            // Ordenar por fecha de modificación descendente
+            usort($import_files, function($a, $b) {
+                return filemtime($b) - filemtime($a);
+            });
+            $newest = $import_files[0];
+            $last_import_url  = $base_url . '/' . basename($newest);
+            $last_import_date = date('d/m/Y H:i', filemtime($newest));
+        }
+
+        // --- CSV de enriquecimiento de hoy ---
+        $today_file = $base_dir . '/censo_enriquecimiento_' . date('Y-m-d') . '.csv';
+        $enrich_url  = null;
+        $enrich_date = null;
+        if (file_exists($today_file) && filesize($today_file) > 10) {
+            $enrich_url  = $base_url . '/censo_enriquecimiento_' . date('Y-m-d') . '.csv';
+            $enrich_date = date('d/m/Y H:i', filemtime($today_file));
+        }
+
+        wp_send_json_success([
+            'import_url'   => $last_import_url,
+            'import_date'  => $last_import_date,
+            'enrich_url'   => $enrich_url,
+            'enrich_date'  => $enrich_date,
+            'new_nonce'    => wp_create_nonce('censo_nonce')
+        ]);
+    }
+
 
     /**
      * Validación inteligente de email.
@@ -1786,5 +2001,74 @@ class CensoManager
 
         // Regla 3: Ambos inválidos → conservar existente (no empeorar)
         return $existing;
+    }
+
+    /**
+     * Helpers de permisos para el Censo IAE
+     */
+    public function can_read()
+    {
+        if (current_user_can('manage_options') || current_user_can('edit_pages')) {
+            return true;
+        }
+        $user = wp_get_current_user();
+        $allowed_roles = ['direccion', 'rrhh', 'trabajador'];
+        foreach ($allowed_roles as $role) {
+            if (in_array($role, (array) $user->roles)) {
+                return true;
+            }
+        }
+        if (class_exists('EP_App_Manager')) {
+            $perm = EP_App_Manager::get_permission('censo');
+            if ($perm === 'read' || $perm === 'write') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function can_write_basic()
+    {
+        $user = wp_get_current_user();
+        $allowed_roles = ['direccion', 'rrhh', 'trabajador'];
+        foreach ($allowed_roles as $role) {
+            if (in_array($role, (array) $user->roles)) {
+                return true;
+            }
+        }
+        return $this->can_write_total();
+    }
+
+    public function can_write_total()
+    {
+        if (current_user_can('manage_options') || current_user_can('edit_pages')) {
+            return true;
+        }
+        if ($this->can_enrich_and_import()) {
+            return true;
+        }
+        if (class_exists('EP_App_Manager')) {
+            if (EP_App_Manager::get_permission('censo') === 'write') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function can_enrich_and_import()
+    {
+        if (current_user_can('manage_options')) {
+            return true;
+        }
+        $user = wp_get_current_user();
+        if (in_array('direccion', (array) $user->roles)) {
+            return true;
+        }
+        if (class_exists('EP_App_Manager')) {
+            if (EP_App_Manager::get_permission('empresas') === 'write') {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -51,6 +51,60 @@ class EP_App_Manager
     }
 
     /**
+     * Get all registered apps sorted alphabetically by menu label (A-Z).
+     * 
+     * @return array
+     */
+    public function get_apps_sorted_alphabetically()
+    {
+        $apps = $this->apps;
+        uasort($apps, function ($a, $b) {
+            $labelA = mb_strtolower($a->get_menu_label(), 'UTF-8');
+            $labelB = mb_strtolower($b->get_menu_label(), 'UTF-8');
+            return strcmp($labelA, $labelB);
+        });
+        return $apps;
+    }
+
+    /**
+     * Get apps for user according to custom user order or default A-Z order.
+     * 
+     * @param int|null $user_id
+     * @return array
+     */
+    public function get_apps_for_user($user_id = null)
+    {
+        if (!$user_id) {
+            $user_id = get_current_user_id();
+        }
+
+        $all_apps_az = $this->get_apps_sorted_alphabetically();
+        $saved_order = get_user_meta($user_id, 'ep_user_app_order', true);
+
+        if (empty($saved_order) || !is_array($saved_order)) {
+            return $all_apps_az;
+        }
+
+        $ordered_apps = array();
+
+        // 1. Add apps according to saved order
+        foreach ($saved_order as $app_id) {
+            if (isset($this->apps[$app_id])) {
+                $ordered_apps[$app_id] = $this->apps[$app_id];
+            }
+        }
+
+        // 2. Append any missing apps (newly added apps) in A-Z order
+        foreach ($all_apps_az as $app_id => $app) {
+            if (!isset($ordered_apps[$app_id])) {
+                $ordered_apps[$app_id] = $app;
+            }
+        }
+
+        return $ordered_apps;
+    }
+
+    /**
      * Get a specific app by ID.
      * 
      * @param string $app_id
@@ -124,9 +178,8 @@ class EP_App_Manager
         $has_read = false;
         $has_none = false;
 
-        // If no config for this app, default to 'read' for everyone.
-        // This ensures new apps are visible by default.
-        if (!isset($config[$app_id]['permissions'])) {
+        // If no config or empty permissions for this app, default to 'read' for everyone.
+        if (!isset($config[$app_id]['permissions']) || empty($config[$app_id]['permissions'])) {
             return 'read';
         }
 
@@ -135,7 +188,8 @@ class EP_App_Manager
                 return 'write';
             }
 
-            $role_perm = isset($config[$app_id]['permissions'][$role]) ? $config[$app_id]['permissions'][$role] : 'none';
+            // Si un rol aún no está configurado explícitamente en la base de datos para esta app, dar acceso 'read' por defecto.
+            $role_perm = isset($config[$app_id]['permissions'][$role]) ? $config[$app_id]['permissions'][$role] : 'read';
 
             if ($role_perm === 'write')
                 $has_write = true;

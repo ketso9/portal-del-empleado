@@ -73,15 +73,19 @@ class EP_Teams_Webhook
 
     private function update_user_stats_from_presence($user_id, $notification)
     {
+        if (empty($user_id) || !is_array($notification)) {
+            return;
+        }
+
         // Presence data is usually in resourceData or encrypted. 
         // For simplicity in this logic, we treat receiving a notification as activity
         // But we specifically check for 'Available' if provided
-        $presence_data = $notification['resourceData'] ?? [];
-        $availability = $presence_data['availability'] ?? 'Available'; // Fallback to available if notified
+        $presence_data = isset($notification['resourceData']) && is_array($notification['resourceData']) ? $notification['resourceData'] : [];
+        $availability  = isset($presence_data['availability']) ? sanitize_text_field($presence_data['availability']) : 'Available';
 
         $online_statuses = ['Available', 'Busy', 'DoNotDisturb', 'BeRightBack', 'InACall', 'InAConferenceCall', 'InAMeeting', 'Presenting'];
 
-        if (in_array($availability, $online_statuses)) {
+        if (in_array($availability, $online_statuses, true)) {
             // Tell Stats DB to update (with 300 seconds increment)
             if (class_exists('EP_Stats_DB')) {
                 EP_Stats_DB::update_session_activity($user_id, 300);

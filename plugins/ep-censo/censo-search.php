@@ -11,7 +11,17 @@
             <!-- KPI 1: Total -->
             <div class="ep-card kpi-card">
                 <h4 style="margin:0; color:#666;">Total Registros</h4>
-                <div id="kpi-total" style="font-size: 2rem; font-weight: bold; color: #333;">...</div>
+                <div id="kpi-total" style="font-size: 2rem; font-weight: bold; color: #333; margin-bottom:10px;">...</div>
+                
+                <!-- Altas y Bajas (Filtros) -->
+                <div style="display:flex; gap:10px; font-size:0.85rem;">
+                    <div title="Nuevas de importación" class="kpi-filter" data-filter="altas_year" style="cursor:pointer; padding: 3px 6px; border-radius:4px; border:1px solid #e2e8f0; background:#f8fafc; flex:1;">
+                        <span style="color:#16a34a; margin-right:4px;">🟢</span> Nuevas <span id="kpi-altas-year" style="font-weight:bold;">0</span>
+                    </div>
+                    <div title="Empresas de baja" class="kpi-filter" data-filter="bajas" style="cursor:pointer; padding: 3px 6px; border-radius:4px; border:1px solid #e2e8f0; background:#f8fafc; flex:1;">
+                        <span style="color:#ef4444; margin-right:4px;">🔴</span> Bajas <span id="kpi-bajas" style="font-weight:bold;">0</span>
+                    </div>
+                </div>
             </div>
 
             <!-- KPI 2: Top Municipios -->
@@ -110,7 +120,7 @@
         <div class="ep-tools-toolbar-container">
             <div class="ep-toolbar-row">
 
-                <?php if (isset($can_write) && $can_write): ?>
+                <?php if (isset($can_enrich) && $can_enrich): ?>
                 <!-- Grupo IA -->
                 <button id="btn-enrich-data" class="ep-btn ep-btn-primary" title="Enriquecer con IA">
                     <span class="dashicons dashicons-id-alt"></span> Enriquecer
@@ -151,7 +161,7 @@
                     </button>
                 </div>
 
-                <?php if (isset($can_write) && $can_write): ?>
+                <?php if (isset($can_enrich) && $can_enrich): ?>
                     <button id="ep-btn-open-settings-unique" class="ep-btn ep-btn-outline" title="Ajustes">
                         <span class="dashicons dashicons-admin-settings" style="color: #9c0a23;"></span> Ajustes
                     </button>
@@ -192,7 +202,7 @@
             <table class="ep-table wp-list-table widefat fixed striped" style="width: 100%; margin-bottom:0;">
                 <thead>
                     <tr>
-                        <?php if (isset($can_write) && $can_write): ?>
+                        <?php if (isset($can_enrich) && $can_enrich): ?>
                         <th style="width: 40px; text-align: center;">
                             <input type="checkbox" id="censo-select-all" title="Seleccionar todos" />
                         </th>
@@ -254,9 +264,44 @@
 
 <script>
     jQuery(document).ready(function ($) {
-        // State
+
+        // ---- TOOLTIP CSS (inyectado una vez) ----
+        if (!$('#censo-tt-style').length) {
+            $('head').append('<style id="censo-tt-style">' +
+                '#censo-tt-box { position:fixed; z-index:99999; pointer-events:none; background:#1e293b; color:#f1f5f9; border-radius:10px; padding:10px 14px; font-size:0.82rem; line-height:1.6; box-shadow:0 8px 24px rgba(0,0,0,0.25); min-width:220px; max-width:300px; transition: opacity .15s; opacity:0; }' +
+                '#censo-tt-box.visible { opacity:1; }' +
+                '.censo-tt-row { display:flex; align-items:center; gap:6px; margin-bottom:2px; }' +
+                '.censo-tt-icon { font-size:1.1em; flex-shrink:0; }' +
+                '.censo-tt-cell { cursor:default; border-bottom:1px dashed #cbd5e1 !important; }' +
+            '</style>');
+            $('body').append('<div id="censo-tt-box"></div>');
+        }
+
+        // ---- TOOLTIP EVENTS (delegados) ----
+        $(document).on('mouseenter', '.censo-tt-cell', function (e) {
+            var content = $(this).attr('data-censo-tt');
+            if (!content) return;
+            var box = $('#censo-tt-box');
+            box.html(content).addClass('visible');
+            posTooltip(e);
+        }).on('mousemove', '.censo-tt-cell', function (e) {
+            posTooltip(e);
+        }).on('mouseleave', '.censo-tt-cell', function () {
+            $('#censo-tt-box').removeClass('visible');
+        });
+
+        function posTooltip(e) {
+            var box = $('#censo-tt-box');
+            var x = e.clientX + 14;
+            var y = e.clientY + 14;
+            if (x + 310 > $(window).width())  x = e.clientX - 310;
+            if (y + box.outerHeight() + 10 > $(window).height()) y = e.clientY - box.outerHeight() - 10;
+            box.css({ left: x + 'px', top: y + 'px' });
+        }
         var censo_nonce = '<?php echo wp_create_nonce("censo_nonce"); ?>';
-        var canWrite = <?php echo (isset($can_write) && $can_write) ? 'true' : 'false'; ?>;
+        var canWriteBasic = <?php echo (isset($can_write_basic) && $can_write_basic) ? 'true' : 'false'; ?>;
+        var canWriteTotal = <?php echo (isset($can_write_total) && $can_write_total) ? 'true' : 'false'; ?>;
+        var canEnrich = <?php echo (isset($can_enrich) && $can_enrich) ? 'true' : 'false'; ?>;
         var currentPage = 1;
         var totalPages = 1;
         var limit = 50;
@@ -319,12 +364,13 @@
             // Mostrar modal de exportación avanzada
             var modalHtml =
                 '<div id="modal-export-censo" class="ep-modal" style="display:block;">' +
-                '    <div class="ep-modal-content" style="max-width: 500px;">' +
+                '    <div class="ep-modal-content" style="max-width: 520px;">' +
                 '        <div class="ep-modal-header" style="display:flex; justify-content: space-between; align-items: center;">' +
                 '            <h3 style="margin:0;">Configurar Exportación CSV</h3>' +
                 '            <span class="ep-modal-toggle-close" style="cursor:pointer; font-size: 24px; color: #999; line-height:1;">&times;</span>' +
                 '        </div>' +
                 '        <div class="ep-modal-body" style="padding: 20px;">' +
+
                 '            <div style="margin-bottom: 20px;">' +
                 '                <h4 style="margin-top:0;">1. Ámbito de Exportación</h4>' +
                 '                <label style="display:block; margin-bottom:5px;">' +
@@ -334,6 +380,7 @@
                 '                    <input type="radio" name="export-scope" value="all"> Exportar censo completo' +
                 '                </label>' +
                 '            </div>' +
+
                 '            <div style="margin-bottom: 20px;">' +
                 '                <h4 style="margin-top:0;">2. Columnas a Incluir</h4>' +
                 '                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.9em;">' +
@@ -352,6 +399,37 @@
                 '                    <label><input type="checkbox" class="export-col" value="MAPS_LINK" checked> Maps/Info</label>' +
                 '                </div>' +
                 '            </div>' +
+
+                '            <div style="margin-bottom: 5px; padding-top: 15px; border-top: 2px dashed #e2e8f0;">' +
+                '                <h4 style="margin-top:0; margin-bottom: 10px;">3. Últimos Informes de Cambios</h4>' +
+                '                <div id="export-reports-loader" style="color:#999; font-size:0.85em; padding: 8px 0;">' +
+                '                    <span class="spinner is-active" style="float:none; margin:0 6px 0 0; vertical-align:middle;"></span> Cargando informes disponibles...' +
+                '                </div>' +
+                '                <div id="export-reports-content" style="display:none;">' +
+                '                    <div id="export-report-import" style="display:none; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px;">' +
+                '                        <div>' +
+                '                            <span class="dashicons dashicons-upload" style="color:#9C0A23; vertical-align:middle;"></span>' +
+                '                            <strong style="font-size:0.9em;">Última Importación</strong>' +
+                '                            <span id="report-import-date" style="font-size:0.8em; color:#64748b; margin-left:6px;"></span>' +
+                '                        </div>' +
+                '                        <a id="report-import-link" href="#" target="_blank" class="ep-btn ep-btn-outline" style="font-size:0.8em; padding:4px 10px;">' +
+                '                            <span class="dashicons dashicons-download" style="vertical-align:middle; font-size:14px;"></span> Descargar' +
+                '                        </a>' +
+                '                    </div>' +
+                '                    <div id="export-report-enrich" style="display:none; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:8px 12px;">' +
+                '                        <div>' +
+                '                            <span class="dashicons dashicons-id-alt" style="color:#16a34a; vertical-align:middle;"></span>' +
+                '                            <strong style="font-size:0.9em;">Enriquecimiento de Hoy</strong>' +
+                '                            <span id="report-enrich-date" style="font-size:0.8em; color:#64748b; margin-left:6px;"></span>' +
+                '                        </div>' +
+                '                        <a id="report-enrich-link" href="#" target="_blank" class="ep-btn ep-btn-outline" style="font-size:0.8em; padding:4px 10px; color:#16a34a; border-color:#16a34a;">' +
+                '                            <span class="dashicons dashicons-download" style="vertical-align:middle; font-size:14px;"></span> Descargar' +
+                '                        </a>' +
+                '                    </div>' +
+                '                    <p id="export-reports-empty" style="display:none; font-size:0.85em; color:#94a3b8; margin:0; padding:6px 0;">No hay informes de cambios disponibles aún. Se generan automáticamente al importar o enriquecer.</p>' +
+                '                </div>' +
+                '            </div>' +
+
                 '            <div style="text-align: right; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">' +
                 '                <button class="ep-btn ep-btn-outline ep-modal-toggle-close" style="margin-right:10px;">Cancelar</button>' +
                 '                <button id="btn-confirm-export" class="ep-btn ep-btn-primary">Descargar CSV</button>' +
@@ -361,8 +439,39 @@
                 '</div>';
             $('body').append(modalHtml);
 
-            // Manejar cierre
-            $('.ep-modal-toggle-close').on('click', function () {
+            // Cargar informes disponibles vía AJAX
+            $.post('<?php echo admin_url('admin-ajax.php'); ?>', {
+                action: 'censo_get_last_reports',
+                nonce: censo_nonce
+            }, function (response) {
+                updateCensoNonce(response.data ? response.data.new_nonce : null);
+                $('#export-reports-loader').hide();
+                $('#export-reports-content').show();
+
+                var hasAny = false;
+                if (response.success) {
+                    if (response.data.import_url) {
+                        hasAny = true;
+                        $('#report-import-date').text('(' + response.data.import_date + ')');
+                        $('#report-import-link').attr('href', response.data.import_url);
+                        $('#export-report-import').show();
+                    }
+                    if (response.data.enrich_url) {
+                        hasAny = true;
+                        $('#report-enrich-date').text('(' + response.data.enrich_date + ')');
+                        $('#report-enrich-link').attr('href', response.data.enrich_url);
+                        $('#export-report-enrich').show();
+                    }
+                }
+                if (!hasAny) {
+                    $('#export-reports-empty').show();
+                }
+            }).fail(function () {
+                $('#export-reports-loader').html('<span style="color:#ef4444; font-size:0.85em;">No se pudieron cargar los informes.</span>');
+            });
+
+            // Cerrar modal
+            $(document).on('click', '.ep-modal-toggle-close', function () {
                 $('#modal-export-censo').remove();
             });
 
@@ -509,6 +618,10 @@
 
                         if (response.data.finished) {
                             isEnriching = false;
+                            // Mostrar enlace al informe de enriquecimiento si lo hay
+                            if (response.data.report_url) {
+                                statusText.html('¡Completado! <a href="' + response.data.report_url + '" target="_blank" style="color:#2c3e50; font-weight:600;"><span class="dashicons dashicons-media-spreadsheet" style="vertical-align:middle;"></span> Descargar informe CSV</a>');
+                            }
                         } else if (response.data.count === 0 && response.data.waiting) {
                             setTimeout(runWorker, 3000);
                         } else if (response.data.count === 0) {
@@ -862,22 +975,65 @@
 
             var rows = '';
             results.forEach(function (item) {
-                rows += '<tr>';
-                if (canWrite) {
+                // --- Construir contenido del tooltip ---
+                var fuenteLabel = 'Importación Inicial';
+                var fuenteColor = '#64748b';
+                var fuenteIcon  = '📄';
+                if (item.FUENTE_IMPORTACION === 'TXT-AEAT') {
+                    fuenteLabel = 'Importación AEAT (TXT)'; fuenteColor = '#1d4ed8'; fuenteIcon = '🏛️';
+                } else if (item.FUENTE_IMPORTACION === 'CSV-Enriquecimiento') {
+                    fuenteLabel = 'Importación CSV'; fuenteColor = '#0369a1'; fuenteIcon = '📊';
+                } else if (item.FUENTE_IMPORTACION === 'Enriquecido-IA') {
+                    fuenteLabel = 'Enriquecido con IA'; fuenteColor = '#7c3aed'; fuenteIcon = '🤖';
+                } else if (item.ENRICH_STATUS === 'Enriched') {
+                    fuenteLabel = 'Enriquecido con IA'; fuenteColor = '#7c3aed'; fuenteIcon = '🤖';
+                } else if (item.FUENTE_IMPORTACION) {
+                    fuenteLabel = 'Archivo: ' + item.FUENTE_IMPORTACION;
+                    fuenteColor = '#0f766e';
+                    fuenteIcon = '📁';
+                }
+
+                var estadoColor = item.ESTADO_INTERNO === 'Baja' ? '#ef4444' : '#16a34a';
+                var estadoIcon  = item.ESTADO_INTERNO === 'Baja' ? '🔴' : '🟢';
+
+                var enrichMap = {
+                    'Enriched':  { label: 'Enriquecido', color: '#16a34a' },
+                    'Pending':   { label: 'Pendiente',   color: '#d97706' },
+                    'Not Found': { label: 'No encontrado', color: '#64748b' },
+                    'Error':     { label: 'Error',        color: '#ef4444' },
+                    'Processing':{ label: 'Procesando',  color: '#2563eb' }
+                };
+                var enrichInfo = enrichMap[item.ENRICH_STATUS] || { label: item.ENRICH_STATUS || '-', color: '#64748b' };
+
+                var fechaImp = item.ULTIMA_IMPORTACION ? item.ULTIMA_IMPORTACION.substring(0,16) : '-';
+
+                var tooltipHtml =
+                    '<div class="censo-tt-row"><span class="censo-tt-icon">' + fuenteIcon + '</span>' +
+                    '<span style="color:' + fuenteColor + '; font-weight:600;">' + fuenteLabel + '</span></div>' +
+                    '<div class="censo-tt-row">' + estadoIcon + ' Estado: <strong style="color:' + estadoColor + '">' + (item.ESTADO_INTERNO || 'Activo') + '</strong></div>' +
+                    '<div class="censo-tt-row">🔍 Enriquecimiento: <strong style="color:' + enrichInfo.color + '">' + enrichInfo.label + '</strong></div>' +
+                    '<div class="censo-tt-row" style="color:#94a3b8; font-size:0.8em;">🕐 Última importación: ' + fechaImp + '</div>';
+
+                var ttAttr = 'data-censo-tt="' + tooltipHtml.replace(/"/g, '&quot;') + '"';
+
+                rows += '<tr' + (item.ESTADO_INTERNO === 'Baja' ? ' style="opacity:0.6; background:#fef2f2;"' : '') + '>';
+                if (canEnrich) {
                     rows += '<td style="text-align: center;"><input type="checkbox" class="censo-select-item" value="' + item.id + '" /></td>';
                 }
-                rows += '<td class="col-ref" ' + (!visibleCols['col-ref'] ? 'style="display:none;"' : '') + '>' + (item.REFERENCIA || '-') + '</td>';
-                rows += '<td class="col-nif" ' + (!visibleCols['col-nif'] ? 'style="display:none;"' : '') + '>' + (item.NIF || '-') + '</td>';
-                rows += '<td class="col-razon" ' + (!visibleCols['col-razon'] ? 'style="display:none;"' : '') + '><strong>' + (item.RAZON || '-') + '</strong></td>';
+                rows += '<td class="col-ref censo-tt-cell" ' + ttAttr + (!visibleCols['col-ref'] ? ' style="display:none;"' : '') + '>' + (item.REFERENCIA || '-') + '</td>';
+                rows += '<td class="col-nif censo-tt-cell" ' + ttAttr + (!visibleCols['col-nif'] ? ' style="display:none;"' : '') + '>' + (item.NIF || '-') + '</td>';
+                rows += '<td class="col-razon censo-tt-cell" ' + ttAttr + (!visibleCols['col-razon'] ? ' style="display:none;"' : '') + '><strong>' + (item.RAZON || '-') + '</strong></td>';
                 rows += '<td class="col-mun" ' + (!visibleCols['col-mun'] ? 'style="display:none;"' : '') + '>' + (item.MUNICIPIOFISC || '-') + '</td>';
                 rows += '<td class="col-control" ' + (!visibleCols['col-control'] ? 'style="display:none;"' : '') + '>' + (item.CONTROL || '-') + '</td>';
                 rows += '<td class="col-agrupacion" ' + (!visibleCols['col-agrupacion'] ? 'style="display:none;"' : '') + '><span style="font-size:0.85em; color:#444;">' + (item.AGRUPACION_ELECTORAL || '-') + '</span></td>';
                 rows += '<td class="col-desc" ' + (!visibleCols['col-desc'] ? 'style="display:none;"' : '') + '>' + (item.DESCRIPCION_EPIGRAFE || '-') + '</td>';
                 rows += '<td class="col-limpio" ' + (!visibleCols['col-limpio'] ? 'style="display:none;"' : '') + '><span class="ep-badge ep-badge-info">' + (item.EPIGRAFE_LIMPIO || '-') + '</span></td>';
                 rows += '<td class="col-alta" ' + (!visibleCols['col-alta'] ? 'style="display:none;"' : '') + '>' + (item.FECHAINICIO || '-') + '</td>';
-                rows += '<td class="col-email editable-cell" data-id="' + item.id + '" data-field="EMAIL_ENRICH" ' + (!visibleCols['col-email'] ? 'style="display:none;"' : '') + '>' + (item.EMAIL_ENRICH || '-') + '</td>';
-                rows += '<td class="col-tel editable-cell" data-id="' + item.id + '" data-field="TELEFONO_ENRICH" ' + (!visibleCols['col-tel'] ? 'style="display:none;"' : '') + '>' + (item.TELEFONO_ENRICH || '-') + '</td>';
-                rows += '<td class="col-web editable-cell" data-id="' + item.id + '" data-field="WEB_ENRICH" ' + (!visibleCols['col-web'] ? 'style="display:none;"' : '') + '>' + (item.WEB_ENRICH ? '<a href="' + item.WEB_ENRICH + '" target="_blank">Web</a>' : '-') + '</td>';
+                var editableClassEmailPhone = canWriteBasic ? ' editable-cell' : '';
+                var editableClassWeb = canWriteTotal ? ' editable-cell' : '';
+                rows += '<td class="col-email' + editableClassEmailPhone + '" data-id="' + item.id + '" data-field="EMAIL_ENRICH" ' + (!visibleCols['col-email'] ? 'style="display:none;"' : '') + '>' + (item.EMAIL_ENRICH || '-') + '</td>';
+                rows += '<td class="col-tel' + editableClassEmailPhone + '" data-id="' + item.id + '" data-field="TELEFONO_ENRICH" ' + (!visibleCols['col-tel'] ? 'style="display:none;"' : '') + '>' + (item.TELEFONO_ENRICH || '-') + '</td>';
+                rows += '<td class="col-web' + editableClassWeb + '" data-id="' + item.id + '" data-field="WEB_ENRICH" ' + (!visibleCols['col-web'] ? 'style="display:none;"' : '') + '>' + (item.WEB_ENRICH ? '<a href="' + item.WEB_ENRICH + '" target="_blank">Web</a>' : '-') + '</td>';
                 rows += '<td class="col-info" ' + (!visibleCols['col-info'] ? 'style="display:none;"' : '') + '>';
                 if (item.MAPS_LINK) {
                     rows += '<a href="' + item.MAPS_LINK + '" target="_blank" title="Ficha de Google Maps" style="color: #4285F4;"><span class="dashicons dashicons-location"></span></a> ';
@@ -922,6 +1078,8 @@
                 if (response.success) {
                     var d = response.data;
                     $('#kpi-total').text(d.total);
+                    $('#kpi-altas-year').text(d.altas_year || 0);
+                    $('#kpi-bajas').text(d.bajas || 0);
 
                     // Nuevos KPIs de enriquecimiento
                     $('#kpi-emails').text(d.emails || 0);
@@ -1217,6 +1375,9 @@
         // INLINE EDITING LOGIC
         // ====================================
         $(document).on('click', '.editable-cell', function (e) {
+            var field = $(this).data('field');
+            if (field === 'WEB_ENRICH' && !canWriteTotal) return;
+            if ((field === 'EMAIL_ENRICH' || field === 'TELEFONO_ENRICH') && !canWriteBasic) return;
             // Si ya hay un input, no hacer nada
             if ($(this).find('input').length > 0) return;
 

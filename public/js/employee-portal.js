@@ -485,17 +485,22 @@ jQuery(document).ready(function ($) {
 					if (res.success && res.data.length > 0) {
 						let html = '';
 						res.data.forEach(user => {
+							const isOof = user.is_oof || user.availability === 'OutOfOffice';
 							const statusText = getStatusTranslation(user.availability);
+							const oofNote = user.oof_message ? ` title="Fuera de la oficina: ${user.oof_message.replace(/"/g, '&quot;')}"` : '';
 							const teamsChatUrl = `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(user.email)}`;
+							const oofBadgeHtml = isOof ? `<span class="ep-oof-pill"><i class="fa-solid fa-umbrella-beach"></i> Fuera de la oficina</span>` : `<span class="ep-comp-status-mini">${statusText}</span>`;
+
 							html += `
-                                <div class="ep-presence-item-card" data-status="${user.availability}">
+                                <div class="ep-presence-item-card ${isOof ? 'is-oof' : ''}" data-status="${user.availability}" ${oofNote}>
                                     <div class="ep-comp-avatar-mini">
                                         <div class="ep-status-ring"></div>
                                         <img src="${user.photo}" alt="${user.name}">
                                     </div>
                                     <div class="ep-comp-details-mini">
                                         <span class="ep-comp-name-mini">${user.name}</span>
-                                        <span class="ep-comp-status-mini">${statusText}</span>
+                                        ${oofBadgeHtml}
+                                        ${isOof && user.oof_message ? `<span class="ep-comp-oof-msg-preview">${user.oof_message}</span>` : ''}
                                     </div>
                                     <a href="${teamsChatUrl}" target="_blank" class="ep-btn-teams-inline" title="Chat en Teams">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
@@ -521,7 +526,8 @@ jQuery(document).ready(function ($) {
 				'Away': 'Ausente',
 				'Offline': 'Desconectado',
 				'DoNotDisturb': 'No molestar',
-				'BeRightBack': 'Vuelvo enseguida'
+				'BeRightBack': 'Vuelvo enseguida',
+				'OutOfOffice': 'Fuera de la oficina'
 			};
 			return map[status] || status;
 		}
@@ -645,5 +651,121 @@ jQuery(document).ready(function ($) {
 
 		loadRecentEmails();
 		setInterval(loadRecentEmails, 300000); // 5 min
+	}
+
+	// --- Apps Grid Drag & Drop Reordering ---
+	const $appsGrid = $('#epAppsGrid');
+	if ($appsGrid.length) {
+		let draggedCard = null;
+
+		function showToast(message) {
+			let $toast = $('#ep-app-toast');
+			if (!$toast.length) {
+				$toast = $('<div id="ep-app-toast" class="ep-toast-notification"></div>');
+				$('body').append($toast);
+			}
+			$toast.html('<i class="fa-solid fa-circle-check"></i> ' + message).addClass('show');
+			setTimeout(function () {
+				$toast.removeClass('show');
+			}, 3000);
+		}
+
+		function saveAppOrder() {
+			const order = [];
+			$appsGrid.find('.ep-app-card').each(function () {
+				const appId = $(this).attr('data-app-id');
+				if (appId) order.push(appId);
+			});
+
+			$.ajax({
+				url: ep_vars.ajax_url,
+				type: 'POST',
+				data: {
+					action: 'ep_save_app_order',
+					nonce: ep_vars.nonce,
+					order: order
+				},
+				success: function (res) {
+					if (res.success) {
+						showToast('Orden guardado correctamente');
+					}
+				}
+			});
+		}
+
+		$appsGrid.on('dragstart', '.ep-app-card', function (e) {
+			draggedCard = this;
+			$(this).addClass('is-dragging');
+			e.originalEvent.dataTransfer.effectAllowed = 'move';
+			e.originalEvent.dataTransfer.setData('text/plain', $(this).attr('data-app-id'));
+		});
+
+		$appsGrid.on('dragend', '.ep-app-card', function () {
+			$(this).removeClass('is-dragging');
+			$appsGrid.find('.ep-app-card').removeClass('drag-over');
+			draggedCard = null;
+			saveAppOrder();
+		});
+
+		$appsGrid.on('dragover', '.ep-app-card', function (e) {
+			e.preventDefault();
+			e.originalEvent.dataTransfer.dropEffect = 'move';
+			if (this !== draggedCard) {
+				$(this).addClass('drag-over');
+			}
+		});
+
+		$appsGrid.on('dragleave', '.ep-app-card', function () {
+			$(this).removeClass('drag-over');
+		});
+
+		$appsGrid.on('drop', '.ep-app-card', function (e) {
+			e.preventDefault();
+			$(this).removeClass('drag-over');
+			if (draggedCard && this !== draggedCard) {
+				const cards = Array.from($appsGrid.children('.ep-app-card'));
+				const draggedIndex = cards.indexOf(draggedCard);
+				const targetIndex = cards.indexOf(this);
+
+				if (draggedIndex < targetIndex) {
+					$(this).after(draggedCard);
+				} else {
+					$(this).before(draggedCard);
+				}
+			}
+		});
+
+		// Sort A-Z Button
+		$('#epSortAZBtn').on('click', function () {
+			const cards = $appsGrid.children('.ep-app-card').get();
+			cards.sort(function (a, b) {
+				const titleA = $(a).find('h3').text().trim().toLowerCase();
+				const titleB = $(b).find('h3').text().trim().toLowerCase();
+				return titleA.localeCompare(titleB, 'es', { sensitivity: 'base' });
+			});
+			$.each(cards, function (idx, elem) {
+				$appsGrid.append(elem);
+			});
+			saveAppOrder();
+		});
+
+		// Reset Order Button
+		$('#epResetOrderBtn').on('click', function () {
+			$.ajax({
+				url: ep_vars.ajax_url,
+				type: 'POST',
+				data: {
+					action: 'ep_reset_app_order',
+					nonce: ep_vars.nonce
+				},
+				success: function (res) {
+					if (res.success) {
+						showToast('Orden restablecido');
+						// Sort grid A-Z
+						$('#epSortAZBtn').trigger('click');
+					}
+				}
+			});
+		});
 	}
 });

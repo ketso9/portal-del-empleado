@@ -100,16 +100,40 @@ $announcements = class_exists('EP_Avisos') ? EP_Avisos::get_active_avisos(5) : [
 
     <!-- Apps Grid Section -->
     <section class="ep-apps-section full-width">
-        <h2>Aplicaciones</h2>
-        <div class="ep-apps-grid">
+        <div class="ep-apps-header">
+            <h2>Aplicaciones</h2>
+            <div class="ep-apps-header-toolbar">
+                <span class="ep-apps-drag-hint">
+                    <i class="fa-solid fa-arrows-up-down-left-right"></i> Organiza tus apps
+                </span>
+                <button type="button" class="ep-btn ep-btn-sm ep-btn-secondary" id="epSortAZBtn" title="Ordenar de A a la Z">
+                    <i class="fa-solid fa-arrow-down-a-z"></i> Ordenar A-Z
+                </button>
+                <button type="button" class="ep-btn ep-btn-sm ep-btn-outline" id="epResetOrderBtn" title="Restablecer orden por defecto">
+                    <i class="fa-solid fa-rotate-left"></i> Restablecer
+                </button>
+            </div>
+        </div>
+        <div class="ep-apps-grid" id="epAppsGrid">
             <?php
             global $ep_app_manager;
-            $apps = $ep_app_manager->get_apps();
+            $apps = $ep_app_manager->get_apps_for_user(get_current_user_id());
 
             foreach ($apps as $app_id => $app) {
                 // Check permission
                 if ($ep_app_manager->get_user_permission($app_id) !== 'none') {
+                    ob_start();
                     $app->render_dashboard_card();
+                    $card_html = ob_get_clean();
+
+                    // Inject draggable and data-app-id into outer ep-app-card div
+                    $card_html = preg_replace(
+                        '/class=["\']([^"\']*ep-app-card[^"\']*)["\']/',
+                        'class="$1" draggable="true" data-app-id="' . esc_attr($app_id) . '"',
+                        $card_html,
+                        1
+                    );
+                    echo $card_html;
                 }
             }
             ?>

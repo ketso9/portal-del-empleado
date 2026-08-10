@@ -223,45 +223,73 @@ function ep_rescue_admin_access()
 
 /**
  * Loads local modules from the 'plugins' directory.
+ *
+ * Usa EP_License para determinar qué módulos están autorizados.
+ * EP_License es 100% retrocompatible: si EP_LICENSE_SHARED_SECRET no está
+ * definida en wp-config.php, delega en get_option('ep_authorized_apps'),
+ * exactamente igual que antes.
  */
 function ep_load_local_modules()
 {
 	$modules_dir = plugin_dir_path(__FILE__) . 'plugins/';
 
-	// Si es el Portal Maestro, cargamos todo por defecto
-	$is_master = defined('EP_IS_MASTER_PORTAL') && EP_IS_MASTER_PORTAL;
+	// Cargar la clase de licencia (retrocompatible)
+	require_once plugin_dir_path(__FILE__) . 'includes/class-ep-license.php';
 
-	// Si no es maestro, obtenemos las apps autorizadas (cache de la validación remota)
-	$authorized_apps = get_option('ep_authorized_apps', []);
-	if (!is_array($authorized_apps)) {
-		$authorized_apps = json_decode($authorized_apps, true) ?: [];
-	}
+	// Obtener apps autorizadas. Retorna ['*'] para maestro, lista para clientes.
+	$authorized_apps = EP_License::get_authorized_apps();
+	$is_master       = ($authorized_apps === ['*']);
 
 	$modules = [
-		'ep-stats' => 'ep-stats/ep-stats.php',
+		'ep-stats'     => 'ep-stats/ep-stats.php',
 		'ep-signature' => 'ep-signature/ep-signature.php',
-		'ep-tickets' => 'ep-tickets/ep-tickets.php',
+		'ep-tickets'   => 'ep-tickets/ep-tickets.php',
 		'ep-downloads' => 'ep-downloads/ep-downloads.php',
 		'ep-directory' => 'ep-directory/ep-directory.php',
 		'ep-inventory' => 'ep-inventory/ep-inventory.php',
-		'ep-avisos' => 'ep-avisos/ep-avisos.php',
-		'ep-calendar' => 'ep-calendar/ep-calendar.php',
-		'ep-censo' => 'ep-censo/ep-censo.php',
-		'ep-gdpr' => 'ep-gdpr/ep-gdpr.php',
+		'ep-avisos'    => 'ep-avisos/ep-avisos.php',
+		'ep-calendar'  => 'ep-calendar/ep-calendar.php',
+		'ep-censo'     => 'ep-censo/ep-censo.php',
+		'ep-gdpr'      => 'ep-gdpr/ep-gdpr.php',
 		'ep-buzon'     => 'ep-buzon/ep-buzon.php',
 		'ep-contratos' => 'ep-contratos/ep-contratos.php',
 		'ep-links'     => 'ep-links/ep-links.php',
-		'ep-empresas'  => 'ep-empresas/ep-empresas.php'
+		'ep-empresas'  => 'ep-empresas/ep-empresas.php',
+		'ep-expenses'  => 'ep-expenses/ep-expenses.php',
 	];
 
 	foreach ($modules as $app_id => $file_path) {
-		// ep-gdpr es obligatorio para cumplimiento legal, no depende de la licencia
-		if ($app_id !== 'ep-gdpr' && !$is_master && !empty($authorized_apps) && !in_array($app_id, $authorized_apps)) {
+		// ep-gdpr y ep-expenses siempre se cargan, sin comprobar autorización
+		if ($app_id === 'ep-gdpr' || $app_id === 'ep-expenses') {
+			$module_file = $modules_dir . $file_path;
+			if (file_exists($module_file)) {
+				require_once $module_file;
+			}
+			continue;
+		}
+
+		// Maestro carga todo
+		if ($is_master) {
+			$module_file = $modules_dir . $file_path;
+			if (file_exists($module_file)) {
+				require_once $module_file;
+			}
+			continue;
+		}
+
+		// Cliente: verificar autorización (auto-autorizando ep-expenses por defecto)
+		if (!empty($authorized_apps) && is_array($authorized_apps) && $authorized_apps !== ['*']) {
+			if (!in_array('ep-expenses', $authorized_apps, true)) {
+				$authorized_apps[] = 'ep-expenses';
+				update_option('ep_authorized_apps', $authorized_apps);
+			}
+		}
+
+		if (!empty($authorized_apps) && !in_array($app_id, $authorized_apps, true)) {
 			continue;
 		}
 
 		$module_file = $modules_dir . $file_path;
-		
 		if (file_exists($module_file)) {
 			require_once $module_file;
 		}
@@ -271,6 +299,113 @@ function ep_load_local_modules()
 
 
 run_employee_portal();
+
+/**
+ * OAUTH-01 — Verificación periódica de accountEnabled en Azure AD.
+ *
+ * Se ejecuta en cada petición WordPress (hook 'init') pero con throttle de 30 minutos
+ * por usuario (guardado en user_meta 'ep_azure_status_checked').
+ *
+ * Casos cubiertos:
+ *  - Cuenta desactivada en Azure AD (accountEnabled = false) → logout inmediato
+ *  - Cuenta eliminada de Azure AD (HTTP 404)                 → logout inmediato
+ *  - Error de red o token de app no disponible               → se ignora (no expulsar por precaución)
+ *
+ * @since 2.0.28
+ */
+add_action('init', 'ep_check_azure_account_status', 20);
+function ep_check_azure_account_status()
+{
+	// Solo usuarios logueados con vínculo O365
+	if (!is_user_logged_in()) return;
+
+	$user_id  = get_current_user_id();
+	$o365_id  = get_user_meta($user_id, 'ep_o365_user_id', true);
+
+	// Sin vínculo O365 (admin WP puro), no verificar
+	if (empty($o365_id)) return;
+
+	// Throttle: como máximo cada 30 minutos por usuario
+	$last_check = (int) get_user_meta($user_id, 'ep_azure_status_checked', true);
+	if (time() - $last_check < 1800) return;
+
+	// Necesitamos la clase cargada para obtener el app token
+	if (!class_exists('EP_Auth_O365')) return;
+
+	// Token de aplicación (client_credentials) — no depende del token del usuario
+	$token = EP_Auth_O365::get_app_token();
+	if (!$token || is_wp_error($token)) {
+		ep_error_log("ep_check_azure: Sin app token para verificar user $user_id. Saltando.");
+		return;
+	}
+
+	// Actualizar timestamp ANTES de la llamada para evitar hammering si falla la red
+	update_user_meta($user_id, 'ep_azure_status_checked', time());
+
+	$safe_o365_id = rawurlencode($o365_id);
+	$response = wp_remote_get(
+		"https://graph.microsoft.com/v1.0/users/{$safe_o365_id}?\$select=accountEnabled,userPrincipalName",
+		[
+			'headers' => ['Authorization' => 'Bearer ' . $token],
+			'timeout' => 8,
+		]
+	);
+
+	if (is_wp_error($response)) {
+		ep_error_log("ep_check_azure: Error de red para user $user_id: " . $response->get_error_message());
+		return; // No expulsar por caída de red
+	}
+
+	$code = wp_remote_retrieve_response_code($response);
+
+	if ($code === 404) {
+		// Cuenta eliminada de Azure AD
+		ep_error_log("ep_check_azure: Usuario $user_id ELIMINADO de Azure AD (404). Cerrando sesión.", true);
+		ep_force_sso_logout($user_id, 'account_deleted');
+		return;
+	}
+
+	if ($code !== 200) {
+		ep_error_log("ep_check_azure: Respuesta inesperada HTTP $code para user $user_id. Saltando.");
+		return; // Error desconocido → no expulsar por precaución
+	}
+
+	$data            = json_decode(wp_remote_retrieve_body($response), true);
+	$account_enabled = $data['accountEnabled'] ?? null;
+
+	if ($account_enabled === false) {
+		ep_error_log("ep_check_azure: Cuenta DESACTIVADA en Azure AD para user $user_id. Cerrando sesión.", true);
+		ep_force_sso_logout($user_id, 'account_disabled');
+	}
+}
+
+/**
+ * Fuerza el cierre de sesión inmediato del usuario actual.
+ * Destruye todas las sesiones WP, borra cookies y tokens O365, y redirige al login.
+ *
+ * @param int    $user_id  ID del usuario WordPress.
+ * @param string $reason   Motivo del logout ('account_disabled' | 'account_deleted').
+ */
+function ep_force_sso_logout($user_id, $reason = 'unknown')
+{
+	// 1. Destruir todas las sesiones WordPress activas para este usuario
+	$sessions = WP_Session_Tokens::get_instance($user_id);
+	$sessions->destroy_all();
+
+	// 2. Limpiar cookies de autenticación locales
+	wp_clear_auth_cookie();
+
+	// 3. Borrar tokens O365 para forzar un nuevo login SSO
+	delete_user_meta($user_id, 'ep_o365_access_token');
+	delete_user_meta($user_id, 'ep_o365_refresh_token');
+	delete_user_meta($user_id, 'ep_o365_token_last_refresh');
+	delete_user_meta($user_id, 'ep_azure_status_checked');
+
+	// 4. Redirigir al login con parámetro informativo
+	$login_page = add_query_arg('ep_sso_error', urlencode($reason), home_url('/'));
+	wp_redirect($login_page);
+	exit;
+}
 
 /**
  * Filtro global para forzar la foto de Microsoft 365 en todo WordPress.

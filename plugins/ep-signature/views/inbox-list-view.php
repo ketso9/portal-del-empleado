@@ -30,7 +30,7 @@
                         <td>
                             <?php if ($doc->estado === 'pendiente' && $permission !== 'read'): ?>
                                 <input type="checkbox" class="inbox-doc-checkbox" value="<?php echo $doc->id; ?>" 
-                                    data-url="<?php echo esc_attr(admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce')); ?>"
+                                    data-url="<?php echo esc_attr(admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time()); ?>"
                                     data-name="<?php echo esc_attr($doc->nombre_documento); ?>"
                                     data-hash="<?php echo esc_attr($doc->hash_documento_original); ?>">
                             <?php endif; ?>
@@ -64,7 +64,7 @@
                         <td>
                             <div class="ep-actions-row-mini">
                                 <?php
-                                $proxy_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce');
+                                $proxy_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time();
                                 if ($doc->estado === 'pendiente'): ?>
                                     <?php if ($permission !== 'read'): ?>
                                         <button class="fds-btn-sign-now ep-btn-icon-text" data-id="<?php echo $doc->id; ?>"

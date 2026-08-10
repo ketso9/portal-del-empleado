@@ -441,7 +441,8 @@
                         mode: mode,
                         import_type: importType,
                         file_pos: filePos,
-                        mapping: JSON.stringify(currentMapping)
+                        mapping: JSON.stringify(currentMapping),
+                        original_filename: file.name
                     },
                     success: function (response) {
                         if (response.success) {

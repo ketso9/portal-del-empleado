@@ -101,9 +101,15 @@ class EP_Auth_O365
                     $is_teams = isset($_GET['teams']) && $_GET['teams'] === 'true';
                     $target_attr = $is_teams ? 'target="_blank"' : '';
 
-                    // Si estamos en Teams, vamos a un endpoint intermedio que se abrirá en pestaña nueva
-                    // Esto asegura que el 'state' se genere en la misma sesión donde se validará.
-                    $button_url = $is_teams ? add_query_arg('ep_auth', 'o365_start', home_url('/')) : $login_url;
+                    // Siempre pasamos por el endpoint intermedio o365_start para iniciar la sesión de forma segura y establecer cookies
+                    $params = array('ep_auth' => 'o365_start');
+                    if (isset($_GET['redirect_to'])) {
+                        $params['redirect_to'] = sanitize_text_field($_GET['redirect_to']);
+                    }
+                    if ($is_teams) {
+                        $params['teams'] = 'true';
+                    }
+                    $button_url = add_query_arg($params, home_url('/'));
                     ?>
                     <a href="<?php echo esc_url($button_url); ?>" <?php echo $target_attr; ?> class="ep-ms-login-btn">
                         <div class="ep-ms-icon">
@@ -136,6 +142,10 @@ class EP_Auth_O365
             return '#';
         }
 
+        // Generar un token de estado aleatorio y guardarlo en una cookie segura de 15 minutos
+        $state = wp_generate_password(24, false);
+        setcookie('ep_oauth_state', $state, time() + 900, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+
         $url = "https://login.microsoftonline.com/$tenant_id/oauth2/v2.0/authorize";
         $params = array(
             'client_id'     => $client_id,
@@ -143,7 +153,7 @@ class EP_Auth_O365
             'redirect_uri'  => $redirect_uri,
             'response_mode' => 'query',
             'scope'         => 'User.Read User.ReadWrite offline_access User.Read.All Calendars.Read Calendars.ReadWrite Presence.Read.All Tasks.ReadWrite Mail.Read Mail.Send Mail.Send.Shared Files.ReadWrite.All MailboxSettings.ReadWrite Chat.Create Chat.ReadWrite ChatMessage.Send',
-            'state'         => wp_create_nonce('ep_oauth_state')
+            'state'         => $state
         );
 
         return add_query_arg($params, $url);
@@ -155,6 +165,13 @@ class EP_Auth_O365
     {
         if (isset($_GET['ep_auth'])) {
             if ($_GET['ep_auth'] === 'o365_start') {
+                if (isset($_GET['redirect_to'])) {
+                    // Almacenar la URL de retorno en una cookie segura de 1 hora
+                    setcookie('ep_login_redirect', sanitize_text_field($_GET['redirect_to']), time() + 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+                } else {
+                    // Limpiar cookie previa si no viene parámetro
+                    setcookie('ep_login_redirect', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+                }
                 $login_url = $this->get_login_url();
                 wp_redirect($login_url);
                 exit;
@@ -163,10 +180,16 @@ class EP_Auth_O365
             if ($_GET['ep_auth'] === 'o365') {
                 ep_error_log("EP: Callback de OAuth detectado. Parámetros: " . json_encode($_GET));
 
-                if (!isset($_GET['state']) || !wp_verify_nonce($_GET['state'], 'ep_oauth_state')) {
-                    ep_error_log("EP: Error de seguridad - Estado o Nonce inválido.");
+                $state_param = isset($_GET['state']) ? sanitize_text_field($_GET['state']) : '';
+                $state_cookie = isset($_COOKIE['ep_oauth_state']) ? sanitize_text_field($_COOKIE['ep_oauth_state']) : '';
+
+                if (empty($state_param) || empty($state_cookie) || !hash_equals($state_cookie, $state_param)) {
+                    ep_error_log("EP: Error de seguridad - Estado o Cookie inválido. Param: $state_param, Cookie: $state_cookie");
                     wp_die('Error de seguridad: Estado inválido. Intenta iniciar sesión de nuevo.');
                 }
+
+                // Limpiar la cookie de estado para evitar reutilizaciones
+                setcookie('ep_oauth_state', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
 
                 if (isset($_GET['error'])) {
                     ep_error_log("EP: Error de Microsoft - " . $_GET['error_description']);
@@ -234,7 +257,9 @@ class EP_Auth_O365
 
                     ep_error_log("EP: Iniciando sesión de WP para ID: " . $user_id);
                     wp_set_current_user($user_id);
-                    wp_set_auth_cookie($user_id, true); // Persistente
+                    // OAUTH-02: Cookie de sesión (no persistente) — la sesión se cierra al cerrar el navegador.
+                    // El TTL de 14h lo controla el filtro auth_cookie_expiration en employee-portal.php.
+                    wp_set_auth_cookie($user_id, false);
 
                     $current_user = get_userdata($user_id);
                     ep_error_log("EP: Ejecutando hook wp_login para: " . $current_user->user_login);
@@ -242,7 +267,14 @@ class EP_Auth_O365
 
                     ep_error_log("EP: Login WP completado satisfactoriamente. Redirigiendo...");
 
-                    wp_redirect(home_url('?view=dashboard'));
+                    $redirect_url = home_url('?view=dashboard');
+                    if (isset($_COOKIE['ep_login_redirect'])) {
+                        $redirect_url = esc_url_raw($_COOKIE['ep_login_redirect']);
+                        // Limpiar la cookie de redirección tras su uso
+                        setcookie('ep_login_redirect', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
+                    }
+
+                    wp_redirect($redirect_url);
                     exit;
                 }
             }
@@ -334,7 +366,7 @@ class EP_Auth_O365
         $this->sync_user_profile($user->ID, $profile);
 
         wp_set_current_user($user->ID, $user->user_login);
-        wp_set_auth_cookie($user->ID);
+        wp_set_auth_cookie($user->ID, false); // OAUTH-02: sin persistencia
         do_action('wp_login', $user->user_login, $user);
 
         return $user->ID;
@@ -695,18 +727,67 @@ class EP_Auth_O365
             wp_send_json_error('No autorizado');
         }
 
-        $status = sanitize_text_field($_POST['status'] ?? 'disabled');
-        $internal = wp_kses_post($_POST['internal_reply'] ?? '');
-        $external = wp_kses_post($_POST['external_reply'] ?? '');
+        $status_toggle    = isset($_POST['status_toggle']) && ($_POST['status_toggle'] === 'true' || $_POST['status_toggle'] === '1');
+        $is_scheduled     = isset($_POST['is_scheduled']) && ($_POST['is_scheduled'] === 'true' || $_POST['is_scheduled'] === '1');
+        $external_enabled = isset($_POST['external_enabled']) && ($_POST['external_enabled'] === 'true' || $_POST['external_enabled'] === '1');
+        $external_audience_choice = sanitize_text_field($_POST['external_audience'] ?? 'all');
+        if (!in_array($external_audience_choice, ['all', 'contactsOnly'], true)) {
+            $external_audience_choice = 'all';
+        }
+
+        $internal_text = wp_unslash($_POST['internal_reply'] ?? '');
+        $external_text = wp_unslash($_POST['external_reply'] ?? '');
+
+        // Format into HTML for Microsoft Graph API
+        $internal_html = !empty($internal_text) ? '<html><body>' . nl2br(esc_html($internal_text)) . '</body></html>' : '';
+        $external_html = !empty($external_text) ? '<html><body>' . nl2br(esc_html($external_text)) . '</body></html>' : $internal_html;
+
+        if (!$status_toggle) {
+            $status = 'disabled';
+            $final_external_audience = 'none';
+        } else {
+            $status = $is_scheduled ? 'scheduled' : 'alwaysEnabled';
+            $final_external_audience = $external_enabled ? $external_audience_choice : 'none';
+        }
 
         $settings = array(
             'automaticRepliesSetting' => array(
-                'status' => $status,
-                'externalAudience' => 'all', // Or restricted if preferred
-                'internalReplyMessage' => $internal,
-                'externalReplyMessage' => $external
+                'status'               => $status,
+                'externalAudience'     => $final_external_audience,
+                'internalReplyMessage' => $internal_html,
+                'externalReplyMessage' => $external_html
             )
         );
+
+        if ($status === 'scheduled') {
+            $start_date = sanitize_text_field($_POST['start_date'] ?? date('Y-m-d'));
+            $start_time = sanitize_text_field($_POST['start_time'] ?? '08:00');
+            $end_date   = sanitize_text_field($_POST['end_date'] ?? date('Y-m-d', strtotime('+7 days')));
+            $end_time   = sanitize_text_field($_POST['end_time'] ?? '18:00');
+
+            $tz_string = wp_timezone_string();
+            if (empty($tz_string)) {
+                $tz_string = 'Europe/Madrid';
+            }
+
+            $start_ts = strtotime("{$start_date} {$start_time}");
+            $end_ts   = strtotime("{$end_date} {$end_time}");
+
+            if ($start_ts === false) $start_ts = time();
+            if ($end_ts === false || $end_ts <= $start_ts) $end_ts = $start_ts + (7 * 86400);
+
+            $start_iso = date('Y-m-d\TH:i:s', $start_ts);
+            $end_iso   = date('Y-m-d\TH:i:s', $end_ts);
+
+            $settings['automaticRepliesSetting']['scheduledStartDateTime'] = array(
+                'dateTime' => $start_iso,
+                'timeZone' => $tz_string
+            );
+            $settings['automaticRepliesSetting']['scheduledEndDateTime'] = array(
+                'dateTime' => $end_iso,
+                'timeZone' => $tz_string
+            );
+        }
 
         $result = $this->update_mailbox_settings($current_user_id, $settings);
 
@@ -714,7 +795,43 @@ class EP_Auth_O365
             wp_send_json_error($result->get_error_message());
         }
 
-        wp_send_json_success('Configuración de Outlook actualizada correctamente.');
+        // Save local OOF meta for directory & presence widgets
+        update_user_meta($current_user_id, 'ep_oof_info', array(
+            'status'     => $status,
+            'message'    => sanitize_textarea_field($internal_text),
+            'start_ts'   => isset($start_ts) ? $start_ts : 0,
+            'end_ts'     => isset($end_ts) ? $end_ts : 0,
+            'updated_at' => time()
+        ));
+
+        wp_send_json_success('Configuración de Fuera de la oficina sincronizada correctamente con Microsoft 365.');
+    }
+
+    /**
+     * Helper to check if a user is currently Out of Office according to local meta.
+     */
+    public static function get_user_oof_data($user_id)
+    {
+        $meta = get_user_meta($user_id, 'ep_oof_info', true);
+        if (!is_array($meta) || empty($meta['status']) || $meta['status'] === 'disabled') {
+            return array('is_oof' => false, 'message' => '');
+        }
+
+        if ($meta['status'] === 'alwaysEnabled') {
+            return array('is_oof' => true, 'message' => $meta['message'] ?? '');
+        }
+
+        if ($meta['status'] === 'scheduled') {
+            $now = time();
+            $start = intval($meta['start_ts'] ?? 0);
+            $end   = intval($meta['end_ts'] ?? 0);
+
+            if (($start === 0 || $now >= $start) && ($end === 0 || $now <= $end)) {
+                return array('is_oof' => true, 'message' => $meta['message'] ?? '');
+            }
+        }
+
+        return array('is_oof' => false, 'message' => '');
     }
 
     public function get_live_onedrive_contents($user_id, $folder_id)
@@ -833,13 +950,6 @@ class EP_Auth_O365
             $email = $row['User Principal Name'] ?? '';
             if (!empty($email)) {
                 $email_lower = strtolower($email);
-
-                // --- DEBUG TEMPORAL PARA JORGE ---
-                if (strpos($email_lower, 'jorge.polo') !== false) {
-                    $hex_dump = bin2hex($email_lower);
-                    ep_error_log("EP Stats CSV Debug: Encontrado 'jorge.polo'. Valor exacto: '{$email_lower}' | Hex: {$hex_dump}");
-                }
-                // --- FIN DEBUG ---
 
                 $results[$email_lower] = array(
                     'display_name' => $row['User Principal Name'] ?? '',

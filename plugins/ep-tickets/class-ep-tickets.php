@@ -112,6 +112,65 @@ class EP_App_Tickets implements EP_App_Interface
                 wp_send_json_error('Error al guardar el comentario.');
             }
         }
+
+        if (isset($_POST['ep_action']) && $_POST['ep_action'] === 'change_ticket_priority') {
+            $ticket_id = intval($_POST['ticket_id']);
+            $priority = sanitize_text_field($_POST['priority']);
+            $reason = sanitize_textarea_field($_POST['reason']);
+            $current_user_id = get_current_user_id();
+
+            // Verificar permisos de staff/manager
+            if (!EP_Tickets::is_staff($current_user_id)) {
+                wp_send_json_error('No tienes permisos para realizar esta acción.');
+            }
+
+            // Validar prioridad
+            $valid_priorities = ['Baja', 'Normal', 'Alta'];
+            if (!in_array($priority, $valid_priorities)) {
+                wp_send_json_error('Prioridad no válida.');
+            }
+
+            $old_priority = get_post_meta($ticket_id, '_ep_ticket_priority', true) ?: 'Normal';
+
+            if ($old_priority !== $priority) {
+                update_post_meta($ticket_id, '_ep_ticket_priority', $priority);
+
+                // Insertar comentario del sistema
+                $system_comment = sprintf(
+                    "Cambio de prioridad a %s (anterior: %s).",
+                    $priority,
+                    $old_priority
+                );
+                if (!empty($reason)) {
+                    $system_comment .= "\nMotivo: " . $reason;
+                }
+
+                wp_insert_comment([
+                    'comment_post_ID' => $ticket_id,
+                    'comment_content' => $system_comment,
+                    'user_id' => $current_user_id,
+                    'comment_author' => wp_get_current_user()->display_name,
+                    'comment_approved' => 1
+                ]);
+
+                // Notificar al propietario del ticket
+                $owner_id = get_post_field('post_author', $ticket_id);
+                if ($owner_id && class_exists('EP_Notifications')) {
+                    $notif_message = sprintf('La prioridad del ticket "%s" ha cambiado a %s.', get_the_title($ticket_id), $priority);
+                    if (!empty($reason)) {
+                        $notif_message .= ' Motivo: ' . $reason;
+                    }
+                    EP_Notifications::add_notification($owner_id, [
+                        'type' => 'info',
+                        'title' => 'Prioridad de Ticket Actualizada',
+                        'message' => $notif_message,
+                        'link' => '?view=tickets'
+                    ]);
+                }
+            }
+
+            wp_send_json_success();
+        }
     }
 }
 
@@ -340,23 +399,23 @@ class EP_Tickets
 
     private function notify_new_ticket($ticket_id, $type)
     {
-        // 1. Map ticket type to department keywords (Department-based notification)
+        // 1. Mapear tipo de ticket a palabras clave de departamento
         $dept_keywords = [];
         if ($type === 'IT')
             $dept_keywords = ['Transform', 'Digital', 'Informá', 'Inform'];
         if ($type === 'Communication' || $type === 'Web')
             $dept_keywords = ['Comunica'];
 
-        // 2. Identify potential recipients
+        // 2. Identificar destinatarios
         $recipient_ids = [];
 
-        // 2a. Users in specific departments (Fuzzy match)
+        // 2a. Usuarios de departamentos relevantes (búsqueda difusa)
         if (!empty($dept_keywords)) {
             $meta_query = ['relation' => 'OR'];
             foreach ($dept_keywords as $kw) {
                 $meta_query[] = [
-                    'key' => 'ep_department',
-                    'value' => $kw,
+                    'key'     => 'ep_department',
+                    'value'   => $kw,
                     'compare' => 'LIKE'
                 ];
             }
@@ -364,37 +423,58 @@ class EP_Tickets
             $recipient_ids = array_merge($recipient_ids, $dept_users);
         }
 
-        // 2b. Administrators (Always notified)
+        // 2b. Administradores (siempre notificados)
         $admins = get_users(['role' => 'administrator', 'fields' => 'ID']);
         $recipient_ids = array_merge($recipient_ids, $admins);
 
-        // 2c. Users with explicit 'write' permission for tickets (Managers)
-        $managers = get_users([
-            'meta_query' => [
-                [
-                    'key' => 'ep_app_permissions',
-                    'value' => '"tickets";s:5:"write"',
-                    'compare' => 'LIKE'
-                ]
-            ],
-            'fields' => 'ID'
-        ]);
-        $recipient_ids = array_merge($recipient_ids, $managers);
+        // 2c. Managers con permiso 'write' en tickets
+        // Se usa LIKE doble (JSON y serializado) para máxima compatibilidad
+        $all_users = get_users(['fields' => ['ID']]);
+        foreach ($all_users as $u) {
+            $perms = get_user_meta($u->ID, 'ep_app_permissions', true);
+            if (empty($perms)) continue;
+            // Si es array, buscar directamente
+            if (is_array($perms) && isset($perms['tickets']) && $perms['tickets'] === 'write') {
+                $recipient_ids[] = $u->ID;
+                continue;
+            }
+            // Si es string (JSON o serializado), buscar la subcadena
+            $perms_str = is_string($perms) ? $perms : wp_json_encode($perms);
+            if (strpos($perms_str, 'tickets') !== false && strpos($perms_str, 'write') !== false) {
+                $recipient_ids[] = $u->ID;
+            }
+        }
 
-        // Clean up duplicates
-        $recipient_ids = array_unique(array_filter($recipient_ids));
+        // Eliminar duplicados
+        $recipient_ids = array_unique(array_filter(array_map('intval', $recipient_ids)));
 
         $ticket_title = get_the_title($ticket_id);
+        $submitter_id = (int) get_post_field('post_author', $ticket_id);
+
+        ep_error_log("[TICKETS] Notificando ticket #{$ticket_id} tipo=$type a " . count($recipient_ids) . " destinatarios: " . implode(',', $recipient_ids), true);
 
         foreach ($recipient_ids as $uid) {
+            // No notificar al propio autor del ticket
+            if ($uid === $submitter_id) continue;
+
             if (class_exists('EP_Notifications')) {
                 EP_Notifications::add_notification($uid, [
-                    'type' => 'info',
-                    'title' => 'Nuevo Ticket: ' . $type,
+                    'type'    => 'info',
+                    'title'   => 'Nuevo Ticket: ' . $type,
                     'message' => 'Se ha abierto un nuevo ticket: "' . $ticket_title . '".',
-                    'link' => '?view=tickets'
+                    'link'    => '?view=tickets'
                 ]);
             }
+        }
+
+        // Confirmar al autor que su ticket fue recibido
+        if ($submitter_id > 0 && class_exists('EP_Notifications')) {
+            EP_Notifications::add_notification($submitter_id, [
+                'type'    => 'success',
+                'title'   => 'Ticket enviado',
+                'message' => 'Tu ticket "' . $ticket_title . '" ha sido enviado correctamente y será atendido pronto.',
+                'link'    => '?view=tickets'
+            ]);
         }
     }
 

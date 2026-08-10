@@ -8,22 +8,76 @@ defined('ABSPATH') || exit;
 class EP_Deployer
 {
     /**
-     * Limpia datos sensibles de producción (Nuclear Reset)
+     * Verifica que el entorno actual permite operaciones destructivas.
+     *
+     * Requisitos SIMULTÁNEOS para devolver true:
+     *  1. Constante EP_ALLOW_NUCLEAR_RESET === true (debe definirse en wp-config.php SOLO en staging/dev)
+     *  2. WP_DEBUG === true (entorno de desarrollo)
+     *
+     * En producción NINGUNA de estas constantes debe estar definida.
      */
-    public static function nuclear_reset()
+    private static function is_destructive_env_allowed(): bool
     {
+        if (!defined('EP_ALLOW_NUCLEAR_RESET') || EP_ALLOW_NUCLEAR_RESET !== true) {
+            return false;
+        }
+        if (!defined('WP_DEBUG') || WP_DEBUG !== true) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Limpia datos sensibles (Nuclear Reset).
+     *
+     * BLOQUEADO en producción. Solo se ejecuta si:
+     *  - EP_ALLOW_NUCLEAR_RESET=true y WP_DEBUG=true están definidos en wp-config.php
+     *  - El usuario actual tiene el capability 'manage_options'
+     *
+     * @return bool  true si se completó, false si fue bloqueado.
+     */
+    public static function nuclear_reset(): bool
+    {
+        // GUARDIA 1: Entorno
+        if (!self::is_destructive_env_allowed()) {
+            error_log('EP_Deployer: nuclear_reset DENEGADO — entorno no permitido (producción o constante ausente).');
+            return false;
+        }
+
+        // GUARDIA 2: Rol de WordPress (independiente de la master key)
+        if (!current_user_can('manage_options')) {
+            error_log('EP_Deployer: nuclear_reset DENEGADO — usuario sin capability manage_options.');
+            return false;
+        }
+
+        // Log de auditoría antes de ejecutar
+        $user = wp_get_current_user();
+        error_log(sprintf(
+            'EP_Deployer: NUCLEAR RESET iniciado por usuario ID=%d (%s) a las %s',
+            $user->ID,
+            $user->user_login,
+            current_time('mysql')
+        ));
+
         global $wpdb;
 
-        // 1. Truncar tablas específicas
         $tables = [
             $wpdb->prefix . 'fds_documentos',
             $wpdb->prefix . 'ep_stats_events',
             $wpdb->prefix . 'ep_stats_sessions',
-            $wpdb->prefix . 'ep_notifications'
+            $wpdb->prefix . 'ep_notifications',
         ];
 
         foreach ($tables as $table) {
-            $wpdb->query("TRUNCATE TABLE $table");
+            // Verificar que la tabla existe antes de truncar
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = %s",
+                $table
+            ));
+            if ($exists) {
+                $wpdb->query("TRUNCATE TABLE `{$table}`");
+                error_log("EP_Deployer: TRUNCATE ejecutado en {$table}");
+            }
         }
 
         // 2. Limpiar archivos físicos en uploads
@@ -95,14 +149,31 @@ class EP_Deployer
         return $upload_dir['baseurl'] . '/' . $zip_filename;
     }
 
-    private static function delete_directory_contents($dir)
+    private static function delete_directory_contents(string $dir): void
     {
-        if (!is_dir($dir))
+        // Protección anti-path-traversal: el directorio debe estar dentro de uploads
+        $upload_basedir = wp_upload_dir()['basedir'];
+        $real_dir       = realpath($dir);
+        $real_base      = realpath($upload_basedir);
+
+        if ($real_dir === false || $real_base === false || strpos($real_dir, $real_base) !== 0) {
+            error_log("EP_Deployer: delete_directory_contents BLOQUEADO — path fuera de uploads: {$dir}");
             return;
-        $files = glob($dir . '/*');
+        }
+
+        if (!is_dir($real_dir)) {
+            return;
+        }
+
+        $files = glob($real_dir . '/*');
+        if ($files === false) {
+            return;
+        }
+
         foreach ($files as $file) {
-            if (is_file($file))
+            if (is_file($file)) {
                 unlink($file);
+            }
         }
     }
 

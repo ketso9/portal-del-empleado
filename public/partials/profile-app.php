@@ -151,52 +151,142 @@ if ($is_editable) {
         </div>
 
         <?php if ($is_editable): ?>
-            <!-- Tab: Ausencias (OOF) -->
+            <!-- Tab: Ausencias (OOF - Fuera de la Oficina) -->
             <div id="tab-ausencias" class="ep-tab-content">
-                <div class="ep-card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h3>Respuestas Automáticas (Outlook)</h3>
+                <div class="ep-card ep-oof-teams-card">
+                    <div class="ep-oof-header">
+                        <h3>Activar respuestas automáticas</h3>
                         <?php if (is_wp_error($oof_settings)): ?>
-                            <span class="ep-badge badge-red">Error de conexión M365</span>
+                            <span class="ep-badge badge-red">Error M365</span>
+                        <?php else: ?>
+                            <span class="ep-badge badge-m365"><i class="fa-brands fa-microsoft"></i> Sincronizado con M365</span>
                         <?php endif; ?>
                     </div>
+
+                    <p class="ep-oof-description">
+                        Configure un mensaje para que otros usuarios sepan que está de vacaciones o que no está disponible para responder. Su estado de fuera de la oficina también se sincronizará con su calendario de Outlook.
+                    </p>
 
                     <?php if (is_wp_error($oof_settings)): ?>
                         <div class="ep-alert warning">
                             No se pudo conectar con Microsoft 365 para gestionar tus ausencias.
-                            <br><small><?php echo $oof_settings->get_error_message(); ?></small>
+                            <br><small><?php echo esc_html($oof_settings->get_error_message()); ?></small>
                         </div>
                     <?php else:
                         $oof = $oof_settings['automaticRepliesSetting'] ?? [];
-                        $status = $oof['status'] ?? 'disabled';
+                        $status = $oof['status'] ?? 'disabled'; // 'disabled', 'alwaysEnabled', 'scheduled'
+                        $external_audience = $oof['externalAudience'] ?? 'none'; // 'none', 'contactsOnly', 'all'
+
+                        // Clean HTML from Graph API
+                        $clean_html_func = function($html) {
+                            if (empty($html)) return '';
+                            $text = preg_replace('/<br\s*\/?>/i', "\n", $html);
+                            $text = preg_replace('/<\/p>/i', "\n\n", $text);
+                            $text = preg_replace('/<\/div>/i', "\n", $text);
+                            return trim(html_entity_decode(wp_strip_all_tags($text), ENT_QUOTES, 'UTF-8'));
+                        };
+
+                        $internal_msg = $clean_html_func($oof['internalReplyMessage'] ?? '');
+                        $external_msg = $clean_html_func($oof['externalReplyMessage'] ?? '');
+
+                        if (empty($internal_msg)) {
+                            $internal_msg = "Gracias por contactar conmigo. Estaré hoy fuera de la oficina.";
+                        }
+
+                        // Dates and times
+                        $start_dt_raw = $oof['scheduledStartDateTime']['dateTime'] ?? '';
+                        $end_dt_raw   = $oof['scheduledEndDateTime']['dateTime'] ?? '';
+
+                        $start_date = !empty($start_dt_raw) ? date('Y-m-d', strtotime($start_dt_raw)) : date('Y-m-d');
+                        $start_time = !empty($start_dt_raw) ? date('H:i', strtotime($start_dt_raw)) : '08:00';
+                        $end_date   = !empty($end_dt_raw) ? date('Y-m-d', strtotime($end_dt_raw)) : date('Y-m-d', strtotime('+7 days'));
+                        $end_time   = !empty($end_dt_raw) ? date('H:i', strtotime($end_dt_raw)) : '18:00';
                         ?>
-                        <form id="epOofForm" class="ep-form">
-                            <div class="form-group" style="margin-bottom: 20px;">
-                                <label class="switch-label">
-                                    <span>Activar respuestas automáticas</span>
+                        <form id="epOofForm" class="ep-oof-form">
+                            <!-- Toggle switch row -->
+                            <div class="ep-oof-toggle-row">
+                                <span id="oofStatusText" class="ep-oof-status-label"><?php echo ($status !== 'disabled') ? 'Activado' : 'Desactivado'; ?></span>
+                                <label class="ep-teams-switch">
                                     <input type="checkbox" id="oofStatus" <?php checked($status !== 'disabled'); ?>>
-                                    <span class="slider"></span>
+                                    <span class="ep-teams-slider"></span>
                                 </label>
                             </div>
 
-                            <div id="oofDetails" style="<?php echo $status === 'disabled' ? 'display:none;' : ''; ?>">
-                                <div class="form-group">
-                                    <label>Mensaje para compañeros (Interno)</label>
-                                    <textarea id="internalReply" rows="4"
-                                        placeholder="Ej: Hola, estaré fuera hasta el lunes..."><?php echo esc_textarea($oof['internalReplyMessage'] ?? ''); ?></textarea>
+                            <div id="oofDetails" class="ep-oof-details" style="<?php echo ($status === 'disabled') ? 'display:none;' : ''; ?>">
+                                
+                                <!-- Internal Message -->
+                                <div class="form-group ep-oof-group">
+                                    <label for="internalReply">
+                                        Mensaje de Fuera de la oficina
+                                        <i class="fa-solid fa-circle-info ep-info-icon" title="Este mensaje se enviará a las personas dentro de su organización."></i>
+                                    </label>
+                                    <textarea id="internalReply" rows="4" class="ep-oof-textarea"
+                                        placeholder="Gracias por contactar conmigo. Estaré hoy fuera de la oficina."><?php echo esc_textarea($internal_msg); ?></textarea>
                                 </div>
-                                <div class="form-group">
-                                    <label>Mensaje para clientes (Externo)</label>
-                                    <textarea id="externalReply" rows="4"
-                                        placeholder="Ej: Gracias por su mensaje, le atenderemos a la vuelta..."><?php echo esc_textarea($oof['externalReplyMessage'] ?? ''); ?></textarea>
+
+                                <!-- External replies toggle -->
+                                <div class="ep-oof-checkbox-group">
+                                    <label class="ep-checkbox-label">
+                                        <input type="checkbox" id="oofExternalToggle" <?php checked($external_audience !== 'none'); ?>>
+                                        <span>Enviar respuestas fuera de mi organización</span>
+                                    </label>
+
+                                    <div id="oofExternalDetails" class="ep-oof-subdetails" style="<?php echo ($external_audience === 'none') ? 'display:none;' : ''; ?>">
+                                        <div class="ep-oof-radio-group">
+                                            <label class="ep-radio-label">
+                                                <input type="radio" name="externalAudience" value="all" <?php checked($external_audience !== 'contactsOnly'); ?>>
+                                                <span>Enviar a todos los remitentes externos</span>
+                                            </label>
+                                            <label class="ep-radio-label">
+                                                <input type="radio" name="externalAudience" value="contactsOnly" <?php checked($external_audience === 'contactsOnly'); ?>>
+                                                <span>Enviar respuestas solo a mis contactos</span>
+                                            </label>
+                                        </div>
+
+                                        <div class="form-group ep-oof-group" style="margin-top: 12px;">
+                                            <label for="externalReply">Mensaje para remitentes externos</label>
+                                            <textarea id="externalReply" rows="3" class="ep-oof-textarea"
+                                                placeholder="Gracias por contactar conmigo. Estaré hoy fuera de la oficina."><?php echo esc_textarea($external_msg); ?></textarea>
+                                        </div>
+                                    </div>
                                 </div>
+
+                                <!-- Scheduled Period Toggle -->
+                                <div class="ep-oof-checkbox-group">
+                                    <label class="ep-checkbox-label">
+                                        <input type="checkbox" id="oofScheduledToggle" <?php checked($status === 'scheduled'); ?>>
+                                        <span>Enviar respuestas solo durante un período</span>
+                                    </label>
+
+                                    <div id="oofScheduleDetails" class="ep-oof-subdetails" style="<?php echo ($status !== 'scheduled') ? 'display:none;' : ''; ?>">
+                                        <div class="ep-oof-schedule-grid">
+                                            <div class="form-group">
+                                                <label for="oofStartDate">Fecha de inicio</label>
+                                                <input type="date" id="oofStartDate" value="<?php echo esc_attr($start_date); ?>">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="oofStartTime">Hora de inicio</label>
+                                                <input type="time" id="oofStartTime" value="<?php echo esc_attr($start_time); ?>">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="oofEndDate">Fecha de finalización</label>
+                                                <input type="date" id="oofEndDate" value="<?php echo esc_attr($end_date); ?>">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="oofEndTime">Hora de finalización</label>
+                                                <input type="time" id="oofEndTime" value="<?php echo esc_attr($end_time); ?>">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                             </div>
 
-                            <div class="ep-form-actions">
-                                <button type="submit" class="ep-btn ep-btn-primary" id="saveOofBtn">
-                                    <i class="fa-solid fa-save"></i> Guardar en Outlook
-                                </button>
-                                <span id="oofMessage" style="margin-left: 10px;"></span>
+                            <!-- Actions -->
+                            <div class="ep-oof-actions">
+                                <button type="button" class="ep-btn ep-btn-secondary" id="cancelOofBtn">Cancelar</button>
+                                <button type="submit" class="ep-btn ep-btn-primary" id="saveOofBtn">Guardar</button>
+                                <span id="oofMessage" class="ep-oof-msg"></span>
                             </div>
                         </form>
                     <?php endif; ?>
@@ -455,38 +545,71 @@ if ($is_editable) {
             $('#' + tabId).addClass('active');
         });
 
-        // OOF Status toggle
+        // OOF Status toggle switch
         $('#oofStatus').on('change', function () {
-            if ($(this).is(':checked')) {
+            const isChecked = $(this).is(':checked');
+            $('#oofStatusText').text(isChecked ? 'Activado' : 'Desactivado');
+            if (isChecked) {
                 $('#oofDetails').slideDown();
             } else {
                 $('#oofDetails').slideUp();
             }
         });
 
-        // Save OOF
+        // OOF External toggle
+        $('#oofExternalToggle').on('change', function () {
+            if ($(this).is(':checked')) {
+                $('#oofExternalDetails').slideDown();
+            } else {
+                $('#oofExternalDetails').slideUp();
+            }
+        });
+
+        // OOF Scheduled toggle
+        $('#oofScheduledToggle').on('change', function () {
+            if ($(this).is(':checked')) {
+                $('#oofScheduleDetails').slideDown();
+            } else {
+                $('#oofScheduleDetails').slideUp();
+            }
+        });
+
+        // OOF Cancel button
+        $('#cancelOofBtn').on('click', function () {
+            location.reload();
+        });
+
+        // Save OOF (Teams / Outlook sync)
         $('#epOofForm').on('submit', function (e) {
             e.preventDefault();
             const $btn = $('#saveOofBtn');
             const $msg = $('#oofMessage');
 
             $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> Guardando...');
+            $msg.empty();
 
             const data = {
                 action: 'ep_update_oof_settings',
                 security: ep_vars.nonce,
-                status: $('#oofStatus').is(':checked') ? 'scheduled' : 'disabled',
+                status_toggle: $('#oofStatus').is(':checked'),
+                is_scheduled: $('#oofScheduledToggle').is(':checked'),
+                external_enabled: $('#oofExternalToggle').is(':checked'),
+                external_audience: $('input[name="externalAudience"]:checked').val() || 'all',
                 internal_reply: $('#internalReply').val(),
-                external_reply: $('#externalReply').val()
+                external_reply: $('#externalReply').val(),
+                start_date: $('#oofStartDate').val(),
+                start_time: $('#oofStartTime').val(),
+                end_date: $('#oofEndDate').val(),
+                end_time: $('#oofEndTime').val()
             };
 
             $.post(ep_vars.ajax_url, data, function (res) {
                 if (res.success) {
-                    $msg.html('<span style="color: green;"><i class="fa-solid fa-check"></i> Actualizado en Outlook</span>');
+                    $msg.html('<span style="color: #10b981; font-weight: 600;"><i class="fa-solid fa-check"></i> ' + res.data + '</span>');
                 } else {
-                    $msg.html('<span style="color: red;"><i class="fa-solid fa-times"></i> Error: ' + res.data + '</span>');
+                    $msg.html('<span style="color: #ef4444; font-weight: 600;"><i class="fa-solid fa-triangle-exclamation"></i> Error: ' + res.data + '</span>');
                 }
-                $btn.prop('disabled', false).html('<i class="fa-solid fa-save"></i> Guardar en Outlook');
+                $btn.prop('disabled', false).html('Guardar');
             });
         });
         // Save Profile (General)

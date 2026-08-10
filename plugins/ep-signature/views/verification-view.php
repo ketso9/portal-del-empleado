@@ -17,7 +17,7 @@ defined('ABSPATH') || exit;
             <div class="verification-status success">
                 <i class="fa-solid fa-circle-check"></i>
                 <h3>Documento Válido</h3>
-                <p>Este documento ha sido firmado electrónicamente a través del Portal del Empleado.</p>
+                <p>Este documento ha sido firmado electrónicamente a través del Portal Cámara de Comercio de Cáceres.</p>
             </div>
 
             <div class="verification-details">
@@ -39,10 +39,35 @@ defined('ABSPATH') || exit;
                 </div>
             </div>
 
-            <div class="verification-actions" style="margin-top: 20px; text-align: center;">
-                <a href="<?php echo esc_url($doc->url_documento_firmado); ?>" target="_blank" class="ep-btn ep-btn-primary">
-                    <i class="fa-solid fa-download"></i> Descargar Documento Original
-                </a>
+            <div class="verification-actions" style="margin-top: 25px; text-align: center;">
+                <?php if (is_user_logged_in()): ?>
+                    <?php 
+                    $download_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time();
+                    ?>
+                    <a href="<?php echo esc_url($download_url); ?>" target="_blank" class="ep-btn ep-btn-primary">
+                        <i class="fa-solid fa-download"></i> Descargar Documento Original
+                    </a>
+                <?php else: ?>
+                    <div style="background-color: #f3f4f6; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 6px; display: inline-block; text-align: left; max-width: 100%;">
+                        <p style="margin: 0; color: #1f2937; font-weight: 600; font-size: 14px;">
+                            <i class="fa-solid fa-lock" style="color: #3b82f6; margin-right: 8px;"></i> Descarga protegida por privacidad
+                        </p>
+                        <p style="margin: 5px 0 0 0; color: #4b5563; font-size: 13px;">
+                            <?php 
+                            $m365_login_url = add_query_arg(
+                                array(
+                                    'redirect_to' => home_url($_SERVER['REQUEST_URI'])
+                                ), 
+                                home_url('/')
+                            );
+                            ?>
+                            Para descargar el documento firmado original, debe <a href="<?php echo esc_url($m365_login_url); ?>" style="color: #2563eb; text-decoration: underline; font-weight: 500;">iniciar sesión</a> en el portal.
+                        </p>
+                        <p style="margin: 8px 0 0 0; padding-top: 8px; border-top: 1px dashed #d1d5db; color: #4b5563; font-size: 12px; line-height: 1.4;">
+                            <i class="fa-solid fa-circle-info" style="color: #4b5563; margin-right: 6px;"></i> Si usted es un usuario externo, puede solicitar una copia de dicho documento en <a href="mailto:info@camaracaceres.es" style="color: #2563eb; text-decoration: underline; font-weight: 500;">info@camaracaceres.es</a>.
+                        </p>
+                    </div>
+                <?php endif; ?>
             </div>
         <?php else: ?>
             <div class="verification-status error">
@@ -96,7 +121,9 @@ defined('ABSPATH') || exit;
     .detail-row {
         display: flex;
         justify-content: space-between;
-        padding: 10px 0;
+        align-items: center;
+        gap: 15px;
+        padding: 12px 0;
         border-bottom: 1px solid #e5e7eb;
     }
 
@@ -107,16 +134,43 @@ defined('ABSPATH') || exit;
     .detail-row .label {
         font-weight: 600;
         color: #4b5563;
+        flex-shrink: 0;
     }
 
     .detail-row .value {
         color: #111827;
+        text-align: right;
+        word-break: break-word;
+        overflow-wrap: anywhere;
     }
 
     .detail-row code {
         background: #e5e7eb;
-        padding: 2px 6px;
+        padding: 4px 8px;
         border-radius: 4px;
         font-family: monospace;
+        font-size: 13px;
+        word-break: break-all;
+        overflow-wrap: anywhere;
+        display: inline-block;
+        max-width: 100%;
+        text-align: left;
+    }
+
+    @media (max-width: 576px) {
+        .detail-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+        .detail-row .value {
+            text-align: left;
+            width: 100%;
+        }
+        .detail-row code {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
     }
 </style>

@@ -262,9 +262,21 @@ class EP_App_Directory implements EP_App_Interface
                 $ms_id = $p['id'] ?? '';
                 if (isset($ms_to_wp[$ms_id])) {
                     $wp_id = $ms_to_wp[$ms_id];
+                    $avail = $p['availability'] ?? 'Offline';
+                    $act   = $p['activity'] ?? '';
+
+                    $oof_data = EP_Auth_O365::get_user_oof_data($wp_id);
+                    $is_oof   = $oof_data['is_oof'] || $avail === 'OutOfOffice' || $act === 'OutOfOffice';
+
+                    if ($is_oof) {
+                        $avail = 'OutOfOffice';
+                    }
+
                     $result[$wp_id] = array(
-                        'availability' => $p['availability'] ?? 'Offline',
-                        'activity' => $p['activity'] ?? ''
+                        'availability' => $avail,
+                        'activity'     => $act,
+                        'is_oof'       => $is_oof,
+                        'oof_message'  => $oof_data['message'] ?? ''
                     );
                 }
             }

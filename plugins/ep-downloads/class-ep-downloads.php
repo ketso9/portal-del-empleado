@@ -32,6 +32,8 @@ class EP_Downloads
         add_action('wp_ajax_ep_share_document', array($this, 'ajax_share_document'));
         add_action('wp_ajax_ep_force_sync_onedrive', array($this, 'ajax_force_sync_onedrive'));
         add_action('wp_ajax_ep_link_to_my_onedrive', array($this, 'ajax_link_to_my_onedrive'));
+        add_action('wp_ajax_ep_downloads_mark_read', array($this, 'ajax_mark_read'));
+        add_action('wp_ajax_ep_downloads_get_doc_reads', array($this, 'ajax_get_doc_reads'));
 
         add_action('init', array($this, 'register_document_taxonomy'));
 
@@ -508,6 +510,9 @@ class EP_Downloads
         $file_path = $attachment_id ? get_attached_file($attachment_id) : false;
 
         if ($file_path && file_exists($file_path)) {
+            // Start output buffering to capture any warnings/notices/BOM/whitespace
+            ob_start();
+
             $filename = basename($file_path);
             $filetype = wp_check_filetype($file_path);
 
@@ -517,11 +522,27 @@ class EP_Downloads
             if ($is_encrypted) {
                 $content = $this->decrypt_file_content($file_path);
                 if ($content === false) {
+                    while (ob_get_level()) {
+                        ob_end_clean();
+                    }
                     wp_die('Error al descifrar el archivo.');
                 }
                 $filesize = strlen($content);
             } else {
                 $filesize = filesize($file_path);
+            }
+
+            // Log to stats before we clean buffers and send headers
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('downloads', 'document_download', get_current_user_id(), [
+                    'post_id' => $post_id,
+                    'filename' => $filename
+                ]);
+            }
+
+            // Clean all active output buffers to discard any warnings/notices/BOM/whitespace
+            while (ob_get_level()) {
+                ob_end_clean();
             }
 
             header('Content-Description: File Transfer');
@@ -532,21 +553,9 @@ class EP_Downloads
                 header('Content-Disposition: attachment; filename="' . $filename . '"');
             }
             header('Expires: 0');
-            header('Cache-Control: must-revalidate');
+            header('Cache-Control: private, max-age=0, must-revalidate');
             header('Pragma: public');
             header('Content-Length: ' . $filesize);
-
-            // Limpiar buffers
-            if (ob_get_level())
-                ob_end_clean();
-
-            // Log to stats
-            if (function_exists('ep_stats_log')) {
-                ep_stats_log('downloads', 'document_download', get_current_user_id(), [
-                    'post_id' => $post_id,
-                    'filename' => $filename
-                ]);
-            }
 
             if ($is_encrypted && isset($content)) {
                 echo $content;
@@ -1048,9 +1057,10 @@ class EP_Downloads
 
         if (!is_wp_error($terms) && !empty($terms)) {
             foreach ($terms as $term) {
+                $display_name = get_term_meta($term->term_id, '_ep_display_name', true) ?: $term->name;
                 $contents[] = array(
                     'id' => (string) $term->term_id,
-                    'name' => $term->name,
+                    'name' => $display_name,
                     'type' => 'folder',
                     'folder' => array('childCount' => $term->count)
                 );
@@ -1112,7 +1122,7 @@ class EP_Downloads
                 $status = get_post_meta($post->ID, '_ep_document_review_status', true) ?: 'pending';
                 $onedrive_id = get_post_meta($post->ID, '_ep_onedrive_item_id', true);
 
-                $download_url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post->ID . '&security=' . wp_create_nonce('ep_download_' . $post->ID));
+                $download_url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post->ID . '&security=' . wp_create_nonce('ep_download_' . $post->ID) . '&t=' . time());
 
                 $attachment_id = get_post_meta($post->ID, '_ep_document_attachment_id', true);
                 $file_path = $attachment_id ? get_attached_file($attachment_id) : '';
@@ -1194,7 +1204,7 @@ class EP_Downloads
 
                 $status      = get_post_meta($post->ID, '_ep_document_review_status', true) ?: 'pending';
                 $onedrive_id = get_post_meta($post->ID, '_ep_onedrive_item_id', true);
-                $download_url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post->ID . '&security=' . wp_create_nonce('ep_download_' . $post->ID));
+                $download_url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post->ID . '&security=' . wp_create_nonce('ep_download_' . $post->ID) . '&t=' . time());
                 $attachment_id = get_post_meta($post->ID, '_ep_document_attachment_id', true);
                 $file_path = $attachment_id ? get_attached_file($attachment_id) : '';
                 $filesize  = (int) get_post_meta($post->ID, '_ep_document_size', true);
@@ -1248,11 +1258,23 @@ class EP_Downloads
         check_ajax_referer('ep_ajax_nonce', 'security');
 
         $post_id = isset($_POST['document_id']) ? intval($_POST['document_id']) : 0;
-        if ($post_id > 0) {
-            $feedback = get_post_meta($post_id, '_ep_document_feedback', true);
-            wp_send_json_success($feedback);
+        if ($post_id <= 0 || get_post_type($post_id) !== self::POST_TYPE) {
+            wp_send_json_error('No se pudo obtener el feedback.');
         }
-        wp_send_json_error('No se pudo obtener el feedback.');
+
+        // Solo el propietario, el destinatario o el personal autorizado.
+        global $ep_app_manager;
+        $current_user = get_current_user_id();
+        $can_write    = ($ep_app_manager->get_user_permission('downloads') === 'write');
+        $owner_id     = (int) get_post_field('post_author', $post_id);
+        $target_id    = (int) get_post_meta($post_id, '_ep_document_target_user', true);
+
+        if (!$can_write && $owner_id !== $current_user && $target_id !== $current_user) {
+            wp_send_json_error('No tienes permisos para consultar este documento.');
+        }
+
+        $feedback = get_post_meta($post_id, '_ep_document_feedback', true);
+        wp_send_json_success($feedback);
     }
 
     public function ajax_backup_to_onedrive()
@@ -1723,7 +1745,7 @@ class EP_Downloads
 
             // Fallback final a la URL de descarga segura
             if (empty($file_url)) {
-                $file_url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post_id . '&security=' . wp_create_nonce('ep_download_' . $post_id));
+                $file_url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post_id . '&security=' . wp_create_nonce('ep_download_' . $post_id) . '&t=' . time());
             }
         }
 
@@ -1844,7 +1866,7 @@ class EP_Downloads
         }
 
         // Fallback: Generate local preview URL
-        $url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post_id . '&security=' . wp_create_nonce('ep_download_' . $post_id) . '&preview=1');
+        $url = admin_url('admin-ajax.php?action=ep_secure_download&id=' . $post_id . '&security=' . wp_create_nonce('ep_download_' . $post_id) . '&preview=1&t=' . time());
         ep_error_log("EP_Downloads: Fallback a vista previa local: $url");
         wp_send_json_success(array('url' => $url));
     }
@@ -1972,8 +1994,11 @@ class EP_Downloads
             wp_send_json_error('No autorizado.');
         }
 
+        ep_error_log("[SYNC] Iniciada sincronización forzada. user=" . get_current_user_id(), true);
+
         try {
             $result = $this->run_auto_sync();
+            ep_error_log("[SYNC] Completada. synced={$result['synced']} skipped={$result['skipped']} errors=" . json_encode($result['errors']), true);
             wp_send_json_success(array(
                 'message' => 'Sincronización completada correctamente.',
                 'stats' => array(
@@ -1986,7 +2011,9 @@ class EP_Downloads
                 )
             ));
         } catch (\Throwable $e) {
-            error_log('EP_Downloads sync error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            $msg = $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
+            ep_error_log('[SYNC] EXCEPCIÓN: ' . $msg, true);
+            error_log('EP_Downloads sync error: ' . $msg);
             wp_send_json_error(array(
                 'message' => 'Error durante la sincronización: ' . $e->getMessage()
             ));
@@ -2201,35 +2228,62 @@ class EP_Downloads
         $auth = EP_Auth_O365::get_instance();
 
         $folder_ids = get_user_meta($user_id, 'ep_onedrive_folder_ids', true);
-        if (!$folder_ids || empty($folder_ids['publico'])) {
+        $root_key = ($root_type === self::TYPE_PRIVATE) ? 'personal' : 'publico';
+        
+        ep_error_log("[SYNC PULL] user=$user_id type=$root_type root_key=$root_key folder_ids=" . json_encode($folder_ids), true);
+
+        if (!$folder_ids || empty($folder_ids[$root_key])) {
+            ep_error_log("[SYNC PULL] Folder ID vacío para $root_key. Ejecutando ensure_onedrive_structure...", true);
             $folder_ids = $auth->ensure_onedrive_structure($user_id);
-            if (is_wp_error($folder_ids))
+            if (is_wp_error($folder_ids)) {
+                $msg = $folder_ids->get_error_message();
+                ep_error_log("[SYNC PULL] ERROR en ensure_onedrive_structure user=$user_id: $msg", true);
+                $stats['errors'][] = "ensure_structure user=$user_id: $msg";
                 return;
+            }
+            ep_error_log("[SYNC PULL] Estructura asegurada: " . json_encode($folder_ids), true);
         }
 
-        $root_key = ($root_type === self::TYPE_PRIVATE) ? 'personal' : 'publico';
         $onedrive_folder_id = $folder_ids[$root_key] ?? '';
 
-        if (!$onedrive_folder_id)
+        if (!$onedrive_folder_id) {
+            ep_error_log("[SYNC PULL] ERROR: folder_id vacío tras ensure. Abortando para user=$user_id type=$root_type", true);
+            $stats['errors'][] = "folder_id vacío para user=$user_id tipo=$root_type";
             return;
+        }
+
+        ep_error_log("[SYNC PULL] Iniciando sync recursivo user=$user_id folder=$onedrive_folder_id type=$root_type", true);
 
         $doc_type = ($root_type === self::TYPE_PRIVATE) ? self::TYPE_PRIVATE : self::TYPE_PUBLIC;
         $all_remote_item_ids = [];
         $all_remote_folder_names = [];
-
         $this->sync_onedrive_folder_recursive($user_id, $onedrive_folder_id, $local_parent_id, $doc_type, $stats, $all_remote_item_ids, $all_remote_folder_names);
-        $this->cleanup_global_deleted_items($local_parent_id, $all_remote_item_ids, $all_remote_folder_names, $user_id, $doc_type, $stats);
+        
+        ep_error_log("[SYNC PULL] Recursivo terminado. remote_ids=" . count($all_remote_item_ids) . " errors=" . count($stats['errors']), true);
+
+        // SEGURIDAD: Solo ejecutamos la limpieza si NO ha habido errores durante la sincronización recursiva.
+        if (empty($stats['errors'])) {
+            $this->cleanup_global_deleted_items($local_parent_id, $all_remote_item_ids, $all_remote_folder_names, $user_id, $doc_type, $stats);
+        } else {
+            ep_error_log("[SYNC PULL] Omitida limpieza para user=$user_id debido a errores previos.", true);
+        }
     }
 
     private function sync_onedrive_folder_recursive($user_id, $onedrive_folder_id, $local_parent_id, $doc_type, &$stats, &$all_remote_item_ids, &$all_remote_folder_names)
     {
         $auth = EP_Auth_O365::get_instance();
+        ep_error_log("[SYNC RECURSIVE] user=$user_id folder=$onedrive_folder_id local_parent=$local_parent_id type=$doc_type", true);
+        
         $contents = $auth->get_live_onedrive_contents($user_id, $onedrive_folder_id);
 
         if (is_wp_error($contents)) {
-            $stats['errors'][] = 'Error syncing folder ' . $onedrive_folder_id . ': ' . $contents->get_error_message();
+            $msg = $contents->get_error_message();
+            ep_error_log("[SYNC RECURSIVE] ERROR listando folder=$onedrive_folder_id user=$user_id: $msg", true);
+            $stats['errors'][] = 'Error syncing folder ' . $onedrive_folder_id . ': ' . $msg;
             return;
         }
+
+        ep_error_log("[SYNC RECURSIVE] Encontrados " . count($contents) . " items en folder=$onedrive_folder_id", true);
 
         foreach ($contents as $item) {
             $all_remote_item_ids[] = $item['id'];
@@ -2249,12 +2303,13 @@ class EP_Downloads
     private function get_or_create_local_category($name, $parent_id, $user_id, $doc_type, $onedrive_id = '')
     {
         $owner_id = ($doc_type === self::TYPE_PUBLIC) ? 0 : $user_id;
+        $unique_name = ($owner_id > 0) ? "$name (#$owner_id)" : $name;
 
         $term_args = array(
             'taxonomy' => 'ep_document_category',
             'hide_empty' => false,
             'parent' => $parent_id,
-            'name' => $name,
+            'name' => $unique_name,
             'meta_query' => array(
                 array(
                     'key' => '_ep_category_owner',
@@ -2265,21 +2320,39 @@ class EP_Downloads
         );
         $terms = get_terms($term_args);
 
+        // Fallback: Si no lo encontramos por el nombre único, intentamos buscar por el nombre simple y owner
+        if (is_wp_error($terms) || empty($terms)) {
+            $term_args['name'] = $name;
+            $terms = get_terms($term_args);
+        }
+
         if (!is_wp_error($terms) && !empty($terms)) {
             foreach ($terms as $t) {
-                if (strtolower($t->name) === strtolower($name)) {
-                    if ($onedrive_id) {
-                        update_term_meta($t->term_id, '_ep_onedrive_item_id', $onedrive_id);
-                    }
-                    return array('term_id' => $t->term_id);
+                if ($onedrive_id) {
+                    update_term_meta($t->term_id, '_ep_onedrive_item_id', $onedrive_id);
                 }
+                // Asegurar display name
+                update_term_meta($t->term_id, '_ep_display_name', $name);
+                return array('term_id' => $t->term_id);
             }
         }
 
         $args = array();
         if ($parent_id > 0)
             $args['parent'] = $parent_id;
-        $term = wp_insert_term($name, 'ep_document_category', $args);
+            
+        // Intentamos insertar con el nombre único para evitar colisiones entre usuarios (WP no permite nombres iguales en el mismo nivel)
+        $term = wp_insert_term($unique_name, 'ep_document_category', $args);
+        
+        if (is_wp_error($term) && $term->get_error_code() === 'term_exists') {
+             // Si el term_exists saltó con el nombre único, es que este mismo usuario ya tiene algo así.
+             // Recuperamos el ID existente del error data.
+             $existing_id = $term->get_error_data();
+             if ($existing_id) {
+                 $term = array('term_id' => $existing_id);
+             }
+        }
+
         if (!is_wp_error($term)) {
             $term_id = $term['term_id'];
             update_term_meta($term_id, '_ep_category_owner', $owner_id);
@@ -2456,6 +2529,17 @@ class EP_Downloads
             wp_send_json_error('Debes seleccionar un destinatario válido.');
         }
 
+        // Sin esta comprobación cualquier usuario podía reasignarse el documento
+        // de otro (nóminas, contratos) y descargarlo como destinatario legítimo.
+        global $ep_app_manager;
+        $current_user = get_current_user_id();
+        $can_write    = ($ep_app_manager->get_user_permission('downloads') === 'write');
+        $owner_id     = (int) get_post_field('post_author', $post_id);
+
+        if (!$can_write && $owner_id !== $current_user) {
+            wp_send_json_error('Solo el propietario del documento o el personal autorizado puede enviarlo.');
+        }
+
         // 1. Actualizar el destinatario en los metadatos
         update_post_meta($post_id, '_ep_document_target_user', $target_user_id);
         update_post_meta($post_id, '_ep_document_type', self::TYPE_PRIVATE); // Asegurar que sea privado
@@ -2540,5 +2624,59 @@ class EP_Downloads
         }
 
         wp_send_json_success("El documento \"$doc_title\" ha sido compartido con $target_name.");
+    }
+
+    public function ajax_mark_read()
+    {
+        $doc_id = isset($_POST['doc_id']) ? sanitize_text_field($_POST['doc_id']) : '';
+        $user_id = get_current_user_id();
+
+        if (!empty($doc_id) && $user_id) {
+            update_user_meta($user_id, 'ep_doc_read_' . $doc_id, current_time('mysql'));
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('downloads', 'mandatory_doc_read', $user_id, array('doc_id' => $doc_id));
+            }
+            wp_send_json_success('Lectura registrada');
+        }
+        wp_send_json_error('Parámetros inválidos');
+    }
+
+    public function ajax_get_doc_reads()
+    {
+        $doc_id = isset($_POST['doc_id']) ? sanitize_text_field($_POST['doc_id']) : '';
+        
+        $user = wp_get_current_user();
+        $user_roles = (array) $user->roles;
+        $user_dept = (string) ($user->ep_department ?? '');
+        $can_view_reads = current_user_can('administrator')
+            || in_array('ep_hr', $user_roles)
+            || in_array('ep_direction', $user_roles)
+            || strpos($user_dept, 'Direcci') !== false
+            || strpos($user_dept, 'RRHH') !== false
+            || strpos($user_dept, 'Recursos Humanos') !== false;
+
+        if (!$can_view_reads) {
+            wp_send_json_error('No tienes permisos para consultar las lecturas. Esta función está reservada para Dirección, RRHH y Administradores.');
+        }
+
+        $meta_key = 'ep_doc_read_' . $doc_id;
+        $readers = get_users(array(
+            'meta_key' => $meta_key,
+            'meta_compare' => 'EXISTS'
+        ));
+
+        $data = array();
+        foreach ($readers as $r) {
+            $read_time = get_user_meta($r->ID, $meta_key, true);
+            $dept = get_user_meta($r->ID, 'ep_department', true) ?: 'General';
+            $data[] = array(
+                'name' => $r->display_name,
+                'email' => $r->user_email,
+                'dept' => $dept,
+                'read_at' => $read_time ? date('d/m/Y H:i:s', strtotime($read_time)) : 'N/A'
+            );
+        }
+
+        wp_send_json_success($data);
     }
 }

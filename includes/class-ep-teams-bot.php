@@ -26,7 +26,8 @@ class EP_Teams_Bot
         if (!empty($id)) return $id;
         if (!$token) return null;
         $external_id = self::get_manifest_app_id();
-        $url = "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?\$filter=externalId eq '{$external_id}'";
+        $safe_ext_id = rawurlencode($external_id);
+        $url = "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps?\$filter=externalId eq '{$safe_ext_id}'";
         $response = wp_remote_get($url, [
             'headers' => ['Authorization' => 'Bearer ' . $token],
             'timeout' => 20
@@ -101,7 +102,8 @@ class EP_Teams_Bot
             'recipient' => ['@odata.type' => '#microsoft.graph.aadUserNotificationRecipient', 'userId' => $user_oid],
         ];
 
-        $url = "https://graph.microsoft.com/v1.0/users/{$user_oid}/teamwork/sendActivityNotification";
+        $safe_oid = rawurlencode($user_oid);
+        $url = "https://graph.microsoft.com/v1.0/users/{$safe_oid}/teamwork/sendActivityNotification";
         $response = wp_remote_post($url, [
             'headers' => ['Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json'],
             'body'    => wp_json_encode($body),
@@ -243,7 +245,13 @@ class EP_Teams_Bot
     {
         $transient_key = "ep_bt_token_" . md5($bot_id);
         $cached = get_transient($transient_key);
-        if ($cached) return ['token' => $cached, 'source' => 'cache'];
+        if ($cached) {
+            // OAUTH-03: Descifrar si estaba cifrado antes de devolver
+            $token_plain = (class_exists('EP_Security') && EP_Security::is_encrypted($cached))
+                ? EP_Security::decrypt($cached)
+                : $cached;
+            return ['token' => $token_plain, 'source' => 'cache'];
+        }
 
         if (empty($bot_id) || empty($bot_secret)) {
             return ['error' => 'Bot ID o Bot Secret están vacíos'];
@@ -291,7 +299,9 @@ class EP_Teams_Bot
             $token = $body['access_token'] ?? null;
 
             if ($token) {
-                set_transient($transient_key, $token, ($body['expires_in'] ?? 3600) - 300);
+                // OAUTH-03: Guardar cifrado para proteger el token en wp_options
+                $token_to_cache = class_exists('EP_Security') ? EP_Security::encrypt($token) : $token;
+                set_transient($transient_key, $token_to_cache, ($body['expires_in'] ?? 3600) - 300);
                 return ['token' => $token, 'source' => $tenant];
             }
         }
@@ -301,7 +311,9 @@ class EP_Teams_Bot
 
     private static function get_chat_from_installation($token, $user_oid, $install_id)
     {
-        $url = "https://graph.microsoft.com/v1.0/users/{$user_oid}/teamwork/installedApps/{$install_id}/chat";
+        $safe_oid = rawurlencode($user_oid);
+        $safe_inst = rawurlencode($install_id);
+        $url = "https://graph.microsoft.com/v1.0/users/{$safe_oid}/teamwork/installedApps/{$safe_inst}/chat";
         $response = wp_remote_get($url, [
             'headers' => ['Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json'],
             'timeout' => 20
@@ -316,7 +328,8 @@ class EP_Teams_Bot
 
     private static function send_chat_message($token, $chat_id, $title, $message, $action_link)
     {
-        $url = "https://graph.microsoft.com/v1.0/chats/{$chat_id}/messages";
+        $safe_chat_id = rawurlencode($chat_id);
+        $url = "https://graph.microsoft.com/v1.0/chats/{$safe_chat_id}/messages";
         $html_body = "<strong>" . esc_html($title) . "</strong><br><br>" . nl2br(esc_html($message));
         if (!empty($action_link)) {
             $html_body .= '<br><br><a href="' . esc_url($action_link) . '">🟢 Ver en el Portal del Empleado</a>';
@@ -331,10 +344,22 @@ class EP_Teams_Bot
 
     private static function get_app_only_token($tenant_id, $client_id, $client_secret)
     {
+        // OAUTH-05: Caché de 55 min para evitar llamadas repetidas a Azure AD
+        // (los tokens client_credentials duran 60 min; guardamos con 5 min de margen)
+        $cache_key = 'ep_app_token_' . md5($tenant_id . $client_id);
+        $cached    = get_transient($cache_key);
+        if ($cached) {
+            return (class_exists('EP_Security') && EP_Security::is_encrypted($cached))
+                ? EP_Security::decrypt($cached)
+                : $cached;
+        }
+
+        // Descifrar client_secret si está cifrado
         if (class_exists('EP_Security') && EP_Security::is_encrypted($client_secret)) {
             $client_secret = EP_Security::decrypt($client_secret);
         }
-        $url = "https://login.microsoftonline.com/{$tenant_id}/oauth2/v2.0/token";
+
+        $url      = "https://login.microsoftonline.com/{$tenant_id}/oauth2/v2.0/token";
         $response = wp_remote_post($url, [
             'body'    => [
                 'grant_type'    => 'client_credentials',
@@ -344,9 +369,19 @@ class EP_Teams_Bot
             ],
             'timeout' => 20,
         ]);
+
         if (is_wp_error($response)) return false;
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['access_token'] ?? false;
+
+        $body  = json_decode(wp_remote_retrieve_body($response), true);
+        $token = $body['access_token'] ?? false;
+
+        if ($token) {
+            // OAUTH-03+05: Guardar cifrado en transient (55 min)
+            $to_cache = class_exists('EP_Security') ? EP_Security::encrypt($token) : $token;
+            set_transient($cache_key, $to_cache, 3300);
+        }
+
+        return $token;
     }
 
     private static function get_or_install_app($token, $user_oid)
@@ -354,7 +389,9 @@ class EP_Teams_Bot
         $manifest_id = self::get_manifest_app_id();
         $catalog_id  = self::get_catalog_app_id($token);
         if (!$catalog_id) return false;
-        $base_url = "https://graph.microsoft.com/v1.0/users/{$user_oid}/teamwork/installedApps";
+        $safe_oid = rawurlencode($user_oid);
+        $safe_cat = rawurlencode($catalog_id);
+        $base_url = "https://graph.microsoft.com/v1.0/users/{$safe_oid}/teamwork/installedApps";
         $response = wp_remote_get($base_url . '?$expand=teamsApp', [
             'headers' => ['Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json'],
             'timeout' => 20,
@@ -370,7 +407,7 @@ class EP_Teams_Bot
         }
         $install_resp = wp_remote_post($base_url, [
             'headers' => ['Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json'],
-            'body'    => wp_json_encode(['teamsApp@odata.bind' => "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/" . $catalog_id]),
+            'body'    => wp_json_encode(['teamsApp@odata.bind' => "https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/" . $safe_cat]),
             'timeout' => 20,
         ]);
         if (wp_remote_retrieve_response_code($install_resp) > 299) return false;

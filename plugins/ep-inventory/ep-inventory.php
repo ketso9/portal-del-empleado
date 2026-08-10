@@ -159,7 +159,7 @@ class EP_Inventory
     {
         // Only enqueue if necessary (check logic later)
         wp_enqueue_style('ep-inventory-css', EP_INVENTORY_URL . 'assets/css/ep-inventory.css', array(), '1.0.0');
-        wp_enqueue_script('ep-inventory-js', EP_INVENTORY_URL . 'assets/js/ep-inventory.js', array('jquery'), time(), true);
+        wp_enqueue_script('ep-inventory-js', EP_INVENTORY_URL . 'assets/js/ep-inventory.js', array('jquery'), (file_exists(EP_INVENTORY_PATH . 'assets/js/ep-inventory.js') ? filemtime(EP_INVENTORY_PATH . 'assets/js/ep-inventory.js') : '1.0'), true);
 
         wp_localize_script('ep-inventory-js', 'ep_inventory_vars', array(
             'ajax_url' => admin_url('admin-ajax.php'),

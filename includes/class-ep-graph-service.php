@@ -635,8 +635,18 @@ class EP_Graph_Service {
                 'timeout' => 30
             ]);
 
-            if (is_wp_error($response)) break;
-            $body = json_decode(wp_remote_retrieve_body($response), true);
+            if (is_wp_error($response)) {
+                return $response;
+            }
+
+            $code = wp_remote_retrieve_response_code($response);
+            $body_raw = wp_remote_retrieve_body($response);
+            $body = json_decode($body_raw, true);
+
+            if ($code < 200 || $code >= 300) {
+                $msg = $body['error']['message'] ?? 'Error desconocido de Graph API (' . $code . ')';
+                return new WP_Error('graph_http_error', "Error al listar contenidos de OneDrive ($code): $msg");
+            }
             
             if (!empty($body['value'])) {
                 foreach ($body['value'] as $item) {
@@ -653,8 +663,8 @@ class EP_Graph_Service {
             }
 
             $url = $body['@odata.nextLink'] ?? null;
-            // Cap at 500 items to prevent infinite loops or memory issues in a single request
-            if (count($items) >= 500) break;
+            // Cap at 1000 items to prevent infinite loops or memory issues in a single request
+            if (count($items) >= 1000) break;
         }
 
         return $items;

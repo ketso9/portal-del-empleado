@@ -56,7 +56,7 @@ $font_imports = array(
                 </li>
                 <?php
                 global $ep_app_manager;
-                $apps = $ep_app_manager->get_apps();
+                $apps = $ep_app_manager->get_apps_sorted_alphabetically();
                 foreach ($apps as $app_id => $app) {
                     if ($app_id === 'settings')
                         continue; // Handled in user menu/footer or separate

@@ -250,6 +250,44 @@
     text-transform: capitalize;
 }
 
+.ep-oof-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #7c3aed;
+    background: rgba(124, 58, 237, 0.1);
+    padding: 1px 6px;
+    border-radius: 10px;
+    width: fit-content;
+    margin-top: 2px;
+}
+
+.dark-mode .ep-oof-pill {
+    color: #c4b5fd;
+    background: rgba(167, 139, 250, 0.2);
+}
+
+.ep-comp-oof-msg-preview {
+    font-size: 10px;
+    color: #64748b;
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 170px;
+    margin-top: 1px;
+}
+
+.dark-mode .ep-comp-oof-msg-preview {
+    color: #94a3b8;
+}
+
+.ep-presence-item-card.is-oof .ep-status-ring {
+    border-color: #8b5cf6 !important;
+}
+
 .ep-btn-teams-inline {
     width: 28px;
     height: 28px;

@@ -652,12 +652,42 @@
 	opacity: 0.3;
 }
 
+/* Apps Header Toolbar & Drag & Drop Styles */
+#ep-app-root .ep-apps-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 15px;
+	margin-bottom: 20px;
+}
+
+#ep-app-root .ep-apps-header h2 {
+	margin: 0;
+}
+
+#ep-app-root .ep-apps-header-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+#ep-app-root .ep-apps-drag-hint {
+	font-size: 0.85rem;
+	color: #64748b;
+	margin-right: 5px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
 /* Apps Grid (Mini Apps) */
 #ep-app-root .ep-apps-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 	gap: 25px;
-	margin-top: 30px;
+	margin-top: 15px;
 }
 
 #ep-app-root .ep-app-card {
@@ -673,6 +703,59 @@
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
+}
+
+#ep-app-root .ep-app-card[draggable="true"] {
+	cursor: grab;
+	user-select: none;
+}
+
+#ep-app-root .ep-app-card[draggable="true"]:active {
+	cursor: grabbing;
+}
+
+#ep-app-root .ep-app-card.is-dragging {
+	opacity: 0.4;
+	transform: scale(0.96);
+	border: 2px dashed var(--ep-primary);
+	box-shadow: none;
+}
+
+#ep-app-root .ep-app-card.drag-over {
+	transform: scale(1.03);
+	border-color: var(--ep-primary);
+	box-shadow: 0 0 20px rgba(var(--ep-primary-rgb), 0.35);
+}
+
+.ep-toast-notification {
+	position: fixed;
+	bottom: 30px;
+	right: 30px;
+	background: #1e293b;
+	color: #ffffff;
+	padding: 12px 22px;
+	border-radius: 10px;
+	font-size: 0.9rem;
+	font-weight: 500;
+	box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	z-index: 99999;
+	opacity: 0;
+	transform: translateY(20px);
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	pointer-events: none;
+}
+
+.ep-toast-notification.show {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.ep-toast-notification i {
+	color: #10b981;
+	font-size: 1.1rem;
 }
 
 #ep-app-root .ep-app-card:hover {
@@ -2306,3 +2389,240 @@ body.ep-teams-mode #ep-app-root .ep-sidebar { display: block !important; }
 body.ep-teams-mode #ep-app-root .ep-main { padding: 20px !important; margin-left: auto !important; }
 body.ep-teams-mode #ep-app-root .ep-header { display: flex !important; }
 body.ep-teams-mode #ep-app-root .ep-content-area { margin-top: 20px !important; }
+
+/* --- Teams Out of Office (Fuera de la Oficina) Styles --- */
+#ep-app-root .ep-oof-teams-card {
+	padding: 30px;
+	border-radius: var(--ep-radius-md, 12px);
+}
+
+#ep-app-root .ep-oof-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8px;
+}
+
+#ep-app-root .ep-oof-header h3 {
+	margin: 0;
+	font-size: 1.25rem;
+	font-weight: 700;
+	color: var(--ep-text);
+}
+
+#ep-app-root .ep-badge-m365 {
+	background: rgba(0, 120, 212, 0.1);
+	color: #0078d4;
+	border: 1px solid rgba(0, 120, 212, 0.2);
+	font-size: 0.8rem;
+	padding: 4px 10px;
+	border-radius: 50px;
+	font-weight: 600;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+#ep-app-root .ep-oof-description {
+	color: var(--ep-text-muted);
+	font-size: 0.9rem;
+	line-height: 1.5;
+	margin-bottom: 24px;
+	max-width: 750px;
+}
+
+#ep-app-root .ep-oof-toggle-row {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	margin-bottom: 24px;
+}
+
+#ep-app-root .ep-oof-status-label {
+	font-weight: 600;
+	font-size: 0.95rem;
+	color: var(--ep-text);
+	min-width: 85px;
+}
+
+/* Teams iOS/Fluent style Switch Toggle */
+#ep-app-root .ep-teams-switch {
+	position: relative;
+	display: inline-block;
+	width: 46px;
+	height: 24px;
+	cursor: pointer;
+}
+
+#ep-app-root .ep-teams-switch input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+
+#ep-app-root .ep-teams-slider {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #64748b;
+	transition: .25s ease;
+	border-radius: 24px;
+}
+
+#ep-app-root .ep-teams-slider:before {
+	position: absolute;
+	content: "";
+	height: 18px;
+	width: 18px;
+	left: 3px;
+	bottom: 3px;
+	background-color: #ffffff;
+	transition: .25s ease;
+	border-radius: 50%;
+	box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+#ep-app-root .ep-teams-switch input:checked + .ep-teams-slider {
+	background-color: #0078d4;
+}
+
+#ep-app-root .ep-teams-switch input:checked + .ep-teams-slider:before {
+	transform: translateX(22px);
+}
+
+#ep-app-root .ep-oof-details {
+	margin-top: 10px;
+	padding-top: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+}
+
+#ep-app-root .ep-oof-group label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+	font-size: 0.9rem;
+	color: var(--ep-text);
+	margin-bottom: 8px;
+}
+
+#ep-app-root .ep-info-icon {
+	color: var(--ep-text-muted);
+	font-size: 0.85rem;
+	cursor: help;
+}
+
+#ep-app-root .ep-oof-textarea {
+	width: 100%;
+	padding: 12px 14px;
+	border-radius: var(--ep-radius-sm, 6px);
+	border: 1px solid var(--ep-border);
+	background: var(--ep-bg);
+	color: var(--ep-text);
+	font-family: inherit;
+	font-size: 0.9rem;
+	resize: vertical;
+	box-sizing: border-box;
+}
+
+#ep-app-root .ep-oof-checkbox-group {
+	margin-top: 10px;
+}
+
+#ep-app-root .ep-checkbox-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	font-weight: 600;
+	font-size: 0.9rem;
+	color: var(--ep-text);
+	cursor: pointer;
+	user-select: none;
+}
+
+#ep-app-root .ep-checkbox-label input[type="checkbox"] {
+	width: 18px;
+	height: 18px;
+	accent-color: #0078d4;
+	cursor: pointer;
+}
+
+#ep-app-root .ep-oof-subdetails {
+	margin-top: 14px;
+	margin-left: 28px;
+	padding: 16px;
+	background: var(--ep-surface-hover, rgba(0,0,0,0.02));
+	border-left: 3px solid #0078d4;
+	border-radius: 0 8px 8px 0;
+}
+
+#ep-app-root .ep-oof-radio-group {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+#ep-app-root .ep-radio-label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 0.88rem;
+	color: var(--ep-text);
+	cursor: pointer;
+}
+
+#ep-app-root .ep-radio-label input[type="radio"] {
+	accent-color: #0078d4;
+	cursor: pointer;
+}
+
+#ep-app-root .ep-oof-schedule-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 16px;
+}
+
+@media (max-width: 640px) {
+	#ep-app-root .ep-oof-schedule-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+#ep-app-root .ep-oof-schedule-grid label {
+	display: block;
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: var(--ep-text-muted);
+	margin-bottom: 6px;
+}
+
+#ep-app-root .ep-oof-schedule-grid input[type="date"],
+#ep-app-root .ep-oof-schedule-grid input[type="time"] {
+	width: 100%;
+	padding: 10px 12px;
+	border: 1px solid var(--ep-border);
+	border-radius: var(--ep-radius-sm, 6px);
+	background: var(--ep-bg);
+	color: var(--ep-text);
+	font-size: 0.9rem;
+	box-sizing: border-box;
+}
+
+#ep-app-root .ep-oof-actions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-top: 24px;
+	padding-top: 16px;
+	border-top: 1px solid var(--ep-border);
+}
+
+#ep-app-root .ep-oof-msg {
+	font-size: 0.9rem;
+	font-weight: 500;
+}

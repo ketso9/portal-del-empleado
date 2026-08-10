@@ -41,7 +41,7 @@
                         </td>
                         <td>
                             <div class="ep-actions-row-mini">
-                                <?php $proxy_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce'); ?>
+                                <?php $proxy_url = admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $doc->id . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time(); ?>
                                 <a href="<?php echo esc_url($proxy_url); ?>" class="ep-btn-icon-text" target="_blank">
                                     <i class="fa-solid fa-download"></i> Ver PDF
                                 </a>

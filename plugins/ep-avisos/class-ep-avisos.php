@@ -53,6 +53,8 @@ class EP_Avisos
         add_action('init', array($this, 'register_avisos_cpt'));
         add_action('wp_ajax_ep_create_aviso', array($this, 'ajax_create_aviso'));
         add_action('wp_ajax_ep_get_avisos', array($this, 'ajax_get_avisos')); // Fixed action name from get_avisos to ep_get_avisos to match JS
+        add_action('wp_ajax_ep_avisos_mark_read', array($this, 'ajax_mark_read'));
+        add_action('wp_ajax_ep_avisos_get_reads', array($this, 'ajax_get_reads'));
 
         // Background Notifications hook
         add_action('ep_avisos_send_notifications_bg', array($this, 'process_bg_notifications'));
@@ -241,30 +243,78 @@ class EP_Avisos
         check_ajax_referer('ep_avisos_nonce', 'nonce');
 
         if (!self::can_manage_avisos()) {
-            wp_send_json_error('No tienes permiso para crear avisos.');
+            wp_send_json_error('No tienes permiso para gestionar avisos.');
         }
 
-        $title = sanitize_text_field($_POST['title']);
-        $content = wp_kses_post($_POST['content']);
+        $aviso_id    = !empty($_POST['aviso_id']) ? intval($_POST['aviso_id']) : 0;
+        $title       = sanitize_text_field($_POST['title']);
+        $content     = wp_kses_post($_POST['content']);
         $expiry_date = sanitize_text_field($_POST['expiry_date']);
 
         if (empty($title) || empty($content) || empty($expiry_date)) {
             wp_send_json_error('Todos los campos son obligatorios, incluyendo la fecha de caducidad.');
         }
 
-        $post_id = wp_insert_post(array(
-            'post_title' => $title,
-            'post_content' => $content,
-            'post_status' => 'publish',
-            'post_type' => 'ep_aviso',
-            'post_author' => get_current_user_id(),
-        ));
+        if ($aviso_id > 0) {
+            // EDITING AN EXISTING NOTICE
+            $existing_post = get_post($aviso_id);
+            if (!$existing_post || $existing_post->post_type !== 'ep_aviso') {
+                wp_send_json_error('El aviso especificado no existe.');
+            }
 
-        if (is_wp_error($post_id)) {
-            wp_send_json_error('Error al crear el aviso.');
+            // Security check: Only the author (or admin) can edit
+            if (intval($existing_post->post_author) !== get_current_user_id() && !current_user_can('administrator')) {
+                wp_send_json_error('Solo la persona que publicó este aviso puede editarlo.');
+            }
+
+            $updated = wp_update_post(array(
+                'ID'           => $aviso_id,
+                'post_title'   => $title,
+                'post_content' => $content,
+            ));
+
+            if (is_wp_error($updated)) {
+                wp_send_json_error('Error al actualizar el aviso.');
+            }
+
+            $post_id = $aviso_id;
+            $is_edit = true;
+        } else {
+            // CREATING A NEW NOTICE
+            $post_id = wp_insert_post(array(
+                'post_title'   => $title,
+                'post_content' => $content,
+                'post_status'  => 'publish',
+                'post_type'    => 'ep_aviso',
+                'post_author'  => get_current_user_id(),
+            ));
+
+            if (is_wp_error($post_id)) {
+                wp_send_json_error('Error al crear el aviso.');
+            }
+            $is_edit = false;
+        }
+
+        $target_department = sanitize_text_field($_POST['target_department'] ?? '');
+        $target_users_raw  = $_POST['target_users'] ?? array();
+        $target_users      = array();
+
+        if (is_array($target_users_raw)) {
+            foreach ($target_users_raw as $uid) {
+                $uid_int = intval($uid);
+                if ($uid_int > 0) $target_users[] = $uid_int;
+            }
+        } elseif (!empty($target_users_raw) && is_string($target_users_raw)) {
+            $exploded = explode(',', $target_users_raw);
+            foreach ($exploded as $uid) {
+                $uid_int = intval(trim($uid));
+                if ($uid_int > 0) $target_users[] = $uid_int;
+            }
         }
 
         update_post_meta($post_id, '_ep_aviso_expiry_date', $expiry_date);
+        update_post_meta($post_id, '_ep_aviso_target_department', $target_department);
+        update_post_meta($post_id, '_ep_aviso_target_users', $target_users);
 
         // Handle File Uploads (max 3)
         if (!empty($_FILES['files'])) {
@@ -274,16 +324,16 @@ class EP_Avisos
 
             $files = $_FILES['files'];
             $count = min(count($files['name']), 3);
-            $attachment_ids = array();
+            $attachment_ids = get_post_meta($post_id, '_ep_aviso_attachments', true) ?: array();
 
             for ($i = 0; $i < $count; $i++) {
                 if ($files['error'][$i] === UPLOAD_ERR_OK) {
                     $_FILES['single_file'] = array(
-                        'name' => $files['name'][$i],
-                        'type' => $files['type'][$i],
+                        'name'     => $files['name'][$i],
+                        'type'     => $files['type'][$i],
                         'tmp_name' => $files['tmp_name'][$i],
-                        'error' => $files['error'][$i],
-                        'size' => $files['size'][$i],
+                        'error'    => $files['error'][$i],
+                        'size'     => $files['size'][$i],
                     );
                     $attachment_id = media_handle_upload('single_file', $post_id);
                     if (!is_wp_error($attachment_id)) {
@@ -291,18 +341,22 @@ class EP_Avisos
                     }
                 }
             }
+            $attachment_ids = array_slice($attachment_ids, 0, 3);
             update_post_meta($post_id, '_ep_aviso_attachments', $attachment_ids);
         }
 
-        // Programar notificaciones en segundo plano para no bloquear
-        wp_schedule_single_event(time(), 'ep_avisos_send_notifications_bg', array($post_id));
+        if (!$is_edit) {
+            // Programar notificaciones solo para avisos nuevos
+            wp_schedule_single_event(time(), 'ep_avisos_send_notifications_bg', array($post_id));
 
-        // Forzar disparo del cron de forma asíncrona (si el servidor lo permite)
-        if (function_exists('spawn_cron')) {
-            spawn_cron();
+            if (function_exists('spawn_cron')) {
+                spawn_cron();
+            }
+
+            wp_send_json_success('Aviso creado correctamente.');
+        } else {
+            wp_send_json_success('Aviso actualizado correctamente.');
         }
-
-        wp_send_json_success('Aviso creado correctamente.');
     }
 
     public function process_bg_notifications($post_id)
@@ -324,8 +378,21 @@ class EP_Avisos
 
         ep_error_log("EP_Avisos: Iniciando envío masivo para aviso ID $post_id...");
 
-        // Enviar a todos los usuarios
-        $users = get_users(array('fields' => 'ID'));
+        $target_department = get_post_meta($post_id, '_ep_aviso_target_department', true);
+        $target_users      = get_post_meta($post_id, '_ep_aviso_target_users', true);
+
+        if (is_array($target_users) && !empty($target_users)) {
+            $users = $target_users;
+        } elseif (!empty($target_department)) {
+            $users = get_users(array(
+                'meta_key' => 'ep_department',
+                'meta_value' => $target_department,
+                'fields' => 'ID'
+            ));
+        } else {
+            $users = get_users(array('fields' => 'ID'));
+        }
+
         $success_count = 0;
         $fail_count = 0;
 
@@ -391,9 +458,28 @@ class EP_Avisos
         $avisos = array();
 
         if ($query->have_posts()) {
+            $current_user_id = get_current_user_id();
+            $user_dept = get_user_meta($current_user_id, 'ep_department', true);
+
             while ($query->have_posts()) {
                 $query->the_post();
                 $post_id = get_the_ID();
+
+                // Visibility check for non-managers
+                if (!$is_manager) {
+                    $t_dept  = get_post_meta($post_id, '_ep_aviso_target_department', true);
+                    $t_users = get_post_meta($post_id, '_ep_aviso_target_users', true);
+
+                    if (is_array($t_users) && !empty($t_users)) {
+                        if (!in_array($current_user_id, $t_users)) {
+                            continue;
+                        }
+                    } elseif (!empty($t_dept)) {
+                        if (strtolower(trim($user_dept)) !== strtolower(trim($t_dept))) {
+                            continue;
+                        }
+                    }
+                }
                 $attachments_ids = get_post_meta($post_id, '_ep_aviso_attachments', true) ?: array();
                 $attachments = array();
                 foreach ($attachments_ids as $aid) {
@@ -403,21 +489,92 @@ class EP_Avisos
                     );
                 }
 
+                $meta_key = 'ep_aviso_read_' . $post_id;
+                $readers = get_users(array(
+                    'meta_key' => $meta_key,
+                    'meta_compare' => 'EXISTS',
+                    'fields' => 'ids'
+                ));
+                $read_count = is_array($readers) ? count($readers) : 0;
+
+                $post_author_id = intval(get_post_field('post_author', $post_id));
+                $is_author = ($current_user_id === $post_author_id);
+
                 $avisos[] = array(
-                    'id' => $post_id,
-                    'title' => get_the_title(),
-                    'content' => get_the_content(),
-                    'excerpt' => wp_trim_words(get_the_content(), 20),
-                    'date' => get_the_date(),
-                    'expiry_date' => get_post_meta($post_id, '_ep_aviso_expiry_date', true),
-                    'author' => get_the_author(),
-                    'attachments' => $attachments
+                    'id'                => $post_id,
+                    'title'             => get_the_title(),
+                    'content'           => get_the_content(),
+                    'excerpt'           => wp_trim_words(get_the_content(), 20),
+                    'date'              => get_the_date(),
+                    'expiry_date'       => get_post_meta($post_id, '_ep_aviso_expiry_date', true),
+                    'target_department' => get_post_meta($post_id, '_ep_aviso_target_department', true),
+                    'target_users'      => get_post_meta($post_id, '_ep_aviso_target_users', true) ?: array(),
+                    'author'            => get_the_author(),
+                    'author_id'         => $post_author_id,
+                    'can_edit'          => $is_author,
+                    'attachments'       => $attachments,
+                    'read_count'        => $read_count
                 );
             }
             wp_reset_postdata();
         }
 
         wp_send_json_success($avisos);
+    }
+
+    public function ajax_mark_read()
+    {
+        $aviso_id = isset($_POST['aviso_id']) ? sanitize_text_field($_POST['aviso_id']) : '';
+        $user_id = get_current_user_id();
+
+        if (!empty($aviso_id) && $user_id) {
+            update_user_meta($user_id, 'ep_aviso_read_' . $aviso_id, current_time('mysql'));
+            if (function_exists('ep_stats_log')) {
+                ep_stats_log('avisos', 'aviso_read', $user_id, array('aviso_id' => $aviso_id));
+            }
+            wp_send_json_success('Lectura de aviso registrada');
+        }
+        wp_send_json_error('Parámetros inválidos');
+    }
+
+    public function ajax_get_reads()
+    {
+        $aviso_id = isset($_POST['aviso_id']) ? sanitize_text_field($_POST['aviso_id']) : '';
+
+        $user = wp_get_current_user();
+        $user_roles = (array) $user->roles;
+        $user_dept = (string) ($user->ep_department ?? '');
+        $can_view_reads = current_user_can('administrator')
+            || in_array('ep_hr', $user_roles)
+            || in_array('ep_direction', $user_roles)
+            || strpos($user_dept, 'Direcci') !== false
+            || strpos($user_dept, 'RRHH') !== false
+            || strpos($user_dept, 'Recursos Humanos') !== false
+            || self::can_manage_avisos();
+
+        if (!$can_view_reads) {
+            wp_send_json_error('No tienes permisos para consultar las lecturas. Esta función está reservada para Dirección, RRHH y Administradores.');
+        }
+
+        $meta_key = 'ep_aviso_read_' . $aviso_id;
+        $readers = get_users(array(
+            'meta_key' => $meta_key,
+            'meta_compare' => 'EXISTS'
+        ));
+
+        $data = array();
+        foreach ($readers as $r) {
+            $read_time = get_user_meta($r->ID, $meta_key, true);
+            $dept = get_user_meta($r->ID, 'ep_department', true) ?: 'General';
+            $data[] = array(
+                'name' => $r->display_name,
+                'email' => $r->user_email,
+                'dept' => $dept,
+                'read_at' => $read_time ? date('d/m/Y H:i:s', strtotime($read_time)) : 'N/A'
+            );
+        }
+
+        wp_send_json_success($data);
     }
     public static function get_active_avisos($limit = -1)
     {

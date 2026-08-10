@@ -11,8 +11,18 @@ class EP_App_Stats implements EP_App_Interface
         add_action('wp_ajax_ep_stats_get_connections', array($this, 'handle_get_connections_ajax'));
         add_action('wp_ajax_ep_stats_get_m365_activity', array($this, 'handle_get_m365_activity_ajax'));
         add_action('wp_ajax_ep_stats_get_users_summary', array($this, 'handle_get_users_summary_ajax'));
+        add_action('wp_ajax_ep_stats_get_executive_kpis', array($this, 'handle_get_executive_kpis_ajax'));
         add_action('wp_ajax_ep_stats_export_users', array($this, 'handle_export_users_ajax'));
         add_action('wp_ajax_ep_stats_sync_m365', array($this, 'handle_sync_m365_ajax'));
+        
+        // --- Cron & Presencia Automática de Teams ---
+        add_filter('cron_schedules', array($this, 'add_cron_schedules'));
+        add_action('ep_stats_poll_teams_presence', array($this, 'poll_teams_presence'));
+        add_action('ep_stats_morning_ping', array($this, 'run_morning_ping'));
+
+        if (!wp_next_scheduled('ep_stats_poll_teams_presence') || !wp_next_scheduled('ep_stats_morning_ping')) {
+            $this->schedule_teams_cron();
+        }
         
         // --- IA Bot Integration ---
         add_filter('ep_bot_intents', array($this, 'registrar_intent_bot'));
@@ -79,17 +89,18 @@ class EP_App_Stats implements EP_App_Interface
 
     public function render_full_view()
     {
-        global $ep_app_manager;
+        global $ep_app_manager, $wpdb;
 
         // Enqueue Chart.js for this view
         wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js', array(), '4.4.1', true);
 
         $filters = [
-            'app_id' => isset($_GET['app_id']) ? sanitize_text_field($_GET['app_id']) : '',
-            'user_id' => isset($_GET['user_id']) ? intval($_GET['user_id']) : '',
+            'app_id'     => isset($_GET['app_id']) ? sanitize_text_field($_GET['app_id']) : '',
+            'user_id'    => isset($_GET['user_id']) ? intval($_GET['user_id']) : '',
             'event_type' => isset($_GET['event_type']) ? sanitize_text_field($_GET['event_type']) : '',
-            'date_from' => isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '',
-            'date_to' => isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '',
+            'department' => isset($_GET['department']) ? sanitize_text_field($_GET['department']) : '',
+            'date_from'  => isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '',
+            'date_to'    => isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '',
         ];
 
         $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
@@ -98,9 +109,14 @@ class EP_App_Stats implements EP_App_Interface
 
         $events = EP_Stats_DB::get_events($filters, $limit, $offset);
         $summary = EP_Stats_DB::get_stats_summary($filters);
+        $kpis = EP_Stats_DB::get_executive_kpis($filters);
+        $hourly_distribution = EP_Stats_DB::get_hourly_distribution($filters);
+
+        // Get unique departments for filter
+        $departments = $wpdb->get_col("SELECT DISTINCT meta_value FROM {$wpdb->usermeta} WHERE meta_key = 'ep_department' AND meta_value != '' ORDER BY meta_value ASC");
 
         // Get users for filter
-        $users = get_users(['number' => 100, 'fields' => ['ID', 'display_name']]);
+        $users = get_users(['number' => 200, 'fields' => ['ID', 'display_name']]);
 
         include EP_STATS_PATH . 'views/full-view.php';
     }
@@ -233,7 +249,8 @@ class EP_App_Stats implements EP_App_Interface
             'contratos' => 'Contratos',
             'o365' => 'Office 365',
             'system' => 'Sistema',
-            'stats' => 'Estadísticas'
+            'stats' => 'Estadísticas',
+            'expenses' => 'Gastos y Dietas'
         ];
         return isset($apps[$app_id]) ? $apps[$app_id] : ucfirst($app_id);
     }
@@ -263,7 +280,13 @@ class EP_App_Stats implements EP_App_Interface
             'vcard_download' => 'Descarga de VCard',
             'censo_export' => 'Exportación de Censo',
             'censo_import' => 'Importación de Censo',
-            'censo_enrichment' => 'Enriquecimiento de Censo'
+            'censo_enrichment' => 'Enriquecimiento de Censo',
+            'expense_created' => 'Nuevo Gasto Creado',
+            'expense_updated' => 'Gasto Actualizado',
+            'expense_liquidated' => 'Gasto Liquidado',
+            'expense_reopened' => 'Gasto Reabierto',
+            'expense_deleted' => 'Gasto Eliminado',
+            'expense_closure_declared' => 'Cierre Mensual Declarado'
         ];
         return isset($events[$event_type]) ? $events[$event_type] : ucfirst(str_replace('_', ' ', (string) $event_type));
     }
@@ -274,6 +297,16 @@ class EP_App_Stats implements EP_App_Interface
             return $metadata;
 
         switch ($event_type) {
+            case 'expense_created':
+                $c = isset($metadata['concept']) ? $metadata['concept'] : '';
+                $a = isset($metadata['amount']) ? floatval($metadata['amount']) : 0;
+                return "Nuevo ticket: <strong>" . esc_html($c) . "</strong> (" . number_format($a, 2) . " €)";
+            case 'expense_liquidated':
+                $m = isset($metadata['liquidation_method']) ? $metadata['liquidation_method'] : 'Transferencia';
+                return "Gasto liquidado mediante <strong>" . esc_html($m) . "</strong>";
+            case 'expense_closure_declared':
+                $ym = isset($metadata['year_month']) ? $metadata['year_month'] : '';
+                return "Cierre mensual declarado para <strong>" . esc_html($ym) . "</strong>";
             case 'login':
                 return "Acceso mediante " . (isset($metadata['method']) ? $metadata['method'] : 'estándar');
             case 'ticket_created':
@@ -398,6 +431,34 @@ class EP_App_Stats implements EP_App_Interface
         wp_send_json_success($insights);
     }
 
+    /**
+     * AJAX: Get Executive KPIs and Hourly distribution
+     */
+    public function handle_get_executive_kpis_ajax()
+    {
+        check_ajax_referer('ep_stats_nonce', 'security');
+
+        if (!$this->has_write_access()) {
+            wp_send_json_error('No tienes permisos.');
+        }
+
+        $filters = [
+            'days'       => isset($_POST['period']) ? intval($_POST['period']) : 30,
+            'app_id'     => isset($_POST['app_id']) ? sanitize_text_field($_POST['app_id']) : '',
+            'user_id'    => isset($_POST['user_id']) ? intval($_POST['user_id']) : '',
+            'department' => isset($_POST['department']) ? sanitize_text_field($_POST['department']) : '',
+            'date_from'  => isset($_POST['date_from']) ? sanitize_text_field($_POST['date_from']) : '',
+            'date_to'    => isset($_POST['date_to']) ? sanitize_text_field($_POST['date_to']) : '',
+        ];
+
+        $kpis = EP_Stats_DB::get_executive_kpis($filters);
+        $hourly = EP_Stats_DB::get_hourly_distribution($filters);
+
+        wp_send_json_success([
+            'kpis'   => $kpis,
+            'hourly' => $hourly
+        ]);
+    }
 
     /**
      * AJAX: Get User Summary Stats
@@ -412,16 +473,17 @@ class EP_App_Stats implements EP_App_Interface
 
         $page = isset($_POST['paged']) ? max(1, intval($_POST['paged'])) : 1;
         $period = isset($_POST['period']) ? intval($_POST['period']) : 30;
+        $search = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
+        $department = isset($_POST['department']) ? sanitize_text_field($_POST['department']) : '';
+        $orderby = isset($_POST['orderby']) ? sanitize_key($_POST['orderby']) : '';
+        $order = isset($_POST['order']) ? sanitize_key($_POST['order']) : 'DESC';
         $limit = 50;
         $offset = ($page - 1) * $limit;
 
-        $stats = EP_Stats_DB::get_users_summary($limit, $offset, $period);
+        $stats = EP_Stats_DB::get_users_summary($limit, $offset, $period, $search, $department, $orderby, $order);
 
-        // For periods > 1 day, enrich with M365 Reports data
-        $m365_data = array();
-        if ($period > 1) {
-            $m365_data = EP_Stats_DB::get_m365_activity_summary($period);
-        }
+        // Enrich with M365 Reports data for all periods
+        $m365_data = EP_Stats_DB::get_m365_activity_summary($period);
 
         // Format
         foreach ($stats as &$s) {
@@ -523,10 +585,148 @@ class EP_App_Stats implements EP_App_Interface
             wp_send_json_error('No tienes permisos.');
         }
 
-        // Run the sync (Application Level)
+        // Run the sync (Application Level) & poll real-time Teams presence
         EP_Stats_DB::sync_m365_reports();
+        $this->poll_teams_presence(true);
 
-        wp_send_json_success('Sincronización completada.');
+        wp_send_json_success('Sincronización de M365 y presencia de Teams completada.');
+    }
+
+    /**
+     * Cron interval filter for 10 minutes polling
+     */
+    public function add_cron_schedules($schedules)
+    {
+        if (!isset($schedules['ten_minutes'])) {
+            $schedules['ten_minutes'] = array(
+                'interval' => 600,
+                'display'  => __('Cada 10 Minutos', 'ep-stats')
+            );
+        }
+        return $schedules;
+    }
+
+    /**
+     * Schedule WP Cron jobs for Teams presence polling & 08:05 AM morning ping
+     */
+    public function schedule_teams_cron()
+    {
+        if (!wp_next_scheduled('ep_stats_poll_teams_presence')) {
+            wp_schedule_event(time(), 'ten_minutes', 'ep_stats_poll_teams_presence');
+        }
+
+        if (!wp_next_scheduled('ep_stats_morning_ping')) {
+            $tz_string = wp_timezone_string();
+            $tz = new DateTimeZone($tz_string ?: 'Europe/Madrid');
+            $target = new DateTime('today 08:05:00', $tz);
+            if ($target->getTimestamp() < time()) {
+                $target->modify('+1 day');
+            }
+            wp_schedule_event($target->getTimestamp(), 'daily', 'ep_stats_morning_ping');
+        }
+    }
+
+    /**
+     * Morning ping at 08:05 AM
+     */
+    public function run_morning_ping()
+    {
+        $this->poll_teams_presence(true);
+        if (class_exists('EP_Stats_DB')) {
+            EP_Stats_DB::log_event(0, 'morning_ping', 'system', array(
+                'timestamp' => current_time('mysql'),
+                'note'      => 'Ping matutino de presencia registrado a las 08:05 AM'
+            ));
+        }
+    }
+
+    /**
+     * Poll Microsoft Graph API for Teams Presence status of all employees
+     */
+    public function poll_teams_presence($force = false)
+    {
+        // Workday check (07:30 to 20:00, Mon-Fri) unless forced
+        if (!$force) {
+            $hour = (int) current_time('H');
+            $day_of_week = (int) current_time('N'); // 1 = Mon, 7 = Sun
+            if ($day_of_week > 5 || $hour < 7 || $hour >= 20) {
+                return;
+            }
+        }
+
+        $users = get_users(array(
+            'meta_key'     => 'ep_o365_user_id',
+            'meta_compare' => 'EXISTS',
+            'fields'       => array('ID')
+        ));
+
+        if (empty($users)) {
+            return;
+        }
+
+        // Map WP user IDs to M365 user IDs
+        $ms_to_wp = array();
+        $ms_ids = array();
+        foreach ($users as $u) {
+            $ms_id = get_user_meta($u->ID, 'ep_o365_user_id', true);
+            if ($ms_id) {
+                $ms_ids[] = $ms_id;
+                $ms_to_wp[$ms_id] = $u->ID;
+            }
+        }
+
+        if (empty($ms_ids)) {
+            return;
+        }
+
+        if (!class_exists('EP_Graph_Service')) {
+            return;
+        }
+
+        $graph = EP_Graph_Service::get_instance();
+        
+        // Find a user ID with a valid connected O365 token
+        $system_user_id = 0;
+        foreach ($users as $u) {
+            $token = get_user_meta($u->ID, 'ep_o365_access_token', true);
+            if ($token) {
+                $system_user_id = $u->ID;
+                break;
+            }
+        }
+
+        if (!$system_user_id) {
+            return;
+        }
+
+        // Process in chunks of 20 (Microsoft Graph API limit for getPresencesByUserId)
+        $chunks = array_chunk($ms_ids, 20);
+        $online_statuses = array('Available', 'Busy', 'DoNotDisturb', 'BeRightBack', 'InACall', 'InAConferenceCall', 'InAMeeting', 'Presenting');
+
+        foreach ($chunks as $chunk) {
+            $presences = $graph->get_users_presence($system_user_id, $chunk);
+            if (is_wp_error($presences) || !is_array($presences)) {
+                continue;
+            }
+
+            foreach ($presences as $p) {
+                $ms_id = $p['id'] ?? '';
+                $availability = $p['availability'] ?? 'Offline';
+                
+                if (isset($ms_to_wp[$ms_id])) {
+                    $wp_uid = $ms_to_wp[$ms_id];
+                    update_user_meta($wp_uid, 'ep_teams_presence', $availability);
+                    update_user_meta($wp_uid, 'ep_teams_presence_updated', current_time('mysql'));
+
+                    if (in_array($availability, $online_statuses, true)) {
+                        // Record 300 seconds (5 min) of Teams activity for today
+                        if (class_exists('EP_Stats_DB')) {
+                            EP_Stats_DB::update_session_activity($wp_uid, 300);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // --- INTEGRACIÓN CON IA BOT ---

@@ -61,6 +61,7 @@ class EP_Contratos
         add_action('wp_ajax_ep_contratos_edit',   [$this, 'ajax_edit']);
         add_action('wp_ajax_ep_contratos_upload', [$this, 'ajax_upload_signed']);
         add_action('wp_ajax_ep_contratos_delete', [$this, 'ajax_delete']);
+        add_action('wp_ajax_ep_contratos_get_next_number_options', [$this, 'ajax_get_next_number_options']);
 
         // Background Notifications
         add_action('ep_contratos_notify_bg', [$this, 'process_bg_notifications'], 10, 3);
@@ -146,6 +147,62 @@ class EP_Contratos
 
         $next = $last_num + 1;
         return sprintf('%03d', $next) . '/' . $suffix;
+    }
+
+    /**
+     * Endpoint AJAX para obtener el número de contrato sugerido (huecos) y el siguiente correlativo.
+     */
+    public function ajax_get_next_number_options()
+    {
+        check_ajax_referer('ep_contratos_nonce', 'nonce');
+
+        if (!self::current_user_can_read()) {
+            wp_send_json_error(['message' => 'Sin permisos.'], 403);
+        }
+
+        global $wpdb;
+        $table  = $wpdb->prefix . 'ep_contratos';
+        $year   = (int) date('Y');
+        $suffix = substr((string) $year, -2);
+
+        // Obtener todos los números registrados este año
+        $numeros = $wpdb->get_col($wpdb->prepare(
+            "SELECT numero FROM {$table} WHERE anio = %d",
+            $year
+        ));
+
+        $registered_ids = [];
+        foreach ($numeros as $num) {
+            $parts = explode('/', $num);
+            if (!empty($parts)) {
+                $registered_ids[] = (int) $parts[0];
+            }
+        }
+        sort($registered_ids);
+        $registered_ids = array_unique($registered_ids);
+
+        $max_val = !empty($registered_ids) ? max($registered_ids) : 0;
+        $next_correlative = $max_val + 1;
+
+        // Buscar el primer hueco libre en la secuencia
+        $suggested_gap = null;
+        if ($max_val > 1) {
+            for ($i = 1; $i < $max_val; $i++) {
+                if (!in_array($i, $registered_ids)) {
+                    $suggested_gap = $i;
+                    break;
+                }
+            }
+        }
+
+        $format_num = function($val) use ($suffix) {
+            return sprintf('%03d', $val) . '/' . $suffix;
+        };
+
+        wp_send_json_success([
+            'suggested_gap'    => $suggested_gap ? $format_num($suggested_gap) : null,
+            'next_correlative' => $format_num($next_correlative)
+        ]);
     }
 
     /**
@@ -283,7 +340,59 @@ class EP_Contratos
         $table = $wpdb->prefix . 'ep_contratos';
         $year  = (int) date('Y');
 
-        $numero = self::get_next_number();
+        $numero = sanitize_text_field($_POST['numero'] ?? '');
+        if (empty($numero)) {
+            wp_send_json_error(['message' => 'El número de contrato es obligatorio.']);
+        }
+
+        $suffix = substr((string) $year, -2);
+        if (!preg_match('/^\d{3,4}\/\d{2}$/', $numero)) {
+            wp_send_json_error(['message' => 'El formato del número de contrato no es válido (Ej: 001/26 o 0001/26).']);
+        }
+        $parts = explode('/', $numero);
+        if ($parts[1] !== $suffix) {
+            wp_send_json_error(['message' => "El número de contrato debe finalizar con el sufijo del año actual: /{$suffix}."]);
+        }
+
+        // Validar duplicidad
+        $exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE numero = %s AND anio = %d",
+            $numero,
+            $year
+        ));
+        if ($exists) {
+            wp_send_json_error(['message' => "El número de contrato {$numero} ya está registrado."]);
+        }
+
+        // Validar saltos de numeración
+        $numeros = $wpdb->get_col($wpdb->prepare(
+            "SELECT numero FROM {$table} WHERE anio = %d",
+            $year
+        ));
+        $registered_ids = [];
+        foreach ($numeros as $num) {
+            $num_parts = explode('/', $num);
+            if (!empty($num_parts)) {
+                $registered_ids[] = (int) $num_parts[0];
+            }
+        }
+        $max_val = !empty($registered_ids) ? max($registered_ids) : 0;
+        $num_val = (int) $parts[0];
+
+        $is_skipping = $num_val > ($max_val + 1);
+        $confirm_skip = !empty($_POST['confirm_skip']) && ($_POST['confirm_skip'] === '1' || $_POST['confirm_skip'] === 'true');
+
+        if ($is_skipping && !$confirm_skip) {
+            $skipped = [];
+            for ($i = $max_val + 1; $i < $num_val; $i++) {
+                $skipped[] = sprintf('%03d', $i) . '/' . $suffix;
+            }
+            $skipped_str = implode(', ', $skipped);
+            wp_send_json_error([
+                'code' => 'skip_warning',
+                'message' => "Atención: Te estás saltando la numeración. Quedarán libres los números: {$skipped_str}. ¿Quieres continuar y registrar este contrato con el número {$numero} de todos modos?"
+            ]);
+        }
 
         // Validar fecha
         $fecha_raw = sanitize_text_field($_POST['fecha'] ?? '');
@@ -367,10 +476,78 @@ class EP_Contratos
             wp_send_json_error(['message' => 'No tienes permisos para editar este contrato.'], 403);
         }
 
+        $numero = sanitize_text_field($_POST['numero'] ?? '');
+        if (empty($numero)) {
+            wp_send_json_error(['message' => 'El número de contrato es obligatorio.']);
+        }
+
+        $year = (int) $contrato['anio'];
+        $suffix = substr((string) $year, -2);
+
+        if (!preg_match('/^\d{3,4}\/\d{2}$/', $numero)) {
+            wp_send_json_error(['message' => 'El formato del número de contrato no es válido (Ej: 001/26 o 0001/26).']);
+        }
+        $parts = explode('/', $numero);
+        if ($parts[1] !== $suffix) {
+            wp_send_json_error(['message' => "El número de contrato debe finalizar con el sufijo del año del contrato: /{$suffix}."]);
+        }
+
+        // Validar duplicidad
+        $exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE numero = %s AND anio = %d AND id != %d",
+            $numero,
+            $year,
+            $id
+        ));
+        if ($exists) {
+            wp_send_json_error(['message' => "El número de contrato {$numero} ya está registrado por otro contrato."]);
+        }
+
+        // Validar saltos de numeración
+        $num_val = (int) $parts[0];
+        $orig_parts = explode('/', $contrato['numero']);
+        $orig_val = (int) $orig_parts[0];
+
+        if ($num_val > $orig_val) {
+            $numeros = $wpdb->get_col($wpdb->prepare(
+                "SELECT numero FROM {$table} WHERE anio = %d AND id != %d",
+                $year,
+                $id
+            ));
+            $registered_ids = [];
+            foreach ($numeros as $num) {
+                $num_parts = explode('/', $num);
+                if (!empty($num_parts)) {
+                    $registered_ids[] = (int) $num_parts[0];
+                }
+            }
+            $max_val = !empty($registered_ids) ? max($registered_ids) : 0;
+
+            $is_skipping = $num_val > ($max_val + 1);
+            $confirm_skip = !empty($_POST['confirm_skip']) && ($_POST['confirm_skip'] === '1' || $_POST['confirm_skip'] === 'true');
+
+            if ($is_skipping && !$confirm_skip) {
+                $skipped = [];
+                for ($i = $max_val + 1; $i < $num_val; $i++) {
+                    if (!in_array($i, $registered_ids)) {
+                        $skipped[] = sprintf('%03d', $i) . '/' . $suffix;
+                    }
+                }
+                if (!empty($skipped)) {
+                    $skipped_str = implode(', ', $skipped);
+                    wp_send_json_error([
+                        'code' => 'skip_warning',
+                        'message' => "Atención: Al cambiar el número de contrato a {$numero} te estás saltando numeración. Quedarán libres los números: {$skipped_str}. ¿Quieres continuar de todos modos?"
+                    ]);
+                }
+            }
+        }
+
         $fecha_raw = sanitize_text_field($_POST['fecha'] ?? '');
         $fecha_dt  = $fecha_raw ? date('Y-m-d', strtotime($fecha_raw)) : $contrato['fecha'];
 
         $data = [
+            'numero'       => $numero,
             'fecha'        => $fecha_dt,
             'siglas'       => sanitize_text_field($_POST['siglas'] ?? ''),
             'objeto'       => sanitize_textarea_field($_POST['objeto'] ?? ''),
@@ -380,7 +557,7 @@ class EP_Contratos
             'identidad'    => sanitize_textarea_field($_POST['identidad'] ?? ''),
         ];
 
-        $formats = ['%s', '%s', '%s', '%s', '%s', '%s', '%s'];
+        $formats = ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'];
         $wpdb->update($table, $data, ['id' => $id], $formats, ['%d']);
 
         $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $id), ARRAY_A);

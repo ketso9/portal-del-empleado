@@ -116,13 +116,18 @@ $is_admin_role = in_array('administrator', (array) wp_get_current_user()->roles)
                         <?php if ($user_can_manage): ?>
                             <div class="option-group">
                                 <label>Tipo de firma visible:</label>
-                                <div class="ep-radio-group">
+                                <div class="ep-radio-group" style="flex-wrap: wrap;">
                                     <label><input type="radio" name="fds_visible_signature_type" value="none" checked>
                                         Ninguna</label>
                                     <label><input type="radio" name="fds_visible_signature_type" value="text"> Texto
                                         informativo</label>
                                     <label><input type="radio" name="fds_visible_signature_type" value="image">
                                         Imagen/Rúbrica</label>
+                                    <label style="display: inline-flex; align-items: center; gap: 4px;">
+                                        <input type="radio" name="fds_visible_signature_type" value="details"> 
+                                        Datos de Firma (Desbloqueado)
+                                        <a href="#" id="fds-btn-config-unlocked" style="display:none; font-size:0.75rem; color:var(--ep-primary); text-decoration:underline;" title="Configurar pie de página para modo desbloqueado"><i class="fa-solid fa-cog"></i> Configurar</a>
+                                    </label>
                                 </div>
                             </div>
                         <?php else: ?>
@@ -202,6 +207,28 @@ $is_admin_role = in_array('administrator', (array) wp_get_current_user()->roles)
                             </div>
                             <img id="fds-visible-signature-image-preview" src="#"
                                 style="display:none; max-width:100%; margin-top:10px; border-radius:4px; border: 1px solid #ddd; padding: 5px; background: #fff;">
+                        </div>
+
+                        <!-- Details Logo Options -->
+                        <div id="fds-details-logo-area" style="display:none; margin-top:15px; border-top: 1px dashed #e2e8f0; padding-top: 15px;">
+                            <label style="font-weight:600; font-size:0.85rem; display:block; margin-bottom:8px;">Logo del Sello (Opcional):</label>
+                            <div style="display:flex; gap:10px; flex-direction:column;">
+                                <div style="display:flex; gap:10px;">
+                                    <label class="ep-btn ep-btn-secondary ep-btn-mini" style="flex:1; font-size: 0.8rem; padding: 6px 12px; height: auto; display: inline-flex; align-items: center; justify-content: center; gap: 5px; cursor: pointer;">
+                                        <i class="fa-solid fa-upload"></i> Subir Logo
+                                        <input type="file" id="fds-details-logo-file" accept="image/png,image/jpeg" style="display:none;">
+                                    </label>
+                                    <button type="button" id="fds-btn-use-saved-logo" class="ep-btn ep-btn-ghost ep-btn-mini" style="flex:1; display:none; font-size: 0.8rem; padding: 6px 12px; height: auto;" title="Usar logo guardado anteriormente">
+                                        <i class="fa-solid fa-bookmark"></i> Usar guardado
+                                    </button>
+                                </div>
+                                <div id="fds-save-logo-container" style="display:none; font-size: 0.85rem; color: var(--ep-text-muted);">
+                                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px; font-weight: normal; margin: 0;">
+                                        <input type="checkbox" id="fds-save-logo-checkbox"> Recordar este logo
+                                    </label>
+                                </div>
+                            </div>
+                            <img id="fds-details-logo-preview" src="#" style="display:none; max-width:60px; max-height:60px; margin-top:10px; border-radius:4px; border: 1px solid #ddd; padding: 3px; background: #fff;">
                         </div>
 
                         <div id="fds-visible-signature-positioning-area" class="ep-info-box" style="display:none;">
@@ -353,6 +380,41 @@ Saludos.</textarea>
             <button id="fds-email-modal-send" class="ep-btn ep-btn-primary">
                 <i class="fa-solid fa-paper-plane"></i> Enviar Ahora
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Configuración para Modo Desbloqueado -->
+<div id="fds-unlocked-modal" class="fds-modal" style="display:none;">
+    <div class="fds-modal-content">
+        <div class="fds-modal-header">
+            <h3><i class="fa-solid fa-circle-info"></i> Modo Multifirma (Desbloqueado)</h3>
+            <span class="fds-modal-close" id="fds-close-unlocked-modal">&times;</span>
+        </div>
+        <div class="fds-modal-body">
+            <p style="margin-bottom: 15px; line-height: 1.4;">Has seleccionado el modo de <strong>Firma con Datos (Desbloqueado)</strong>. Este modo permite que el documento sea firmado por múltiples personas de forma sucesiva sin bloquearlo.</p>
+            
+            <div style="background: #e0f2fe; border-left: 4px solid #0284c7; padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 0.85rem; color: #0369a1; display: flex; gap: 8px; align-items: flex-start;">
+                <i class="fa-solid fa-triangle-exclamation" style="margin-top: 2px;"></i>
+                <span>Si el documento ya contiene firmas digitales de otras personas, se mantendrán válidas criptográficamente al guardarse.</span>
+            </div>
+            
+            <div class="option-group">
+                <label style="font-weight: 600; display: block; margin-bottom: 10px;">¿Deseas estampar el pie de página de verificación con CSV y código QR?</label>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-weight: normal;">
+                        <input type="radio" name="fds_unlocked_stamp_footer" value="yes" checked style="margin-top: 3px;"> 
+                        <span><strong>Sí, estampar pie de página</strong> (Recomendado si eres la primera persona en firmar el documento).</span>
+                    </label>
+                    <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-weight: normal;">
+                        <input type="radio" name="fds_unlocked_stamp_footer" value="no" style="margin-top: 3px;"> 
+                        <span><strong>No estampar pie de página</strong> (Recomendado si el documento ya viene firmado por otra persona, para evitar alterar la estructura del PDF e invalidar sus firmas).</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="fds-modal-footer">
+            <button type="button" id="fds-confirm-unlocked" class="ep-btn ep-btn-primary">Aceptar y Continuar</button>
         </div>
     </div>
 </div>

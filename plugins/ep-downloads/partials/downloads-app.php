@@ -6,7 +6,24 @@ $max_size_mb = get_option('ep_downloads_max_size', 3);
 $current_user = wp_get_current_user();
 
 global $ep_app_manager;
-$can_write = ($ep_app_manager->get_user_permission('downloads') === 'write');
+$can_write_perm = ($ep_app_manager->get_user_permission('downloads') === 'write');
+$user_roles = (array) $current_user->roles;
+$user_dept = (string) ($current_user->ep_department ?? '');
+$can_write = current_user_can('administrator')
+    || in_array('ep_hr', $user_roles)
+    || in_array('ep_direction', $user_roles)
+    || strpos($user_dept, 'TRANSFORMACI') !== false
+    || strpos($user_dept, 'Direcci') !== false
+    || strpos($user_dept, 'RRHH') !== false
+    || strpos($user_dept, 'Administra') !== false
+    || $can_write_perm;
+
+$can_view_reads = current_user_can('administrator')
+    || in_array('ep_hr', $user_roles)
+    || in_array('ep_direction', $user_roles)
+    || strpos($user_dept, 'Direcci') !== false
+    || strpos($user_dept, 'RRHH') !== false
+    || strpos($user_dept, 'Recursos Humanos') !== false;
 
 // Categorías siguen aquí para selectors temporales (se actualizarán o sacarán después si es necesario)
 $categories = get_terms(array(
@@ -126,8 +143,16 @@ if ($can_write) {
                     <i class="fa-solid fa-file-lines"></i>
                     <h3 id="epViewerTitle">Vista Previa</h3>
                 </div>
-                <div class="ep-viewer-actions">
-                    <button class="ep-close-viewer" title="Cerrar">&times;</button>
+                <div class="ep-viewer-actions" style="display:flex; align-items:center; gap:10px;">
+                    <?php if ($can_view_reads): ?>
+                        <button type="button" class="ep-btn ep-btn-sm" id="epBtnViewerShowReads" style="font-size: 12px; padding: 6px 14px; background: #0284c7; color: #ffffff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Ver qué empleados han leído este documento">
+                            <i class="fa-solid fa-users"></i> <span>Ver Lecturas</span>
+                        </button>
+                    <?php endif; ?>
+                    <a href="#" id="epViewerDownload" download class="ep-btn ep-btn-sm" style="font-size: 12px; padding: 6px 14px; background: #22c55e; color: #ffffff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                        <i class="fa-solid fa-download"></i> <span>Descargar</span>
+                    </a>
+                    <button class="ep-close-viewer" title="Cerrar" style="font-size: 1.5rem; line-height: 1; margin-left: 5px;">&times;</button>
                 </div>
             </div>
             <div class="ep-viewer-body">
@@ -154,14 +179,13 @@ if ($can_write) {
         }
 
         // Inicializar variables globales necesarias para la APP
-        window.ep_vars = window.ep_vars || {
-            ajax_url: '<?php echo admin_url('admin-ajax.php'); ?>',
-            nonce: '<?php echo wp_create_nonce('ep_ajax_nonce'); ?>',
-            user_id: <?php echo get_current_user_id(); ?>
-            ,
-            user_role: '<?php echo $can_write ? "hr" : "employee"; ?>',
-            can_write: <?php echo $can_write ? 'true' : 'false'; ?>
-        };
+        window.ep_vars = window.ep_vars || {};
+        window.ep_vars.ajax_url = window.ep_vars.ajax_url || '<?php echo admin_url('admin-ajax.php'); ?>';
+        window.ep_vars.nonce = window.ep_vars.nonce || '<?php echo wp_create_nonce('ep_ajax_nonce'); ?>';
+        window.ep_vars.user_id = <?php echo get_current_user_id(); ?>;
+        window.ep_vars.user_role = '<?php echo $can_write ? "hr" : "employee"; ?>';
+        window.ep_vars.can_write = <?php echo $can_write ? 'true' : 'false'; ?>;
+        window.ep_vars.can_view_reads = <?php echo $can_view_reads ? 'true' : 'false'; ?>;
     </script>
 
     <!-- Se ha eliminado la zona de carga estática para usar el estilo Google Drive (Botón Nuevo + Drag & Drop) -->
@@ -1298,6 +1322,7 @@ if ($can_write) {
                                             <div class="ep-menu-group">
                                                 <button class="ep-action-item ep-view-doc-live" data-id="${item.id}"><i class="fa-solid fa-eye"></i><span>Vista Previa</span></button>
                                                 <button class="ep-action-item ep-download-doc" data-id="${item.id}" data-url="${item.downloadUrl}"><i class="fa-solid fa-download"></i><span>Descargar</span></button>
+                                                ${ep_vars.can_view_reads ? `<button class="ep-action-item ep-view-reads-btn" data-id="${item.id}"><i class="fa-solid fa-users"></i><span>Ver Lecturas</span></button>` : ''}
                                             </div>
                                             ${(tabId !== 'public-resources' || ep_vars.can_write) ? `<div class="ep-menu-divider"></div>
                                             <div class="ep-menu-group">
@@ -1594,8 +1619,22 @@ if ($can_write) {
                 const $loader = $('#epViewerLoader');
                 const $downloadBtn = $('#epViewerDownload');
 
+                $('#epBtnViewerShowReads').attr('data-doc-id', docId);
+
+                // Send read receipt
+                if (docId) {
+                    $.ajax({
+                        url: ep_vars.ajax_url,
+                        type: 'POST',
+                        data: {
+                            action: 'ep_downloads_mark_read',
+                            doc_id: docId
+                        }
+                    });
+                }
+
                 $modal.fadeIn(200);
-                $('#epViewerFileName').text(fileName);
+                $('#epViewerTitle').text(fileName);
                 $loader.show();
                 $iframe.hide().attr('src', '');
 
@@ -1730,6 +1769,15 @@ if ($can_write) {
                 const tabId = $grid.data('tab');
                 const type = (tabId === 'public-resources') ? 'public' : 'private';
 
+                // Registrar marca de lectura al descargar
+                if (itemId) {
+                    $.ajax({
+                        url: ep_vars.ajax_url,
+                        type: 'POST',
+                        data: { action: 'ep_downloads_mark_read', doc_id: itemId }
+                    });
+                }
+
                 // Si tenemos URL directa y es válida (no vacía ni placeholder)
                 if (directUrl && directUrl.startsWith('http')) {
                     window.open(directUrl, '_blank');
@@ -1784,6 +1832,20 @@ if ($can_write) {
                 $('.ep-actions-dropdown').removeClass('active');
 
                 // Mostrar modal con loader
+                $('#epBtnViewerShowReads').attr('data-doc-id', docId);
+
+                // Send read receipt
+                if (docId) {
+                    $.ajax({
+                        url: ep_vars.ajax_url,
+                        type: 'POST',
+                        data: {
+                            action: 'ep_downloads_mark_read',
+                            doc_id: docId
+                        }
+                    });
+                }
+
                 $('#epViewerTitle').text(docName);
                 $('#epViewerIframe').attr('src', '').hide();
                 $('#epViewerLoader').show();
@@ -1803,6 +1865,7 @@ if ($can_write) {
                             $('#epViewerIframe').attr('src', res.data.url).show();
                             $('#epViewerLoader').hide();
                             // Sincronizar botón de descarga de la modal
+                            $('#epViewerDownload').attr('href', res.data.url);
                             $('#epViewerDownloadTop').attr('href', res.data.url);
                         } else {
                             $('#epViewerLoader').html('<i class="fa-solid fa-exclamation-triangle" style="color:#ef4444;"></i><p>' + (res.data || 'No se pudo cargar la vista previa.') + '</p>');
@@ -2181,6 +2244,11 @@ if ($can_write) {
                 opacity: 1;
                 transform: translateY(0);
             }
+        }
+
+        body .swal2-container,
+        .swal2-container.ep-swal-top-container {
+            z-index: 9999999 !important;
         }
 
         /* Visor de Documentos OneDrive */
@@ -4659,6 +4727,179 @@ if ($can_write) {
             border-left: 3px solid #eab308;
         }
     </style>
+
+    <!-- PDF PREVIEW MODAL INTEGRADO -->
+    <div id="epPdfPreviewModal" class="ep-modal-unified" style="display:none; position:fixed; z-index:99999; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.75); align-items:center; justify-content:center;">
+        <div style="background:#fff; width:92%; max-width:920px; height:85vh; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 20px; background:#0078d4; color:#fff;">
+                <h3 style="margin:0; font-size:1.1rem; font-weight:700; color:#fff;" id="epPdfModalTitle"><i class="fa-solid fa-file-pdf"></i> Vista Previa de Documento</h3>
+                <button type="button" onclick="closePdfPreviewModal()" style="background:none; border:none; color:#fff; font-size:1.5rem; cursor:pointer; padding:0; line-height:1;">&times;</button>
+            </div>
+            <div style="flex:1; width:100%; background:#525659;">
+                <iframe id="epPdfFrame" src="" style="width:100%; height:100%; border:none;"></iframe>
+            </div>
+            <div style="padding:12px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
+                <span id="epPdfReadNotice" style="font-size:12px; color:#10b981; font-weight:600;"><i class="fa-solid fa-check-circle"></i> Lectura y acuse registrado correctamente</span>
+                <a id="epPdfDownloadBtn" href="#" download class="ep-btn ep-btn-primary ep-btn-sm" style="padding:6px 14px; font-size:12px; background:#0078d4; color:#fff; border-radius:6px; text-decoration:none;"><i class="fa-solid fa-download"></i> Descargar Archivo</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openPdfPreview(url, title, docId) {
+            const modal = document.getElementById('epPdfPreviewModal');
+            const iframe = document.getElementById('epPdfFrame');
+            const titleEl = document.getElementById('epPdfModalTitle');
+            const downloadBtn = document.getElementById('epPdfDownloadBtn');
+
+            if (!modal || !iframe) return;
+
+            titleEl.innerHTML = '<i class="fa-solid fa-file-pdf"></i> ' + (title || 'Vista Previa de Documento');
+            iframe.src = url;
+            downloadBtn.href = url;
+
+            modal.style.display = 'flex';
+
+            // Record mandatory read receipt via AJAX
+            if (docId) {
+                fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        action: 'ep_downloads_mark_read',
+                        doc_id: docId
+                    })
+                });
+            }
+        }
+
+        function closePdfPreviewModal() {
+            const modal = document.getElementById('epPdfPreviewModal');
+            const iframe = document.getElementById('epPdfFrame');
+            if (iframe) iframe.src = '';
+            if (modal) modal.style.display = 'none';
+        }
+    </script>
+
+    <script>
+        function epShowDocReads(docId) {
+            console.log('[EP_Downloads] epShowDocReads invocado con docId:', docId);
+            if (!docId) {
+                alert('No se ha podido identificar el ID del documento.');
+                return;
+            }
+
+            // Auto-registrar la lectura del usuario actual al abrir o consultar
+            fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'ep_downloads_mark_read',
+                    doc_id: docId
+                })
+            }).catch(e => console.error('[EP_Downloads] Error marcando lectura:', e));
+
+            const openSwalModal = () => {
+                Swal.fire({
+                    title: '<i class="fa-solid fa-eye" style="color:#0078d4;"></i> Registro de Lecturas',
+                    html: '<div id="epSwalReadsContent" style="padding:10px; text-align:left;"><p style="text-align:center; color:#64748b;"><i class="fa-solid fa-spinner fa-spin"></i> Consultando registros de lectura...</p></div>',
+                    width: 700,
+                    showCloseButton: true,
+                    confirmButtonText: 'Cerrar',
+                    confirmButtonColor: '#0078d4',
+                    customClass: {
+                        container: 'ep-swal-top-container'
+                    },
+                    didOpen: () => {
+                        fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: new URLSearchParams({
+                                action: 'ep_downloads_get_doc_reads',
+                                doc_id: docId
+                            })
+                        })
+                        .then(r => r.json())
+                        .then(res => {
+                            const container = document.getElementById('epSwalReadsContent');
+                            if (!container) return;
+                            if (res.success && res.data && res.data.length > 0) {
+                                let tableHtml = `
+                                    <p style="font-size:13px; color:#64748b; margin-bottom:12px;"><strong>Total de lecturas registradas:</strong> ${res.data.length} empleados</p>
+                                    <div style="max-height:350px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px;">
+                                        <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">
+                                            <thead>
+                                                <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+                                                    <th style="padding:10px;">Empleado</th>
+                                                    <th style="padding:10px;">Departamento</th>
+                                                    <th style="padding:10px;">Fecha y Hora</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${res.data.map(r => `
+                                                    <tr style="border-bottom:1px solid #f1f5f9;">
+                                                        <td style="padding:10px;"><strong>${r.name}</strong><br><small style="color:#64748b;">${r.email}</small></td>
+                                                        <td style="padding:10px;"><span style="background:#e0f2fe; color:#0369a1; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600;">${r.dept}</span></td>
+                                                        <td style="padding:10px; color:#10b981; font-weight:600;"><i class="fa-solid fa-check-double"></i> ${r.read_at}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `;
+                                container.innerHTML = tableHtml;
+                            } else if (res.success) {
+                                container.innerHTML = `
+                                    <div style="text-align:center; padding:30px 10px; color:#94a3b8;">
+                                        <i class="fa-solid fa-file-circle-exclamation" style="font-size:2.5rem; margin-bottom:10px; color:#cbd5e1;"></i>
+                                        <p style="font-size:14px; margin:0; color:#334155; font-weight:600;">Sin lecturas registradas aún</p>
+                                        <small style="color:#94a3b8;">Los accesos se registrarán automáticamente cuando los empleados abran la vista previa o descarguen el documento.</small>
+                                    </div>
+                                `;
+                            } else {
+                                container.innerHTML = `<p style="text-align:center; color:#ef4444; padding:20px;">${res.data || 'Error al obtener lecturas'}</p>`;
+                            }
+                        })
+                        .catch(err => {
+                            const container = document.getElementById('epSwalReadsContent');
+                            if (container) container.innerHTML = '<p style="text-align:center; color:#ef4444; padding:20px;">Error de conexión con el servidor.</p>';
+                        });
+                    }
+                });
+            };
+
+            if (typeof Swal === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/sweetalert2@11';
+                script.onload = openSwalModal;
+                document.head.appendChild(script);
+            } else {
+                openSwalModal();
+            }
+        }
+
+        // Delegación de eventos nativa en Vanilla JS independiente de jQuery o DOMContentLoaded
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('#epBtnViewerShowReads, .ep-view-reads-btn');
+            if (btn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const docId = btn.getAttribute('data-doc-id') || btn.getAttribute('data-id');
+                console.log('[EP_Downloads] Clic detectado en Ver Lecturas, docId:', docId);
+
+                // Cerrar menú de 3 puntos si estaba abierto
+                const activeMenu = document.querySelector('.ep-actions-dropdown.active');
+                if (activeMenu) activeMenu.classList.remove('active');
+
+                if (docId) {
+                    epShowDocReads(docId);
+                } else {
+                    alert('Error: ID del documento no encontrado.');
+                }
+            }
+        }, true);
+    </script>
+
     <?php
     // Fin downloads-app.php
     ?>

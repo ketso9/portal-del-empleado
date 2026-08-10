@@ -36,7 +36,6 @@ class EP_AI_Service
         $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $this->model . '?key=' . $this->api_key;
         $response = wp_remote_get($url, [
             'timeout' => 10,
-            'sslverify' => false
         ]);
 
         if (is_wp_error($response)) {

@@ -1,0 +1,1088 @@
+/* Inventory Styles */
+
+/* Modern Tabs */
+.ep-tabs {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 25px;
+    padding: 10px;
+    background: var(--ep-surface-hover);
+    border-radius: var(--ep-radius);
+    border: 1px solid var(--ep-border);
+}
+
+.ep-tab-btn,
+.ep-tab {
+    background: transparent !important;
+    border: none !important;
+    padding: 10px 20px !important;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--ep-text-muted);
+    border-radius: var(--ep-radius-sm);
+    transition: all 0.2s ease;
+    text-decoration: none !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+}
+
+.ep-tab-btn:hover,
+.ep-tab:hover {
+    background: rgba(0, 0, 0, 0.05) !important;
+    color: var(--ep-text);
+}
+
+.ep-tab-btn.active,
+.ep-tab.active {
+    background: var(--ep-primary) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+#ep-app-root.dark-mode .ep-tab-btn:hover,
+#ep-app-root.dark-mode .ep-tab:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.ep-tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.ep-tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* App Container */
+.ep-app-container {
+    padding: 20px;
+    background: var(--ep-surface);
+    border-radius: var(--ep-radius);
+    box-shadow: var(--ep-shadow);
+    border: 1px solid var(--ep-border);
+}
+
+.ep-app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.ep-app-header h1 {
+    font-size: var(--ep-font-size-title);
+    margin: 0;
+    color: var(--ep-text);
+    font-weight: 700;
+}
+
+/* Filters */
+.ep-inventory-stats {
+    display: flex;
+    gap: 20px;
+    background: var(--ep-surface-hover);
+    border: 1px solid var(--ep-border);
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    align-items: center;
+}
+
+.stat-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: var(--ep-text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ep-text);
+}
+
+.stat-progress-container {
+    flex: 1;
+    height: 12px;
+    background: var(--ep-border);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+    margin-left: 20px;
+}
+
+.stat-progress-bar {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 6px;
+    transition: width 0.3s ease;
+}
+
+.stat-progress-text {
+    position: absolute;
+    right: 10px;
+    top: -20px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.ep-filters {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.ep-filter-form {
+    display: flex;
+    gap: 10px;
+}
+
+/* Table */
+.ep-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ep-table th,
+.ep-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--ep-border);
+    color: var(--ep-text);
+}
+
+.ep-table th {
+    background: var(--ep-surface-hover);
+    font-weight: 600;
+    color: var(--ep-text-muted);
+}
+
+.ep-user-mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ep-user-mini img {
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    object-fit: cover;
+}
+
+.ep-avatar-xs {
+    width: 24px !important;
+    height: 24px !important;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* Badges */
+.ep-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+
+.badge-blue {
+    background: #e0f2fe;
+    color: #0284c7;
+}
+
+.badge-purple {
+    background: #f3e8ff;
+    color: #9333ea;
+}
+
+/* Buttons */
+.ep-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--ep-radius-sm);
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    transition: background 0.2s;
+    font-weight: 600;
+}
+
+.ep-btn-primary {
+    background: var(--ep-primary);
+    color: #fff;
+}
+
+.ep-btn-primary:hover {
+    background: var(--ep-primary-hover);
+}
+
+.ep-btn-secondary {
+    background: var(--ep-surface-hover);
+    color: var(--ep-text);
+    border: 1px solid var(--ep-border);
+}
+
+.ep-btn-secondary:hover {
+    background: var(--ep-border);
+}
+
+.ep-btn-icon {
+    /* Extending unified icon button */
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    color: var(--ep-text-muted);
+    padding: 6px;
+    font-size: 16px;
+    border-radius: 50%;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+}
+
+.ep-btn-icon:hover {
+    color: var(--ep-primary);
+    background: var(--ep-surface-hover);
+}
+
+.ep-btn-icon.delete:hover {
+    color: #dc2626;
+    background: rgba(220, 38, 38, 0.1);
+}
+
+.ep-actions-flex {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Modal */
+.ep-modal {
+    display: none;
+    position: fixed;
+    z-index: 99999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    /* Center vertically */
+    justify-content: center;
+    /* Center horizontally */
+}
+
+/* Show modal when active */
+.ep-modal.show {
+    display: flex !important;
+}
+
+.ep-modal-content {
+    background-color: var(--ep-surface);
+    color: var(--ep-text);
+    padding: 24px;
+    border-radius: var(--ep-radius);
+    width: 100%;
+    max-width: 500px;
+    box-shadow: var(--ep-shadow-lg);
+    position: relative;
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 1px solid var(--ep-border);
+}
+
+.ep-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.ep-modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.ep-close {
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #aaa;
+}
+
+.ep-close:hover {
+    color: black;
+}
+
+/* Forms */
+.ep-form-group {
+    margin-bottom: 15px;
+}
+
+.ep-form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.ep-form-group input,
+.ep-form-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius-sm);
+    background: var(--ep-surface);
+    color: var(--ep-text);
+}
+
+.ep-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.ep-col {
+    flex: 1;
+}
+
+.ep-col input,
+.ep-col select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius-sm);
+    background: var(--ep-surface);
+    color: var(--ep-text);
+}
+
+.ep-select-full {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--ep-border);
+    border-radius: var(--ep-radius-sm);
+    background: var(--ep-surface);
+    color: var(--ep-text);
+}
+
+.ep-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* Print Styles specific for Labels */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    .print-labels-container,
+    .print-labels-container * {
+        visibility: visible;
+    }
+
+    .print-labels-container {
+        position: absolute;
+        left: 0;
+        top: 0;
+    }
+
+    /* Label size 19x40mm approx */
+    .ep-label-item {
+        width: 40mm;
+        height: 19mm;
+        /* formatting etc */
+    }
+}
+
+/* Dark Mode Overrides for Inventory */
+#ep-app-root.dark-mode .ep-app-container {
+    background: var(--ep-surface);
+    box-shadow: var(--ep-shadow);
+}
+
+#ep-app-root.dark-mode .ep-app-header h1 {
+    color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-inventory-stats {
+    background: var(--ep-surface-hover);
+    border-color: var(--ep-border);
+}
+
+#ep-app-root.dark-mode .stat-value {
+    color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-table th {
+    background: var(--ep-surface-hover);
+    color: var(--ep-text-muted);
+    border-bottom-color: var(--ep-border);
+}
+
+#ep-app-root.dark-mode .ep-table td {
+    border-bottom-color: var(--ep-border);
+    color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-form-group input,
+#ep-app-root.dark-mode .ep-form-group select,
+#ep-app-root.dark-mode .ep-col input,
+#ep-app-root.dark-mode .ep-col select,
+#ep-app-root.dark-mode .ep-select-full {
+    background-color: var(--ep-surface-hover);
+    border-color: var(--ep-border);
+    color: #ffffff;
+}
+
+#ep-app-root.dark-mode .ep-modal-content {
+    background-color: var(--ep-surface);
+    color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-close {
+    color: var(--ep-text-muted);
+}
+
+#ep-app-root.dark-mode .ep-close:hover {
+    color: #ffffff;
+}
+
+/* User Inventory - Itinerant Improvements */
+.ep-section-intro {
+    background: var(--ep-surface-hover);
+    padding: 15px 20px;
+    border-radius: var(--ep-radius);
+    margin-bottom: 25px;
+    border-left: 4px solid var(--ep-primary);
+}
+
+.ep-section-intro p {
+    margin: 0;
+    color: var(--ep-text-muted);
+    font-size: 0.95rem;
+}
+
+.itinerant-card {
+    position: relative;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+}
+
+.itinerant-card:not(.disabled):hover {
+    transform: translateY(-4px);
+    box-shadow: var(--ep-shadow-lg);
+}
+
+.itinerant-card.disabled {
+    opacity: 0.7;
+    filter: grayscale(0.5);
+    cursor: default;
+}
+
+.ep-card-select {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 10;
+}
+
+.itinerant-checkbox {
+    width: 20px !important;
+    height: 20px !important;
+    cursor: pointer !important;
+    accent-color: var(--ep-primary);
+}
+
+.ep-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: 8px;
+}
+
+.ep-status-badge .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.ep-status-badge.status-available {
+    color: var(--ep-success);
+}
+
+.ep-status-badge.status-available .dot {
+    background: var(--ep-success);
+}
+
+.ep-status-badge.status-loaned {
+    color: var(--ep-warning);
+}
+
+.ep-status-badge.status-loaned .dot {
+    background: var(--ep-warning);
+}
+
+.ep-status-badge.status-maintenance {
+    color: var(--ep-danger);
+}
+
+.ep-status-badge.status-maintenance .dot {
+    background: var(--ep-danger);
+}
+
+.itinerant-card h3 {
+    font-size: 1.1rem !important;
+    margin-bottom: 5px !important;
+}
+
+.ep-card-footer {
+    padding-top: 15px;
+    margin-top: auto;
+}
+
+.ep-btn-outline {
+    background: transparent !important;
+    border: 1px solid var(--ep-primary) !important;
+    color: var(--ep-primary) !important;
+    width: 100%;
+    justify-content: center;
+}
+
+.ep-btn-outline:hover {
+    background: var(--ep-primary) !important;
+    color: #fff !important;
+}
+
+/* Selection Bar */
+.ep-selection-bar {
+    position: fixed;
+    bottom: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ep-surface);
+    border: 1px solid var(--ep-border);
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.1);
+    padding: 15px 30px;
+    border-radius: 40px;
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    z-index: 10000;
+    transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.ep-selection-bar.show {
+    bottom: 25px;
+}
+
+.selection-info {
+    font-weight: 600;
+    color: var(--ep-text);
+}
+
+.selection-info #selection-count {
+    background: var(--ep-primary);
+    color: #fff;
+    padding: 2px 10px;
+    border-radius: 10px;
+    margin-right: 5px;
+}
+
+.selection-actions {
+    display: flex;
+    gap: 10px;
+}
+
+/* Modal Selected Items */
+.ep-selected-items-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+    background: var(--ep-surface-hover);
+    border-radius: var(--ep-radius-sm);
+    border: 1px solid var(--ep-border);
+    max-height: 120px;
+    overflow-y: auto;
+    margin-top: 5px;
+}
+
+.ep-tag {
+    background: var(--ep-primary);
+    color: #fff !important;
+    padding: 4px 12px;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark Mode Extensions */
+#ep-app-root.dark-mode .ep-selection-bar {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+}
+
+#ep-app-root.dark-mode .ep-section-intro {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+#ep-app-root.dark-mode .itinerant-card {
+    background: #1e293b;
+}
+
+#ep-app-root.dark-mode .ep-selected-items-list {
+    background: #0f172a;
+}
+
+/* Grid Layout */
+.ep-inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+/* My Requests List Styling */
+.ep-list-group {
+    list-style: none;
+    padding: 0;
+    margin: 15px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ep-list-item {
+    background: var(--ep-surface);
+    border: 1px solid var(--ep-border);
+    padding: 15px 20px;
+    border-radius: var(--ep-radius-sm);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s;
+}
+
+.ep-list-item:hover {
+    border-color: var(--ep-primary-alpha);
+    background: var(--ep-surface-hover);
+}
+
+.ep-badge-pill {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.ep-badge-pill.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.ep-badge-pill.status-accepted {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.ep-badge-pill.status-declined {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Notification Banner */
+.ep-alert {
+    padding: 15px 20px;
+    border-radius: var(--ep-radius);
+    margin-bottom: 25px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    border: 1px solid transparent;
+}
+
+.ep-alert-info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e40af;
+}
+
+.ep-alert-icon {
+    font-size: 1.2rem;
+}
+
+.ep-alert-content b {
+    display: block;
+    font-size: 1.05rem;
+}
+
+/* Dark Mode Extensions for List & Alert */
+#ep-app-root.dark-mode .ep-list-item {
+    background: #1e293b;
+}
+
+#ep-app-root.dark-mode .ep-alert-info {
+    background: rgba(30, 64, 175, 0.2);
+    border-color: #1e40af;
+    color: #bfdbfe;
+}
+
+/* List Item Sub-elements */
+.ep-list-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ep-list-date {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--ep-text-muted);
+}
+
+.ep-list-text {
+    font-size: 0.95rem;
+    color: var(--ep-text);
+}
+
+.ep-text-success {
+    color: var(--ep-success);
+}
+
+.font-bold {
+    font-weight: 700;
+}
+
+/* Request Actions Flex Container */
+.ep-actions-flex {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.ep-btn-icon i.fa-file-circle-check {
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.ep-btn-icon i.fa-file-circle-check:hover {
+    transform: scale(1.1);
+}
+
+/* User List Actions */
+.ep-list-actions {
+    margin-left: auto;
+}
+
+/* Availability Section */
+.ep-availability-section {
+    background: var(--ep-bg-secondary);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--ep-border);
+}
+
+.availability-item {
+    border-left: 4px solid var(--ep-warning) !important;
+}
+
+.ep-list-subtext {
+    font-size: 0.85rem;
+    color: var(--ep-text-muted);
+}
+
+.ep-list-date-badge {
+    background: var(--ep-warning-light, rgba(255, 193, 7, 0.1));
+    color: #856404;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+[data-theme="dark"] .ep-list-date-badge {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+}
+
+/* Mine Status Styling */
+.ep-status-badge.mine {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+    font-weight: 800;
+}
+
+.ep-status-badge.mine .dot {
+    background: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
+}
+
+/* Ensure availability section is visible */
+.ep-availability-section {
+    display: block !important;
+    clear: both;
+    margin-top: 30px;
+}
+
+/* Request Modal Tags styling */
+.ep-selected-items-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    min-height: 50px;
+}
+
+.ep-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: #a82323;
+    /* Matching the red from screenshot */
+    color: white;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(168, 35, 35, 0.2);
+}
+
+.tag-remove {
+    cursor: pointer;
+    font-size: 0.8rem;
+    opacity: 0.7;
+    transition: all 0.2s;
+    background: rgba(255, 255, 255, 0.2);
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.tag-remove:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+#ep-app-root.dark-mode .ep-selected-items-list {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+/* Mobile Phones (max-width: 768px) for Inventory */
+@media screen and (max-width: 768px) {
+    .ep-inventory-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ep-filters {
+        flex-direction: column;
+    }
+
+    .ep-filter-form {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .ep-selection-bar {
+        width: 90%;
+        padding: 15px;
+        flex-direction: column;
+        border-radius: 20px;
+        gap: 15px;
+        text-align: center;
+    }
+
+    .ep-inventory-stats {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .stat-progress-container {
+        margin-left: 0;
+        margin-top: 15px;
+    }
+}
+
+/* Pagination Styling */
+.ep-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 30px;
+    padding: 20px 0;
+}
+
+.ep-pagination .page-numbers {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: var(--ep-radius-sm);
+    background: var(--ep-surface);
+    border: 1px solid var(--ep-border);
+    color: var(--ep-text);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    font-size: 0.95rem;
+}
+
+.ep-pagination .page-numbers:hover {
+    background: var(--ep-surface-hover);
+    color: var(--ep-primary);
+    border-color: var(--ep-primary-alpha, var(--ep-primary));
+}
+
+.ep-pagination .page-numbers.current {
+    background: var(--ep-primary);
+    color: #fff;
+    border-color: var(--ep-primary);
+    box-shadow: 0 2px 6px rgba(var(--ep-primary-rgb, 59, 130, 246), 0.3);
+}
+
+.ep-pagination .page-numbers.dots {
+    background: none;
+    border: none;
+    color: var(--ep-text-muted);
+}
+
+.ep-pagination .prev.page-numbers, 
+.ep-pagination .next.page-numbers {
+    font-weight: 600;
+    padding: 0 16px;
+    gap: 6px;
+}
+
+#ep-app-root.dark-mode .ep-pagination .page-numbers {
+    background: var(--ep-surface);
+    border-color: var(--ep-border);
+    color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-pagination .page-numbers:hover {
+    background: var(--ep-surface-hover);
+    color: var(--ep-primary);
+}
+
+#ep-app-root.dark-mode .ep-pagination .page-numbers.current {
+    background: var(--ep-primary);
+    color: #fff;
+    border-color: var(--ep-primary);
+}
+
+/* ============================================================
+   INLINE CHIP EDITOR — Ubicación / Notas
+   ============================================================ */
+.ep-info-cell {
+    min-width: 160px;
+    vertical-align: middle;
+}
+
+.ep-info-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.ep-chip-wrap {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.ep-chip-icon {
+    font-size: 11px;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.ep-chip-display {
+    font-size: 12px;
+    color: var(--ep-text);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: border-color 0.15s, background 0.15s;
+    min-width: 80px;
+    display: inline-block;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ep-chip-display:hover {
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.06);
+}
+
+.ep-chip-placeholder {
+    color: var(--ep-text-muted);
+    font-style: italic;
+    font-size: 11px;
+}
+
+/* Dark mode */
+#ep-app-root.dark-mode .ep-chip-display {
+    color: var(--ep-text);
+}
+
+#ep-app-root.dark-mode .ep-chip-display:hover {
+    background: rgba(99, 102, 241, 0.15);
+}

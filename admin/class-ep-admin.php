@@ -17,8 +17,15 @@ class EP_Admin
 
         add_action('wp_ajax_ep_validate_master_key', array($this, 'ajax_validate_master_key'));
         add_action('wp_ajax_ep_save_site_key', array($this, 'ajax_save_site_key'));
-        add_action('wp_ajax_ep_run_nuclear_reset', array($this, 'ajax_run_nuclear_reset'));
-        add_action('wp_ajax_ep_export_blueprint', array($this, 'ajax_export_blueprint'));
+        add_action('wp_ajax_ep_save_license_secret', array($this, 'ajax_save_license_secret'));
+
+        // OPERACIONES DESTRUCTIVAS: solo se registran en entornos de desarrollo/staging.
+        // En producción, EP_ALLOW_NUCLEAR_RESET NO debe estar definida en wp-config.php.
+        if (defined('EP_ALLOW_NUCLEAR_RESET') && EP_ALLOW_NUCLEAR_RESET === true
+            && defined('WP_DEBUG') && WP_DEBUG === true) {
+            add_action('wp_ajax_ep_run_nuclear_reset', array($this, 'ajax_run_nuclear_reset'));
+            add_action('wp_ajax_ep_export_blueprint', array($this, 'ajax_export_blueprint'));
+        }
         add_action('wp_ajax_ep_logout_all_users', array($this, 'ajax_logout_all_users'));
         add_action('wp_ajax_ep_diagnose_teams', array('EP_Teams_Bot', 'ajax_diagnose'));
         add_action('wp_ajax_ep_test_ai_connection', array($this, 'ajax_test_ai_connection'));
@@ -557,6 +564,29 @@ class EP_Admin
                     <button type="button" id="ep_validate_key_btn" class="button button-primary">Validar y Sincronizar</button>
                 </div>
             </div>
+
+            <div style="margin-bottom:15px; padding:15px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:6px;">
+                <label style="display:block; font-weight:600; margin-bottom:6px;">🔐 Secret de Licencia (HMAC)</label>
+                <p class="description" style="margin-bottom:10px;">
+                    Clave compartida entre el Maestro y este cliente para verificar los tokens de licencia con firma criptográfica.
+                    Se guarda cifrada con AES-256. Debe ser idéntica en ambos lados.
+                    <?php
+                    require_once plugin_dir_path(__FILE__) . '../includes/class-ep-license.php';
+                    if (EP_License::has_secret()): ?>
+                        <strong style="color:#16a34a;">✅ Configurado</strong>
+                    <?php else: ?>
+                        <strong style="color:#dc2626;">⚠️ No configurado — usando modo legacy</strong>
+                    <?php endif; ?>
+                </p>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="password" id="ep_license_secret_input" placeholder="Pega aquí el secret compartido (64+ caracteres)" style="width:380px; font-family:monospace;">
+                    <button type="button" id="ep_save_license_secret_btn" class="button button-primary">Guardar Secret</button>
+                </div>
+                <p class="description" style="margin-top:8px; font-size:11px; color:#64748b;">
+                    Genera uno seguro con: <code>openssl rand -hex 64</code>
+                </p>
+                <div id="ep-license-secret-result" style="margin-top:8px;"></div>
+            </div>
         </div>
 
         <div class="ep-diag-box">
@@ -636,6 +666,21 @@ class EP_Admin
                 });
                 $('#ep_save_key_btn').on('click', function () {
                     $.post(ajaxurl, { action: 'ep_save_site_key', key: $('#ep_site_master_key').val(), remote_url: $('#ep_auth_remote_url').val(), security: '<?php echo wp_create_nonce("ep_deploy_nonce"); ?>' }, function (r) { alert(r.data); });
+                });
+                $('#ep_save_license_secret_btn').on('click', function () {
+                    const secret = $('#ep_license_secret_input').val().trim();
+                    if (!secret) { $('#ep-license-secret-result').html('<span style="color:red;">Introduce el secret antes de guardar.</span>'); return; }
+                    if (secret.length < 32) { $('#ep-license-secret-result').html('<span style="color:orange;">⚠️ El secret debería tener al menos 32 caracteres para ser seguro.</span>'); }
+                    const btn = $(this); btn.prop('disabled', true).text('Guardando...');
+                    $.post(ajaxurl, { action: 'ep_save_license_secret', secret: secret, security: '<?php echo wp_create_nonce("ep_deploy_nonce"); ?>' }, function (r) {
+                        btn.prop('disabled', false).text('Guardar Secret');
+                        if (r.success) {
+                            $('#ep-license-secret-result').html('<span style="color:#16a34a;">✅ ' + r.data + '</span>');
+                            $('#ep_license_secret_input').val('');
+                        } else {
+                            $('#ep-license-secret-result').html('<span style="color:red;">❌ ' + r.data + '</span>');
+                        }
+                    });
                 });
                 $('#ep_validate_key_btn').on('click', function () {
                     const b = $(this); const oldText = b.text(); b.text('Sincronizando...').prop('disabled', true);
@@ -1091,16 +1136,60 @@ class EP_Admin
         wp_send_json_success('Saved');
     }
 
-    public function ajax_run_nuclear_reset()
+    /**
+     * Guarda el secret de licencia HMAC cifrado con EP_Security.
+     * Gestionable directamente desde el panel de administración.
+     */
+    public function ajax_save_license_secret()
     {
         check_ajax_referer('ep_deploy_nonce', 'security');
-        if (!$this->is_key_valid((string) ($_POST['key'] ?? '')))
-            wp_send_json_error('Denied');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Acceso denegado: se requiere rol de administrador.');
+        }
+
+        $secret = sanitize_text_field(wp_unslash($_POST['secret'] ?? ''));
+
+        if (empty($secret)) {
+            wp_send_json_error('El secret no puede estar vacío.');
+        }
+
+        if (strlen($secret) < 32) {
+            wp_send_json_error('El secret debe tener al menos 32 caracteres.');
+        }
+
+        require_once plugin_dir_path(__FILE__) . '../includes/class-ep-license.php';
+
+        if (EP_License::save_secret($secret)) {
+            wp_send_json_success('Secret de licencia guardado y cifrado correctamente. Longitud: ' . strlen($secret) . ' caracteres.');
+        } else {
+            wp_send_json_error('Error al cifrar y guardar el secret. Revisa que EP_Security esté disponible.');
+        }
+    }
+
+    public function ajax_run_nuclear_reset()
+    {
+        // 1. Nonce WordPress
+        check_ajax_referer('ep_deploy_nonce', 'security');
+
+        // 2. Rol de WordPress — obligatorio e independiente de la master key
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Acceso denegado: se requiere rol de administrador de WordPress.');
+        }
+
+        // 3. Master key (segundo factor)
+        if (!$this->is_key_valid((string) ($_POST['key'] ?? ''))) {
+            wp_send_json_error('Clave maestra inválida.');
+        }
+
         require_once plugin_dir_path(__FILE__) . 'class-ep-deployer.php';
-        if (EP_Deployer::nuclear_reset())
-            wp_send_json_success('Reset ok');
-        else
-            wp_send_json_error('Fail');
+
+        if (EP_Deployer::nuclear_reset()) {
+            wp_send_json_success('Reset completado correctamente.');
+        } else {
+            // nuclear_reset() devuelve false si el entorno es producción
+            wp_send_json_error('Operación bloqueada: no está permitida en este entorno. Define EP_ALLOW_NUCLEAR_RESET y WP_DEBUG en wp-config.php solo en staging.');
+        }
     }
 
     public function ajax_export_blueprint()
