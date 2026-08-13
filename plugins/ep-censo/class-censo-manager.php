@@ -325,8 +325,10 @@ class CensoManager
         global $wpdb;
 
         // El nonce no es una autorización: lo imprime censo-search.php, que se
-        // incluye para cualquiera con la sesión iniciada.
-        if (!$this->can_view_censo()) {
+        // incluye para cualquiera con la sesión iniciada. Basta con tener el
+        // módulo asignado, aunque sea en lectura: es lo mismo que se le pide a
+        // quien consulta el censo por pantalla.
+        if (!$this->can_read()) {
             return new WP_Error('no_autorizado', 'No autorizado');
         }
 
@@ -2176,13 +2178,6 @@ class CensoManager
         if (current_user_can('manage_options') || current_user_can('edit_pages')) {
             return true;
         }
-        $user = wp_get_current_user();
-        $allowed_roles = ['direccion', 'rrhh', 'trabajador'];
-        foreach ($allowed_roles as $role) {
-            if (in_array($role, (array) $user->roles)) {
-                return true;
-            }
-        }
         if (class_exists('EP_App_Manager')) {
             $perm = EP_App_Manager::get_permission('censo');
             if ($perm === 'read' || $perm === 'write') {
@@ -2192,37 +2187,24 @@ class CensoManager
         return false;
     }
 
+
     /**
-     * ¿Tiene el usuario acceso al módulo de censo, aunque sea de solo lectura?
+     * Permiso de escritura básica que, a día de hoy, es el mismo que el total.
      *
-     * No sirve can_write_basic() para esto: su lista de roles ('direccion',
-     * 'rrhh', 'trabajador') no se corresponde con los roles que el portal usa de
-     * verdad, que son ep_direction, ep_hr, ep_worker y ep_communication. Con
-     * ella, los usuarios ep_worker se quedaban fuera pese a tener el censo
-     * asignado en modo lectura y poder consultarlo por pantalla.
+     * Llevaba una lista de roles ('direccion', 'rrhh', 'trabajador') que no existe
+     * en el portal: los reales son ep_direction, ep_hr, ep_worker, ep_communication
+     * y ep_administration. No casaba con ningún usuario (comprobado en las dos
+     * instalaciones: cero), así que la función ya venía devolviendo siempre lo
+     * mismo que can_write_total(). Se retira para que el código diga lo que hace.
+     *
+     * Conviene saber lo que esto deja fijado: handle_update_field() distingue entre
+     * corregir email o teléfono (básico) y cambiar la web (total). Mientras los dos
+     * niveles coincidan, esa distinción no tiene efecto y solo escriben los
+     * usuarios con permiso total. Si algún día se quiere que un ep_worker pueda
+     * corregir emails y teléfonos, es aquí donde hay que abrirlo, a conciencia.
      */
-    private function can_view_censo()
-    {
-        if ($this->can_write_basic()) {
-            return true;
-        }
-
-        if (class_exists('EP_App_Manager')) {
-            return in_array(EP_App_Manager::get_permission('censo'), ['read', 'write'], true);
-        }
-
-        return false;
-    }
-
     public function can_write_basic()
     {
-        $user = wp_get_current_user();
-        $allowed_roles = ['direccion', 'rrhh', 'trabajador'];
-        foreach ($allowed_roles as $role) {
-            if (in_array($role, (array) $user->roles)) {
-                return true;
-            }
-        }
         return $this->can_write_total();
     }
 
@@ -2245,10 +2227,6 @@ class CensoManager
     public function can_enrich_and_import()
     {
         if (current_user_can('manage_options')) {
-            return true;
-        }
-        $user = wp_get_current_user();
-        if (in_array('direccion', (array) $user->roles)) {
             return true;
         }
         if (class_exists('EP_App_Manager')) {
