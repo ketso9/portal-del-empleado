@@ -663,18 +663,24 @@ class CensoManager
             (int) apply_filters('ep_censo_export_ttl', 7 * DAY_IN_SECONDS)
         );
 
-        // Informes de cambios: se conserva siempre el más reciente, tenga la edad
-        // que tenga, y de los demás se aplica caducidad.
+        // Informes de cambios: se conservan los N más recientes y punto, sin
+        // caducidad por fecha.
+        //
+        // La primera versión les ponía plazo salvando solo el más nuevo, y eso era
+        // frágil: con una o dos importaciones al año, el informe vigente tiene
+        // meses y supera cualquier plazo razonable, así que sobrevivía únicamente
+        // por ser el último. Bastaba con que apareciera un archivo posterior que
+        // encajara con el patrón para que el bueno se fuera. Pesan 1,8 MB: guardar
+        // tres sale mucho más barato que perder el que la pantalla enseña.
         $reports = glob($path . '/censo_cambios_*.csv');
-        if (is_array($reports) && count($reports) > 1) {
+        $keep = max(1, (int) apply_filters('ep_censo_reports_keep', 3));
+        if (is_array($reports) && count($reports) > $keep) {
             usort($reports, static function ($a, $b) {
                 return filemtime($b) - filemtime($a);
             });
-            array_shift($reports);
-            $this->delete_older_than(
-                $reports,
-                (int) apply_filters('ep_censo_report_ttl', 30 * DAY_IN_SECONDS)
-            );
+            foreach (array_slice($reports, $keep) as $old_report) {
+                @unlink($old_report);
+            }
         }
     }
 
