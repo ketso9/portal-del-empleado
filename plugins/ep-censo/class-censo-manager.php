@@ -313,6 +313,14 @@ class CensoManager
     public function handle_export_csv()
     {
         check_ajax_referer('censo_nonce', 'nonce');
+
+        // El nonce no es una autorización: lo imprime censo-search.php, que se
+        // incluye para cualquiera con la sesión iniciada. Sin esta comprobación,
+        // una cuenta sin acceso al censo podía pedir el export igualmente.
+        if (!$this->can_view_censo()) {
+            wp_send_json_error('No autorizado');
+        }
+
         set_time_limit(900); // 15 minutes for very large exports
 
         // wp-cron solo salta si el sitio recibe visitas. El export es la operación
@@ -323,6 +331,14 @@ class CensoManager
         $table_name = $wpdb->prefix . CensoConfig::TABLE_NAME;
 
         $scope = sanitize_text_field($_POST['scope'] ?? 'filtered');
+
+        // El volcado completo es otra cosa que un export filtrado: son todos los
+        // datos de todas las empresas del censo en un solo CSV. Se exige el mismo
+        // permiso que para importar o enriquecer.
+        if ($scope === 'all' && !$this->can_enrich_and_import()) {
+            wp_send_json_error('No autorizado para exportar el censo completo.');
+        }
+
         $requested_columns = $_POST['columns'] ?? [];
         if (!is_array($requested_columns) || empty($requested_columns)) {
             wp_send_json_error("No se han seleccionado columnas para exportar.");
@@ -2095,6 +2111,28 @@ class CensoManager
                 return true;
             }
         }
+        return false;
+    }
+
+    /**
+     * ¿Tiene el usuario acceso al módulo de censo, aunque sea de solo lectura?
+     *
+     * No sirve can_write_basic() para esto: su lista de roles ('direccion',
+     * 'rrhh', 'trabajador') no se corresponde con los roles que el portal usa de
+     * verdad, que son ep_direction, ep_hr, ep_worker y ep_communication. Con
+     * ella, los usuarios ep_worker se quedaban fuera pese a tener el censo
+     * asignado en modo lectura y poder consultarlo por pantalla.
+     */
+    private function can_view_censo()
+    {
+        if ($this->can_write_basic()) {
+            return true;
+        }
+
+        if (class_exists('EP_App_Manager')) {
+            return in_array(EP_App_Manager::get_permission('censo'), ['read', 'write'], true);
+        }
+
         return false;
     }
 
