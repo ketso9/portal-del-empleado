@@ -7,6 +7,65 @@ defined('ABSPATH') || exit;
  */
 class EP_Deployer
 {
+    /** Subcarpeta de uploads donde se guardan los Blueprint (blindada por .htaccess). */
+    private const BLUEPRINT_DIR = 'ep-blueprints';
+
+    /** Cuántos Blueprint se conservan en disco antes de ir borrando los antiguos. */
+    private const BLUEPRINT_KEEP = 3;
+
+    /**
+     * Carpetas que NUNCA viajan en el paquete de despliegue.
+     *
+     * Motivo: entorno de desarrollo, documentos de clientes o material de pruebas.
+     * 'plugins' se trata aparte porque sí se empaqueta, pero recorriéndolo app por app.
+     */
+    private const EXCLUDED_DIRS = [
+        '.git',
+        '.github',
+        '.vscode',
+        '.agent',
+        '.idea',
+        'node_modules',
+        'vendor',
+        'scratch',
+        'load-tests',
+        'public/fds-documents',
+        'public/uploads',
+    ];
+
+    /**
+     * Nombres exactos de archivo que nunca se empaquetan.
+     *
+     * Los scripts de despliegue contienen usuario SSH, IP, puerto y la ruta de la
+     * clave privada: no pueden acabar en un ZIP que se entrega a un cliente.
+     */
+    private const EXCLUDED_FILES = [
+        '.DS_Store',
+        '.gitignore',
+        '.gitattributes',
+        '.env',
+        'ep_debug.log',
+    ];
+
+    /**
+     * Patrones glob (sobre el nombre del archivo) que nunca se empaquetan.
+     */
+    private const EXCLUDED_PATTERNS = [
+        '*.ps1',
+        '*.bat',
+        '*.cmd',
+        '*.sh',
+        '*.tar.gz',
+        '*.tgz',
+        '*.zip',
+        '*.log',
+        '*.sql',
+        '*.bak',
+        '*.pem',
+        '*.key',
+        'id_rsa*',
+    ];
+
     /**
      * Verifica que el entorno actual permite operaciones destructivas.
      *
@@ -88,65 +147,207 @@ class EP_Deployer
     }
 
     /**
-     * Genera un paquete ZIP con los plugins del portal (Blueprint)
+     * Ruta absoluta del directorio de Blueprints, creándolo y blindándolo si hace falta.
+     *
+     * El directorio se sirve SOLO a través de admin-ajax con comprobación de rol
+     * (ver EP_Admin::ajax_download_blueprint), nunca por URL directa.
+     *
+     * @return string|false  Ruta con barra final, o false si no se pudo preparar.
+     */
+    public static function get_blueprint_dir()
+    {
+        $upload_dir = wp_upload_dir();
+        if (!empty($upload_dir['error'])) {
+            error_log('EP_Deployer: wp_upload_dir devolvió error: ' . $upload_dir['error']);
+            return false;
+        }
+
+        $dir = trailingslashit($upload_dir['basedir']) . self::BLUEPRINT_DIR . '/';
+
+        if (!is_dir($dir) && !wp_mkdir_p($dir)) {
+            error_log("EP_Deployer: no se pudo crear el directorio de blueprints: {$dir}");
+            return false;
+        }
+
+        if (!is_writable($dir)) {
+            error_log("EP_Deployer: el directorio de blueprints no tiene permisos de escritura: {$dir}");
+            return false;
+        }
+
+        // Blindaje: nada de este directorio se sirve por HTTP directo.
+        $htaccess = $dir . '.htaccess';
+        if (!file_exists($htaccess)) {
+            $rules = "# Employee Portal - generado automáticamente. No editar a mano.\n"
+                . "# Los paquetes de despliegue solo se entregan vía admin-ajax con rol verificado.\n"
+                . "Options -Indexes\n"
+                . "<IfModule mod_authz_core.c>\n"
+                . "    Require all denied\n"
+                . "</IfModule>\n"
+                . "<IfModule !mod_authz_core.c>\n"
+                . "    Order deny,allow\n"
+                . "    Deny from all\n"
+                . "</IfModule>\n";
+            @file_put_contents($htaccess, $rules);
+        }
+
+        if (!file_exists($dir . 'index.html')) {
+            @file_put_contents($dir . 'index.html', '');
+        }
+
+        return $dir;
+    }
+
+    /**
+     * Decide si una ruta relativa al plugin debe quedar fuera del paquete.
+     *
+     * @param string $relative_path  Ruta con barras '/', relativa a la raíz del plugin.
+     * @param bool   $is_dir
+     */
+    private static function is_excluded(string $relative_path, bool $is_dir): bool
+    {
+        $relative_path = ltrim(str_replace('\\', '/', $relative_path), '/');
+        if ($relative_path === '') {
+            return true;
+        }
+
+        $name = basename($relative_path);
+
+        // Cualquier cosa oculta (.git, .env, .htpasswd…) salvo el .htaccess de seguridad
+        if ($name !== '' && $name[0] === '.' && $name !== '.htaccess') {
+            return true;
+        }
+
+        if ($is_dir) {
+            foreach (self::EXCLUDED_DIRS as $excluded) {
+                if ($relative_path === $excluded || strpos($relative_path . '/', $excluded . '/') === 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Archivo dentro de una carpeta excluida
+        foreach (self::EXCLUDED_DIRS as $excluded) {
+            if (strpos($relative_path, $excluded . '/') === 0) {
+                return true;
+            }
+        }
+
+        if (in_array($name, self::EXCLUDED_FILES, true)) {
+            return true;
+        }
+
+        foreach (self::EXCLUDED_PATTERNS as $pattern) {
+            if (self::matches_pattern($pattern, $name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Coincidencia glob simple. fnmatch() no está disponible en todas las
+     * compilaciones de PHP (notablemente en Windows), así que se traduce a regex.
+     */
+    private static function matches_pattern(string $pattern, string $name): bool
+    {
+        if (function_exists('fnmatch')) {
+            return fnmatch($pattern, $name);
+        }
+
+        $regex = '/^' . str_replace(['\*', '\?'], ['.*', '.'], preg_quote($pattern, '/')) . '$/i';
+
+        return (bool) preg_match($regex, $name);
+    }
+
+    /**
+     * Genera un paquete ZIP con el portal completo (Blueprint) listo para instalar
+     * en un cliente.
+     *
+     * El contenido se autodescubre: el núcleo más TODAS las apps presentes en
+     * plugins/. No hay lista que mantener; una app nueva entra sola en el paquete.
+     * Se excluyen scripts de despliegue, logs, documentos y material de desarrollo.
+     *
+     * @param  array $selected_apps  Reservado. Vacío = todas las apps detectadas.
+     * @return string|false  Ruta ABSOLUTA del ZIP generado, o false si falló.
      */
     public static function create_blueprint_zip($selected_apps = [])
     {
-        $upload_dir = wp_upload_dir();
-
-        if (!is_writable($upload_dir['basedir'])) {
-            error_log("EP_Deployer: El directorio de uploads no tiene permisos de escritura.");
+        if (!class_exists('ZipArchive')) {
+            error_log('EP_Deployer: la extensión ZipArchive no está disponible en este servidor.');
             return false;
         }
+
+        $target_dir = self::get_blueprint_dir();
+        if ($target_dir === false) {
+            return false;
+        }
+
+        // El paquete ronda los 30 MB y ~850 archivos: con el max_execution_time
+        // por defecto (30 s) el ZIP se queda a medias y el navegador solo ve un
+        // error genérico. Se amplía el margen y se termina aunque el usuario
+        // cierre la pestaña, para no dejar archivos corruptos en disco.
+        @set_time_limit(300);
+        @ignore_user_abort(true);
+
+        // Nombre impredecible: aunque el directorio esté blindado, no se adivina.
+        $zip_filename = 'ep-blueprint-' . gmdate('Ymd-His') . '-' . wp_generate_password(8, false) . '.zip';
+        $zip_path     = $target_dir . $zip_filename;
 
         $zip = new ZipArchive();
-        $zip_filename = 'ep-blueprint-' . date('Ymd-His') . '.zip';
-        $zip_path = $upload_dir['basedir'] . '/' . $zip_filename;
-
-        if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== TRUE) {
+        if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            error_log("EP_Deployer: no se pudo abrir el ZIP para escritura: {$zip_path}");
             return false;
         }
 
-        $base_path = EMPLOYEE_PORTAL_PATH;
-        $base_len = strlen($base_path);
+        $base_path = trailingslashit(EMPLOYEE_PORTAL_PATH);
+        $added     = self::add_dir_to_zip($base_path, $zip, strlen($base_path));
 
-        // 1. Añadir el núcleo (archivos en el raíz y carpetas excepto 'plugins')
-        $root_items = scandir($base_path);
-        $exclude_root = ['.', '..', '.git', '.github', 'plugins', 'node_modules', 'vendor'];
+        // Manifiesto: qué se ha empaquetado y con qué versión. Facilita el soporte.
+        $zip->addFromString('ep-blueprint.json', wp_json_encode([
+            'generated_at'   => current_time('mysql'),
+            'portal_version' => defined('EMPLOYEE_PORTAL_VERSION') ? EMPLOYEE_PORTAL_VERSION : 'unknown',
+            'wp_version'     => get_bloginfo('version'),
+            'php_version'    => PHP_VERSION,
+            'source_site'    => untrailingslashit(home_url()),
+            'apps'           => array_keys(function_exists('ep_discover_local_modules') ? ep_discover_local_modules() : []),
+            'files'          => $added,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
-        foreach ($root_items as $item) {
-            if (in_array($item, $exclude_root))
-                continue;
-
-            $full_path = $base_path . $item;
-            if (is_file($full_path)) {
-                $zip->addFile($full_path, $item);
-            } elseif (is_dir($full_path)) {
-                $zip->addEmptyDir($item);
-                self::add_dir_to_zip($full_path, $zip, $base_len);
-            }
+        if (!$zip->close()) {
+            error_log('EP_Deployer: fallo al cerrar el ZIP.');
+            return false;
         }
 
-        // 2. Añadir todas las apps dentro de 'plugins/'
-        $plugins_path = $base_path . 'plugins/';
-        if (is_dir($plugins_path)) {
-            $zip->addEmptyDir('plugins');
-            $plugin_items = scandir($plugins_path);
-            foreach ($plugin_items as $app_id) {
-                if ($app_id === '.' || $app_id === '..')
-                    continue;
+        self::prune_old_blueprints($target_dir);
 
-                $app_path = $plugins_path . $app_id;
-                if (is_dir($app_path)) {
-                    $zip->addEmptyDir('plugins/' . $app_id);
-                    self::add_dir_to_zip($app_path, $zip, $base_len);
-                }
-            }
+        error_log("EP_Deployer: Blueprint generado ({$added} archivos): {$zip_filename}");
+
+        return $zip_path;
+    }
+
+    /**
+     * Borra los Blueprint antiguos y deja solo los más recientes.
+     * Evita que uploads/ se llene de paquetes de decenas de MB.
+     */
+    private static function prune_old_blueprints(string $dir): void
+    {
+        $files = glob($dir . 'ep-blueprint-*.zip');
+        if (!is_array($files) || count($files) <= self::BLUEPRINT_KEEP) {
+            return;
         }
 
-        $zip->close();
+        // Más recientes primero
+        usort($files, static function ($a, $b) {
+            return filemtime($b) <=> filemtime($a);
+        });
 
-        return $upload_dir['baseurl'] . '/' . $zip_filename;
+        foreach (array_slice($files, self::BLUEPRINT_KEEP) as $old) {
+            if (@unlink($old)) {
+                error_log('EP_Deployer: Blueprint antiguo eliminado: ' . basename($old));
+            }
+        }
     }
 
     private static function delete_directory_contents(string $dir): void
@@ -177,24 +378,44 @@ class EP_Deployer
         }
     }
 
-    private static function add_dir_to_zip($dir, $zip, $exclusiveLength)
+    /**
+     * Añade recursivamente un directorio al ZIP aplicando las reglas de exclusión.
+     *
+     * @return int  Número de archivos añadidos.
+     */
+    private static function add_dir_to_zip($dir, $zip, $exclusiveLength): int
     {
-        // Lista de carpetas/archivos a excluir
-        $exclude = ['.git', '.github', '.DS_Store', 'node_modules', '.gitignore'];
-
+        $count  = 0;
         $handle = opendir($dir);
+        if ($handle === false) {
+            return 0;
+        }
+
         while (false !== ($file = readdir($handle))) {
-            if ($file != '.' && $file != '..' && !in_array($file, $exclude)) {
-                $filePath = "$dir/$file";
-                $localPath = str_replace('\\', '/', substr($filePath, $exclusiveLength));
-                if (is_file($filePath)) {
-                    $zip->addFile($filePath, $localPath);
-                } elseif (is_dir($filePath)) {
-                    $zip->addEmptyDir($localPath);
-                    self::add_dir_to_zip($filePath, $zip, $exclusiveLength);
+            if ($file === '.' || $file === '..') {
+                continue;
+            }
+
+            $filePath  = rtrim($dir, '/\\') . '/' . $file;
+            $localPath = str_replace('\\', '/', substr($filePath, $exclusiveLength));
+            $is_dir    = is_dir($filePath);
+
+            if (self::is_excluded($localPath, $is_dir)) {
+                continue;
+            }
+
+            if ($is_dir) {
+                $zip->addEmptyDir($localPath);
+                $count += self::add_dir_to_zip($filePath, $zip, $exclusiveLength);
+            } elseif (is_file($filePath) && is_readable($filePath)) {
+                if ($zip->addFile($filePath, $localPath)) {
+                    $count++;
                 }
             }
         }
+
         closedir($handle);
+
+        return $count;
     }
 }

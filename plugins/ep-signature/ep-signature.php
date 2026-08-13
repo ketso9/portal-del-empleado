@@ -5,7 +5,7 @@ defined('ABSPATH') || exit;
  * Description: Gestión y firma de documentos PDF con certificado digital (v2.2 Integration).
  * Version: 2.2.0
  * Author: Jorge Polo
- * Package: enterprise
+ * Package: pro_plus
  */
 
 if (!defined('ABSPATH')) {

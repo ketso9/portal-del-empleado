@@ -32,6 +32,7 @@ class EP_Loader
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-app-manager.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-roles.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-auth-o365.php';
+        require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-oof-sync.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-teams-bot.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-teams-webhook.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-bot-mensajeria.php';
@@ -94,8 +95,16 @@ class EP_Loader
         new EP_Hardening();
         new EP_Roles();
         new EP_Auth_O365();
+        new EP_OOF_Sync();
+        // La presencia/OOF de Outlook alimenta la disponibilidad del directorio,
+        // que se vende en el plan PRO: va siempre.
         new EP_Teams_Webhook();
-        new EP_Bot_Mensajeria();
+
+        // El bot conversacional (escucha de mensajes, tarjetas y consultas a la
+        // IA) solo existe en los portales con el canal de Teams contratado.
+        if (!function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled()) {
+            new EP_Bot_Mensajeria();
+        }
         new EP_Communications();
         new EP_Notifications();
         new EP_Setup_Wizard();

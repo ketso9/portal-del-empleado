@@ -7,7 +7,7 @@ defined('ABSPATH') || exit;
  * Description: Sistema centralizado de estadísticas y trazabilidad para el Portal del Empleado.
  * Version: 1.0.0
  * Author: Jorge Polo
- * Package: enterprise
+ * Package: pro
  */
 
 if (!defined('ABSPATH')) {

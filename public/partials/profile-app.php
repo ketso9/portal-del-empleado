@@ -51,6 +51,16 @@ if ($is_editable) {
     $auth = EP_Auth_O365::get_instance();
     $oof_settings = $auth->get_mailbox_settings($target_user->ID);
     $activity_insights = $auth->get_activity_insights($target_user->ID);
+
+    // Aprovechamos la lectura para refrescar el estado que ve el Directorio:
+    // si el usuario activó su ausencia desde Outlook o Teams, aquí se recoge.
+    if (!is_wp_error($oof_settings) && is_array($oof_settings) && class_exists('EP_OOF_Sync')) {
+        EP_OOF_Sync::save_from_graph(
+            $target_user->ID,
+            $oof_settings['automaticRepliesSetting'] ?? array(),
+            'graph-self'
+        );
+    }
 }
 ?>
 

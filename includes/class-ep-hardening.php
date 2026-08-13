@@ -14,7 +14,7 @@ defined('ABSPATH') || exit;
 class EP_Hardening
 {
     /** Subir la versión reescribe el .htaccess de subidas. */
-    const RULES_VERSION = '1.1.1';
+    const RULES_VERSION = '1.2.0';
 
     /** Extensiones que nunca deben servirse sin sesión iniciada. */
     const PROTECTED_EXTS = 'pdf|docx?|xlsx?|pptx?|odt|ods|odp|csv|txt|rtf|zip|rar|7z|eml|msg';
@@ -96,6 +96,11 @@ class EP_Hardening
             '    # ep-expenses tiene su propio proxy, que además comprueba la propiedad',
             '    # del justificante: ahí no basta con tener la sesión iniciada.',
             '    RewriteCond %{REQUEST_URI} !/ep-expenses/ [NC]',
+            '    # ep-blueprints son los paquetes de despliegue: contienen el código',
+            '    # completo del portal y solo puede descargarlos un administrador,',
+            '    # vía admin-ajax. Sin esta exclusión, la regla genérica de arriba los',
+            '    # serviría a cualquier empleado con la sesión iniciada.',
+            '    RewriteCond %{REQUEST_URI} !/ep-blueprints/ [NC]',
             '    RewriteRule ^(.+\.(' . $exts . '))$ ' . $guard . '?ep_serve_file=$1 [R=302,L,NC,QSA]',
             '</IfModule>',
             '',

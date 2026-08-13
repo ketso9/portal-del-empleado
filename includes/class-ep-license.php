@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * EP_License — Validación criptográfica de licencias del Portal del Empleado.
  *

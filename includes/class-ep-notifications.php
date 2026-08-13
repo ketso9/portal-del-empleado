@@ -100,12 +100,19 @@ class EP_Notifications
             return;
 
         // 1. Try Teams first if user has O365 and HAS ENABLED it
+        //
+        // El canal de Teams se contrata aparte (plan PRO MAX). Sin el, ni se
+        // intenta: se evita un WP_Error y una linea de log por cada aviso y por
+        // cada empleado. La notificacion ya esta guardada en el portal y el
+        // correo se envia igual, justo debajo.
+        $teams_channel = !function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled();
+
         $teams_enabled = get_user_meta($user_id, 'ep_notifications_teams', true);
         $ms_user_id = get_user_meta($user_id, 'ep_o365_user_id', true);
 
         ep_error_log("EP_Notifications: Checking Teams for user $user_id. Enabled: $teams_enabled, MS_ID: $ms_user_id");
 
-        if ($teams_enabled !== '0' && $ms_user_id && class_exists('EP_Auth_O365')) {
+        if ($teams_channel && $teams_enabled !== '0' && $ms_user_id && class_exists('EP_Auth_O365')) {
             ep_error_log("EP_Notifications: Attempting to send Teams message to $user_id...");
             $sent_teams = EP_Auth_O365::send_teams_message($user_id, $data['title'], $data['message'], $data['link']);
             if (!is_wp_error($sent_teams)) {

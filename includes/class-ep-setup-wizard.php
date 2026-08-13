@@ -280,14 +280,14 @@ class EP_Setup_Wizard
 
         update_option('blogname', sanitize_text_field($_POST['title']));
         update_option('ep_auth_remote_url', esc_url_raw($_POST['remote_url']));
-        update_option('ep_site_master_key', sanitize_text_field($_POST['master_key']));
+        ep_update_secret_option('ep_site_master_key', sanitize_text_field($_POST['master_key']));
 
         if (!empty($_POST['o365_client_id']))
             update_option('ep_o365_client_id', sanitize_text_field($_POST['o365_client_id']));
         if (!empty($_POST['o365_tenant_id']))
             update_option('ep_o365_tenant_id', sanitize_text_field($_POST['o365_tenant_id']));
         if (!empty($_POST['o365_client_secret']))
-            update_option('ep_o365_client_secret', sanitize_text_field($_POST['o365_client_secret']));
+            ep_update_secret_option('ep_o365_client_secret', sanitize_text_field($_POST['o365_client_secret']));
 
         // Forzar Permalinks a Post Name
         global $wp_rewrite;

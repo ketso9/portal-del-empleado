@@ -3,7 +3,7 @@
  * Plugin Name: Portal del Empleado
  * Plugin URI:  https://camaracacere.com
  * Description: Plugin completo para gestión de empleados, roles, autenticación O365, comunicaciones y tickets.
- * Version:           2.0.27
+ * Version:           2.1.0
  * Author:      Jorge Polo - Cámara de Comercio de Cáceres
  * Author URI:  https://camaracaceres.com
  * License:     GPL-2.0+
@@ -21,7 +21,7 @@ if (defined('EP_PORTAL_RUNNING')) {
 }
 define('EP_PORTAL_RUNNING', true);
 
-define('EMPLOYEE_PORTAL_VERSION', '2.0.28');
+define('EMPLOYEE_PORTAL_VERSION', '2.1.0');
 define('EMPLOYEE_PORTAL_PATH', trailingslashit(dirname(__FILE__)));
 define('EMPLOYEE_PORTAL_URL', trailingslashit(plugins_url('', __FILE__)));
 
@@ -65,10 +65,87 @@ if (($_SERVER['REQUEST_METHOD']??'UNK') === 'POST' && (get_option('ep_debug_log_
 /**
  * Helper para obtener opciones de forma segura (siempre devuelve string)
  */
+/**
+ * Opciones que guardan un secreto y nunca deben quedar en claro en la base de
+ * datos: si alguien se lleva un volcado, esto es lo que le daria acceso a
+ * Microsoft 365 en nombre de la Camara.
+ *
+ * Se cifran al guardar (ep_update_secret_option) y se descifran al leer, de
+ * forma transparente: quien las consulta con ep_get_option() no nota nada.
+ *
+ * @return string[]
+ */
+function ep_secret_options(): array
+{
+	return (array) apply_filters('ep_secret_options', [
+		'ep_o365_client_secret',
+		'ep_teams_bot_password',
+		'ep_site_master_key',
+	]);
+}
+
+/**
+ * Carga EP_Security bajo demanda.
+ *
+ * El archivo se incluye mas abajo en este mismo fichero, pero los ayudantes de
+ * arriba pueden usarse antes de esa linea. Sin esto, una lectura temprana
+ * devolveria el texto cifrado tal cual y el fallo seria dificil de rastrear.
+ */
+function ep_security_ready(): bool
+{
+	if (!class_exists('EP_Security')) {
+		$file = plugin_dir_path(__FILE__) . 'includes/class-ep-security.php';
+		if (file_exists($file)) {
+			require_once $file;
+		}
+	}
+
+	return class_exists('EP_Security');
+}
+
 function ep_get_option($option, $default = '')
 {
 	$val = get_option($option, $default);
-	return is_scalar($val) ? (string) $val : '';
+	$val = is_scalar($val) ? (string) $val : '';
+
+	// Descifrado transparente. Se limita a la lista de secretos para no
+	// intentar descifrar cualquier opcion que por casualidad parezca base64.
+	if ($val !== '' && in_array($option, ep_secret_options(), true) && ep_security_ready()) {
+		if (EP_Security::is_encrypted($val)) {
+			$plain = EP_Security::decrypt($val);
+			if (is_string($plain) && $plain !== '') {
+				return $plain;
+			}
+		}
+	}
+
+	return $val;
+}
+
+/**
+ * Guarda una opcion sensible cifrada con AES-256 (EP_Security).
+ *
+ * Si el cifrado no esta disponible se guarda en claro antes que perder el dato,
+ * pero se deja constancia en el log: un secreto sin cifrar es un problema que
+ * alguien tiene que ver.
+ */
+function ep_update_secret_option($option, $value)
+{
+	$value = (string) $value;
+
+	if ($value === '') {
+		return update_option($option, '');
+	}
+
+	if (ep_security_ready()) {
+		$cipher = EP_Security::encrypt($value);
+		if (is_string($cipher) && $cipher !== '') {
+			return update_option($option, $cipher);
+		}
+	}
+
+	ep_error_log("EP: no se pudo cifrar la opcion [$option]; se guarda en claro.", true);
+	return update_option($option, $value);
 }
 
 /**
@@ -222,6 +299,103 @@ function ep_rescue_admin_access()
 }
 
 /**
+ * Catálogo de módulos locales detectados en /plugins.
+ *
+ * AUTODESCUBRIMIENTO: no hay ninguna lista que mantener a mano. Cualquier
+ * carpeta `plugins/<app-id>/` que contenga un `<app-id>.php` se considera un
+ * módulo del portal y se carga sola. Para añadir una app nueva basta con
+ * copiar su carpeta; para retirarla, borrarla.
+ *
+ * El mismo criterio lo usan EP_Admin::get_all_available_apps(),
+ * EP_Admin::get_packages_definition() y EP_Deployer::create_blueprint_zip(),
+ * de modo que una app nueva aparece a la vez en el cargador, en los paquetes
+ * de suscripción y en el ZIP de despliegue.
+ *
+ * @return array<string,string>  [app_id => ruta relativa a plugins/]
+ */
+function ep_discover_local_modules(): array
+{
+	// Se cachea en memoria: se consulta desde el cargador y desde el panel de admin.
+	static $cache = null;
+	if ($cache !== null) {
+		return $cache;
+	}
+
+	$modules_dir = plugin_dir_path(__FILE__) . 'plugins/';
+	$modules     = [];
+
+	$dirs = glob($modules_dir . '*', GLOB_ONLYDIR);
+	if (!is_array($dirs)) {
+		$dirs = [];
+	}
+	sort($dirs);
+
+	foreach ($dirs as $dir) {
+		$app_id = basename($dir);
+
+		// Ignorar restos de trabajo (.git, copias, carpetas ocultas o temporales)
+		if ($app_id === '' || $app_id[0] === '.' || $app_id[0] === '_') {
+			continue;
+		}
+
+		// Punto de entrada canónico: plugins/mi-app/mi-app.php
+		$entry_point = $dir . '/' . $app_id . '.php';
+		if (!file_exists($entry_point)) {
+			ep_error_log("EP Loader: carpeta [plugins/$app_id] ignorada — falta $app_id.php");
+			continue;
+		}
+
+		$modules[$app_id] = $app_id . '/' . $app_id . '.php';
+	}
+
+	/**
+	 * Permite registrar módulos fuera de la convención o excluir alguno.
+	 *
+	 * @param array<string,string> $modules
+	 */
+	$cache = (array) apply_filters('ep_local_modules', $modules);
+
+	return $cache;
+}
+
+/**
+ * Módulos BASE: infraestructura del portal, no mini-apps contratables.
+ *
+ * No tienen icono en el escritorio ni se venden por plan, así que la licencia
+ * no decide sobre ellos: se cargan siempre. Hoy solo hay uno.
+ *
+ * - ep-gdpr: inyecta el banner de cookies y el bloqueo previo de scripts. Debe
+ *   estar activo en todos los portales por obligación legal, se contrate lo
+ *   que se contrate.
+ *
+ * Cualquier módulo CON interfaz va fuera de esta lista: el ZIP los instala
+ * todos y es el maestro, vía 'authorized_apps', quien decide cuáles se activan
+ * en cada cliente.
+ *
+ * @return string[]
+ */
+function ep_always_on_modules(): array
+{
+	return (array) apply_filters('ep_always_on_modules', ['ep-gdpr']);
+}
+
+/**
+ * ¿Tiene este portal contratado el canal de Microsoft Teams?
+ *
+ * El módulo plugins/ep-teams-bot solo lo carga el cargador cuando la licencia
+ * lo autoriza (plan PRO MAX), y ese archivo es el que define la constante. Así
+ * que preguntar por ella equivale a preguntar por la licencia, sin consultar
+ * de nuevo a EP_License en cada notificación.
+ *
+ * Cuando devuelve false, el portal sigue notificando por pantalla y por correo:
+ * lo único que se apaga es la salida hacia Teams y el asistente con IA del bot.
+ */
+function ep_teams_channel_enabled(): bool
+{
+	return (bool) apply_filters('ep_teams_channel_enabled', defined('EP_TEAMS_CHANNEL_LICENSED'));
+}
+
+/**
  * Loads local modules from the 'plugins' directory.
  *
  * Usa EP_License para determinar qué módulos están autorizados.
@@ -240,56 +414,31 @@ function ep_load_local_modules()
 	$authorized_apps = EP_License::get_authorized_apps();
 	$is_master       = ($authorized_apps === ['*']);
 
-	$modules = [
-		'ep-stats'     => 'ep-stats/ep-stats.php',
-		'ep-signature' => 'ep-signature/ep-signature.php',
-		'ep-tickets'   => 'ep-tickets/ep-tickets.php',
-		'ep-downloads' => 'ep-downloads/ep-downloads.php',
-		'ep-directory' => 'ep-directory/ep-directory.php',
-		'ep-inventory' => 'ep-inventory/ep-inventory.php',
-		'ep-avisos'    => 'ep-avisos/ep-avisos.php',
-		'ep-calendar'  => 'ep-calendar/ep-calendar.php',
-		'ep-censo'     => 'ep-censo/ep-censo.php',
-		'ep-gdpr'      => 'ep-gdpr/ep-gdpr.php',
-		'ep-buzon'     => 'ep-buzon/ep-buzon.php',
-		'ep-contratos' => 'ep-contratos/ep-contratos.php',
-		'ep-links'     => 'ep-links/ep-links.php',
-		'ep-empresas'  => 'ep-empresas/ep-empresas.php',
-		'ep-expenses'  => 'ep-expenses/ep-expenses.php',
-	];
+	$modules   = ep_discover_local_modules();
+	$always_on = ep_always_on_modules();
+
+	// Los módulos base NO se escriben en 'ep_authorized_apps': esa lista es
+	// territorio del maestro y el cliente no debe alterarla por su cuenta. Se
+	// cargan porque están en ep_always_on_modules(), no porque estén licenciados.
 
 	foreach ($modules as $app_id => $file_path) {
-		// ep-gdpr y ep-expenses siempre se cargan, sin comprobar autorización
-		if ($app_id === 'ep-gdpr' || $app_id === 'ep-expenses') {
-			$module_file = $modules_dir . $file_path;
+		$module_file = $modules_dir . $file_path;
+
+		// Módulos base (infraestructura) y maestro: cargar sin mirar la licencia
+		if (in_array($app_id, $always_on, true) || $is_master) {
 			if (file_exists($module_file)) {
 				require_once $module_file;
 			}
 			continue;
 		}
 
-		// Maestro carga todo
-		if ($is_master) {
-			$module_file = $modules_dir . $file_path;
-			if (file_exists($module_file)) {
-				require_once $module_file;
-			}
-			continue;
-		}
-
-		// Cliente: verificar autorización (auto-autorizando ep-expenses por defecto)
-		if (!empty($authorized_apps) && is_array($authorized_apps) && $authorized_apps !== ['*']) {
-			if (!in_array('ep-expenses', $authorized_apps, true)) {
-				$authorized_apps[] = 'ep-expenses';
-				update_option('ep_authorized_apps', $authorized_apps);
-			}
-		}
-
+		// Cliente: sólo lo que la licencia autorice. Una lista vacía significa
+		// "sin licencia sincronizada todavía" y mantiene el comportamiento
+		// histórico de cargarlo todo.
 		if (!empty($authorized_apps) && !in_array($app_id, $authorized_apps, true)) {
 			continue;
 		}
 
-		$module_file = $modules_dir . $file_path;
 		if (file_exists($module_file)) {
 			require_once $module_file;
 		}

@@ -415,6 +415,55 @@ class EP_Graph_Service {
     /**
      * Update Graph profile info.
      */
+    /**
+     * Actualiza el perfil de OTRO usuario en Azure AD con el token de
+     * aplicación. Requiere el permiso de aplicación User.ReadWrite.All con
+     * consentimiento de administrador; sin él Graph responde 403 y se devuelve
+     * el motivo para poder avisar en pantalla.
+     *
+     * @return true|WP_Error
+     */
+    public function update_user_profile_as_app($ms_user_id, $data) {
+        if (empty($ms_user_id) || empty($data)) {
+            return new WP_Error('bad_request', 'Faltan datos para actualizar el perfil.');
+        }
+
+        $token = $this->get_app_token();
+        if (is_wp_error($token)) {
+            return $token;
+        }
+
+        $url = 'https://graph.microsoft.com/v1.0/users/' . rawurlencode($ms_user_id);
+        $response = wp_remote_request($url, [
+            'method'  => 'PATCH',
+            'headers' => [
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json'
+            ],
+            'body'    => wp_json_encode($data),
+            'timeout' => 30
+        ]);
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code >= 200 && $code < 300) {
+            return true;
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        $msg  = $body['error']['message'] ?? 'Error desconocido de Graph.';
+
+        if ($code === 403 || $code === 401) {
+            $msg = 'Azure AD rechazó la escritura (falta el permiso de aplicación User.ReadWrite.All).';
+        }
+
+        ep_error_log("EP_Graph update_user_profile_as_app HTTP $code: " . wp_remote_retrieve_body($response));
+        return new WP_Error('graph_error', $msg);
+    }
+
     public function update_graph_profile($access_token, $data) {
         $url = 'https://graph.microsoft.com/v1.0/me';
         

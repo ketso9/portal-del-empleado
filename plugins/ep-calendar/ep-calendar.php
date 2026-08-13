@@ -17,8 +17,6 @@ define('EP_CALENDAR_URL', plugin_dir_url(__FILE__));
 // Load Classes
 require_once EP_CALENDAR_PATH . 'class-ep-calendar.php';
 
-// Register App
-add_action('ep_register_apps', function ($manager) {
-    $calendar_app = new EP_App_Calendar();
-    $manager->register_app($calendar_app);
-});
+// El registro en EP_App_Manager lo hace class-ep-calendar.php (con guarda
+// class_exists). Registrarlo también aquí instanciaba la app dos veces en cada
+// petición sin aportar nada, porque el gestor indexa por id.

@@ -13,8 +13,10 @@ class EP_Activator
         self::create_subscribers_table();
         self::create_portal_page();
 
+        // Latido horario: refresca plan y apps autorizadas y mantiene vivo el
+        // estado del cliente en el panel de Suscriptores del maestro.
         if (!wp_next_scheduled('ep_daily_license_sync')) {
-            wp_schedule_event(time(), 'daily', 'ep_daily_license_sync');
+            wp_schedule_event(time() + 300, 'hourly', 'ep_daily_license_sync');
         }
 
         flush_rewrite_rules();
@@ -54,13 +56,16 @@ class EP_Activator
             id bigint(20) NOT NULL AUTO_INCREMENT,
             site_url varchar(255) NOT NULL,
             master_key varchar(255) NOT NULL,
+            master_key_hash varchar(64) DEFAULT '' NOT NULL,
+            master_key_hint varchar(32) DEFAULT '' NOT NULL,
             status varchar(20) DEFAULT 'active' NOT NULL,
-            package varchar(50) DEFAULT 'basic' NOT NULL,
+            package varchar(50) DEFAULT 'pro' NOT NULL,
             authorized_apps text DEFAULT NULL,
             wp_version varchar(10) DEFAULT NULL,
             ep_version varchar(10) DEFAULT NULL,
             php_version varchar(10) DEFAULT NULL,
             last_seen datetime DEFAULT NULL,
+            last_download datetime DEFAULT NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
             PRIMARY KEY  (id),
             KEY site_url (site_url)

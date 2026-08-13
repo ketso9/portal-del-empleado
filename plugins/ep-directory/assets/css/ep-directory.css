@@ -576,3 +576,269 @@
     background: rgba(255, 255, 255, 0.08);
     color: #aaa;
 }
+
+/* ==========================================================================
+   Editor de ficha (administradores y RR.HH.)
+   ========================================================================== */
+
+.ep-edit-profile-btn {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+}
+
+.ep-edit-profile-btn:hover {
+    background: #0078d4;
+    border-color: #0078d4;
+    color: #ffffff;
+}
+
+.ep-edit-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 99999;
+}
+
+.ep-edit-modal-overlay[hidden] {
+    display: none;
+}
+
+.ep-edit-modal {
+    background: #ffffff;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 22px 24px 20px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.ep-edit-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.ep-edit-modal-head h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.ep-edit-modal-head h2 i {
+    color: #0078d4;
+    margin-right: 6px;
+}
+
+.ep-edit-modal-close {
+    background: none;
+    border: none;
+    font-size: 26px;
+    line-height: 1;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.ep-edit-modal-close:hover {
+    color: #0f172a;
+}
+
+.ep-edit-modal-subject {
+    margin: 0 0 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0078d4;
+}
+
+.ep-edit-field {
+    margin-bottom: 14px;
+    flex: 1;
+}
+
+.ep-edit-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+    margin-bottom: 5px;
+}
+
+.ep-edit-field input {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #dbe2ea;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #1e293b;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+.ep-edit-field input:focus {
+    outline: none;
+    border-color: #0078d4;
+    box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.12);
+}
+
+.ep-edit-field small {
+    display: block;
+    margin-top: 5px;
+    font-size: 11px;
+    color: #64748b;
+}
+
+.ep-edit-row {
+    display: flex;
+    gap: 12px;
+}
+
+.ep-edit-notice {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    color: #5b21b6;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    margin-bottom: 14px;
+}
+
+.ep-edit-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #6d28d9;
+    font-weight: 700;
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.ep-edit-result {
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    margin-bottom: 14px;
+    line-height: 1.45;
+}
+
+.ep-edit-result.is-ok {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #065f46;
+}
+
+.ep-edit-result.is-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #991b1b;
+}
+
+.ep-edit-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.ep-edit-btn-primary,
+.ep-edit-btn-secondary {
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.ep-edit-btn-primary {
+    background: #0078d4;
+    color: #ffffff;
+}
+
+.ep-edit-btn-primary:hover {
+    background: #005fa8;
+}
+
+.ep-edit-btn-primary:disabled {
+    opacity: 0.65;
+    cursor: default;
+}
+
+.ep-edit-btn-secondary {
+    background: #f1f5f9;
+    color: #475569;
+    border-color: #e2e8f0;
+}
+
+.ep-edit-btn-secondary:hover {
+    background: #e2e8f0;
+}
+
+@media (max-width: 480px) {
+    .ep-edit-row {
+        flex-direction: column;
+        gap: 0;
+    }
+}
+
+/* Modo oscuro */
+#ep-app-root.dark-mode .ep-edit-modal {
+    background: #1f2430;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+#ep-app-root.dark-mode .ep-edit-modal-head h2 {
+    color: #f1f5f9;
+}
+
+#ep-app-root.dark-mode .ep-edit-field label {
+    color: #cbd5e1;
+}
+
+#ep-app-root.dark-mode .ep-edit-field input {
+    background: #2a3040;
+    border-color: #3a4356;
+    color: #f1f5f9;
+}
+
+#ep-app-root.dark-mode .ep-edit-field small,
+#ep-app-root.dark-mode .ep-edit-modal-close {
+    color: #94a3b8;
+}
+
+#ep-app-root.dark-mode .ep-edit-btn-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #e2e8f0;
+}
+
+#ep-app-root.dark-mode .ep-edit-notice {
+    background: rgba(139, 92, 246, 0.16);
+    color: #ddd6fe;
+}
+
+#ep-app-root.dark-mode .ep-edit-link {
+    color: #c4b5fd;
+}
+
+#ep-app-root.dark-mode .ep-edit-profile-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #e2e8f0;
+}

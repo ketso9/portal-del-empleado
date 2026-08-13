@@ -22,6 +22,12 @@ $notifications_teams = get_user_meta($current_user->ID, 'ep_notifications_teams'
 if ($notifications_teams === '')
     $notifications_teams = 1;
 
+// El canal de Teams es un modulo contratable (plan PRO MAX). Si este portal no
+// lo tiene, no se ensena el interruptor: seria un ajuste que no hace nada y el
+// empleado creeria que sus avisos de Teams no funcionan. Los avisos siguen
+// llegando a la campana del portal y al correo.
+$teams_channel = !function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled();
+
 // Global signature template data
 $sig_template = get_option('ep_global_signature_template', array());
 $logo_main = isset($sig_template['logo_main']) ? $sig_template['logo_main'] : plugin_dir_url(dirname(__FILE__, 2)) . 'public/images/logo-placeholder.png';
@@ -80,21 +86,23 @@ if ($is_admin) {
                 <h3><i class="fa-solid fa-bell"></i> Notificaciones</h3>
                 <p class="description">Controla cómo quieres recibir los avisos del portal.</p>
                 <form id="ep-user-settings-form" class="ep-form">
-                    <div class="form-group">
-                        <label class="switch-label">
-                            <span style="display: flex; flex-direction: column;">
-                                <span>Recibir por Microsoft Teams</span>
-                                <small style="color: #666; font-weight: normal; font-size: 0.8em;">Canal prioritario del portal</small>
-                            </span>
-                            <input type="checkbox" name="notifications_teams" <?php checked($notifications_teams, 1); ?>>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
+                    <?php if ($teams_channel): ?>
+                        <div class="form-group">
+                            <label class="switch-label">
+                                <span style="display: flex; flex-direction: column;">
+                                    <span>Recibir por Microsoft Teams</span>
+                                    <small style="color: #666; font-weight: normal; font-size: 0.8em;">Canal prioritario del portal</small>
+                                </span>
+                                <input type="checkbox" name="notifications_teams" <?php checked($notifications_teams, 1); ?>>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    <?php endif; ?>
                     <div class="form-group">
                         <label class="switch-label">
                             <span style="display: flex; flex-direction: column;">
                                 <span>Recibir por Email</span>
-                                <small style="color: #666; font-weight: normal; font-size: 0.8em;">Solo para documentos críticos y firmas</small>
+                                <small style="color: #666; font-weight: normal; font-size: 0.8em;"><?php echo $teams_channel ? 'Copia de los avisos en tu correo' : 'Aviso en tu correo cada vez que recibas una notificación'; ?></small>
                             </span>
                             <input type="checkbox" name="notifications_email" <?php checked($notifications_email, 1); ?>>
                             <span class="slider"></span>

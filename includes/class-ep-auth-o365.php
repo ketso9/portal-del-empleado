@@ -386,6 +386,10 @@ class EP_Auth_O365
         $last_local_update = (int) get_user_meta($wp_user_id, 'ep_profile_local_updated_at', true);
         $is_recent_local = (time() - $last_local_update < 600);
 
+        // Campos fijados a mano desde el portal: la sincronización entrante no
+        // los toca, o el valor editado duraría hasta el siguiente sync.
+        $overrides = self::get_profile_overrides($wp_user_id);
+
         if (!$is_recent_local) {
             if (!empty($o365_data['givenName'])) {
                 $this->smart_update_meta($wp_user_id, 'first_name', $o365_data['givenName']);
@@ -395,21 +399,21 @@ class EP_Auth_O365
             }
 
             // Only overwrite if O365 has data, otherwise keep local changes
-            if (!empty($o365_data['jobTitle'])) {
+            if (!empty($o365_data['jobTitle']) && !isset($overrides['ep_job_title'])) {
                 $this->smart_update_meta($wp_user_id, 'ep_job_title', $o365_data['jobTitle']);
             }
-            if (!empty($o365_data['mobilePhone'])) {
+            if (!empty($o365_data['mobilePhone']) && !isset($overrides['ep_mobile_phone'])) {
                 $this->smart_update_meta($wp_user_id, 'ep_mobile_phone', $o365_data['mobilePhone']);
             }
-            if (!empty($o365_data['officeLocation'])) {
+            if (!empty($o365_data['officeLocation']) && !isset($overrides['ep_office_location'])) {
                 $this->smart_update_meta($wp_user_id, 'ep_office_location', $o365_data['officeLocation']);
             }
-            if (!empty($o365_data['department'])) {
+            if (!empty($o365_data['department']) && !isset($overrides['ep_department'])) {
                 $this->smart_update_meta($wp_user_id, 'ep_department', $o365_data['department']);
             }
 
             $business_phones = $o365_data['businessPhones'] ?? array();
-            if (!empty($business_phones)) {
+            if (!empty($business_phones) && !isset($overrides['ep_business_phone'])) {
                 $this->smart_update_meta($wp_user_id, 'ep_business_phone', $business_phones[0]);
             }
 
@@ -464,9 +468,16 @@ class EP_Auth_O365
         $current_user_id = get_current_user_id();
         $target_user_id = isset($_POST['user_id']) ? intval($_POST['user_id']) : $current_user_id;
 
-        // Verify permissions
-        if ($target_user_id !== $current_user_id && !current_user_can('manage_options')) {
-            wp_send_json_error('No tienes permisos para editar este perfil.');
+        // Verify permissions: uno mismo siempre; ajeno sólo administradores y
+        // RR.HH. (mismo criterio que el botón de editar del Directorio).
+        if ($target_user_id !== $current_user_id) {
+            $can_edit_others = class_exists('EP_App_Directory')
+                ? EP_App_Directory::can_edit_profiles()
+                : current_user_can('manage_options');
+
+            if (!$can_edit_others) {
+                wp_send_json_error('No tienes permisos para editar este perfil.');
+            }
         }
 
         // Sanitize inputs
@@ -487,39 +498,58 @@ class EP_Auth_O365
         update_user_meta($target_user_id, 'ep_profile_local_updated_at', time());
 
         // Attempt to update Office 365
-        $access_token = self::get_valid_token($target_user_id);
         $graph_synced = false;
         $graph_error = '';
 
-        if ($access_token && !is_wp_error($access_token)) {
-            $update_data = array();
-            if (!empty($phone))
-                $update_data['mobilePhone'] = $phone;
-            if (!empty($extension))
-                $update_data['officeLocation'] = $extension;
-            if (!empty($job_title))
-                $update_data['jobTitle'] = $job_title;
-            if (!empty($department))
-                $update_data['department'] = $department;
-            if (!empty($office_phone))
-                $update_data['businessPhones'] = [$office_phone];
+        $update_data = array();
+        if (!empty($phone))
+            $update_data['mobilePhone'] = $phone;
+        if (!empty($extension))
+            $update_data['officeLocation'] = $extension;
+        if (!empty($job_title))
+            $update_data['jobTitle'] = $job_title;
+        if (!empty($department))
+            $update_data['department'] = $department;
+        if (!empty($office_phone))
+            $update_data['businessPhones'] = [$office_phone];
 
-            if (!empty($update_data)) {
-                $result = EP_Graph_Service::get_instance()->update_graph_profile($access_token, $update_data);
-
-                if (is_wp_error($result)) {
-                    $graph_error = $result->get_error_message();
-                    ep_error_log('O365 Update Error: ' . $graph_error);
-                } elseif ($result === true) {
-                    $graph_synced = true;
-                } else {
-                    $graph_error = 'O365 rechazó la actualización (Ver logs).';
-                }
-            } else {
-                $graph_synced = true; // Nothing to sync
-            }
+        if (empty($update_data)) {
+            $graph_synced = true; // Nothing to sync
         } else {
-            $graph_error = is_wp_error($access_token) ? $access_token->get_error_message() : 'Usuario sin token de O365 vinculado.';
+            $graph = EP_Graph_Service::get_instance();
+            $ms_id = get_user_meta($target_user_id, 'ep_o365_user_id', true);
+            $result = null;
+
+            // Se escribe con el token de aplicación: Microsoft no deja que un
+            // usuario cambie su propio puesto o departamento con su token
+            // delegado, así que esa vía sólo vale de reserva.
+            if (!empty($ms_id)) {
+                $result = $graph->update_user_profile_as_app($ms_id, $update_data);
+            }
+
+            if ($result !== true) {
+                $access_token = self::get_valid_token($target_user_id);
+                if ($access_token && !is_wp_error($access_token)) {
+                    $fallback = $graph->update_graph_profile($access_token, $update_data);
+                    if ($fallback === true) {
+                        $result = true;
+                    }
+                }
+            }
+
+            if ($result === true) {
+                $graph_synced = true;
+            } else {
+                $graph_error = is_wp_error($result) ? $result->get_error_message() : 'Microsoft 365 rechazó la actualización (ver logs).';
+                ep_error_log('O365 Update Error: ' . $graph_error);
+            }
+        }
+
+        // Igual que en el Directorio: si M365 aceptó el cambio no hace falta
+        // fijar nada (la sincronización devolverá el mismo valor); si lo
+        // rechazó, se fija para que el sync no revierta lo editado.
+        foreach (self::editable_profile_fields() as $meta_key => $graph_field) {
+            self::set_profile_override($target_user_id, $meta_key, !$graph_synced);
         }
 
         // Send portal notification
@@ -770,8 +800,20 @@ class EP_Auth_O365
                 $tz_string = 'Europe/Madrid';
             }
 
-            $start_ts = strtotime("{$start_date} {$start_time}");
-            $end_ts   = strtotime("{$end_date} {$end_time}");
+            // Las horas que teclea el usuario son horas del sitio: hay que
+            // interpretarlas en la zona del sitio, no en la del servidor PHP,
+            // o el Directorio mostraría la ausencia desplazada.
+            $site_tz  = new DateTimeZone($tz_string);
+            $start_ts = false;
+            $end_ts   = false;
+
+            try {
+                $start_ts = (new DateTime("{$start_date} {$start_time}", $site_tz))->getTimestamp();
+                $end_ts   = (new DateTime("{$end_date} {$end_time}", $site_tz))->getTimestamp();
+            } catch (Exception $e) {
+                $start_ts = false;
+                $end_ts   = false;
+            }
 
             if ($start_ts === false) $start_ts = time();
             if ($end_ts === false || $end_ts <= $start_ts) $end_ts = $start_ts + (7 * 86400);
@@ -796,22 +838,86 @@ class EP_Auth_O365
         }
 
         // Save local OOF meta for directory & presence widgets
-        update_user_meta($current_user_id, 'ep_oof_info', array(
-            'status'     => $status,
-            'message'    => sanitize_textarea_field($internal_text),
-            'start_ts'   => isset($start_ts) ? $start_ts : 0,
-            'end_ts'     => isset($end_ts) ? $end_ts : 0,
-            'updated_at' => time()
-        ));
+        EP_OOF_Sync::save_from_portal(
+            $current_user_id,
+            $status,
+            $internal_text,
+            isset($start_ts) ? $start_ts : 0,
+            isset($end_ts) ? $end_ts : 0,
+            $final_external_audience,
+            $external_text
+        );
 
         wp_send_json_success('Configuración de Fuera de la oficina sincronizada correctamente con Microsoft 365.');
     }
 
+    // --- CAMPOS DE PERFIL FIJADOS DESDE EL PORTAL ---
+    //
+    // Microsoft 365 es la fuente de verdad del perfil y sync_user_profile()
+    // sobrescribe los metas en cada sincronización. Cuando alguien corrige un
+    // dato desde el Directorio se anota aquí para que el sync lo respete; si no,
+    // la edición duraría hasta el siguiente ciclo.
+
+    const OVERRIDES_META = 'ep_profile_overrides';
+
+    /** Campos del perfil que se pueden fijar. */
+    public static function editable_profile_fields()
+    {
+        return array(
+            'ep_job_title'       => 'jobTitle',
+            'ep_department'      => 'department',
+            'ep_business_phone'  => 'businessPhones',
+            'ep_mobile_phone'    => 'mobilePhone',
+            'ep_office_location' => 'officeLocation'
+        );
+    }
+
+    /** @return array meta_key => timestamp en que se fijó */
+    public static function get_profile_overrides($user_id)
+    {
+        $data = get_user_meta($user_id, self::OVERRIDES_META, true);
+        return is_array($data) ? $data : array();
+    }
+
+    /** Marca un campo como fijado a mano (o lo libera si $pinned es false). */
+    public static function set_profile_override($user_id, $meta_key, $pinned = true)
+    {
+        $overrides = self::get_profile_overrides($user_id);
+
+        if ($pinned) {
+            $overrides[$meta_key] = time();
+        } else {
+            unset($overrides[$meta_key]);
+        }
+
+        if (empty($overrides)) {
+            delete_user_meta($user_id, self::OVERRIDES_META);
+        } else {
+            update_user_meta($user_id, self::OVERRIDES_META, $overrides);
+        }
+
+        return $overrides;
+    }
+
+    /** Libera todos los campos: el perfil vuelve a mandar desde M365. */
+    public static function clear_profile_overrides($user_id)
+    {
+        delete_user_meta($user_id, self::OVERRIDES_META);
+    }
+
     /**
-     * Helper to check if a user is currently Out of Office according to local meta.
+     * Helper to check if a user is currently Out of Office.
+     *
+     * El estado vive en el meta 'ep_oof_info', que ahora alimentan las dos
+     * direcciones: el propio portal y la sincronización desde Outlook/Teams
+     * (EP_OOF_Sync). Se delega para no duplicar la lógica de vigencia.
      */
     public static function get_user_oof_data($user_id)
     {
+        if (class_exists('EP_OOF_Sync')) {
+            return EP_OOF_Sync::get_user_oof_data($user_id);
+        }
+
         $meta = get_user_meta($user_id, 'ep_oof_info', true);
         if (!is_array($meta) || empty($meta['status']) || $meta['status'] === 'disabled') {
             return array('is_oof' => false, 'message' => '');
@@ -1027,6 +1133,13 @@ class EP_Auth_O365
     {
         // Redirigimos la llamada al nuevo sistema de Bot Framework para que los mensajes
         // lleguen a nombre de la app (Bot) y no a nombre del administrador.
+        if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {
+            return new WP_Error(
+                'teams_channel_not_licensed',
+                'Este portal no tiene contratado el canal de Microsoft Teams (plan PRO MAX). El aviso se entrega por el portal y por correo.'
+            );
+        }
+
         $result = EP_Teams_Bot::send_proactive_message($user_id, $title, $message, $link);
 
         if (!$result) {

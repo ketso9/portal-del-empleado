@@ -2,7 +2,7 @@
 /**
  * Module Name: Employee Portal - Censo IAE
  * Description: Módulo para la gestión del Censo IAE
- * Package: enterprise
+ * Package: pro_max
  */
 
 if (!defined('ABSPATH')) {

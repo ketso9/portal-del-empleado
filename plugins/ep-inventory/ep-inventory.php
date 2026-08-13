@@ -3,7 +3,7 @@
 /**
  * Module Name: Inventory Mini App
  * Description: Gestión de inventario de hardware y software y asignación a usuarios.
- * Package: enterprise
+ * Package: pro_plus
  */
 
 defined('ABSPATH') || exit;

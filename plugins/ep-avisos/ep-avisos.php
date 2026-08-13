@@ -7,7 +7,7 @@ defined('ABSPATH') || exit;
  * Description: Sistema de Avisos Generales para el Portal del Empleado.
  * Version: 1.0.0
  * Author: Jorge Polo
- * Package: basic
+ * Package: pro
  */
 
 if (!defined('ABSPATH')) {

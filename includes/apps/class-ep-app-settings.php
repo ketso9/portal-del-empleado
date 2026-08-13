@@ -58,11 +58,18 @@ class EP_App_Settings implements EP_App_Interface
 
             $notifications_email = isset($form_data['notifications_email']) ? 1 : 0;
             $notifications_app = isset($form_data['notifications_app']) ? 1 : 0;
-            $notifications_teams = isset($form_data['notifications_teams']) ? 1 : 0;
 
             update_user_meta($user_id, 'ep_notifications_email', $notifications_email);
             update_user_meta($user_id, 'ep_notifications_app', $notifications_app);
-            update_user_meta($user_id, 'ep_notifications_teams', $notifications_teams);
+
+            // La preferencia de Teams solo se toca si el portal tiene el canal
+            // contratado; si no, el interruptor ni siquiera se pinta y guardar
+            // el formulario la pondria a 0 para todo el mundo. El dia que la
+            // Camara subiera a PRO MAX, nadie recibiria nada en Teams y nadie
+            // sabria por que.
+            if (!function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled()) {
+                update_user_meta($user_id, 'ep_notifications_teams', isset($form_data['notifications_teams']) ? 1 : 0);
+            }
 
             wp_send_json_success('Preferencias guardadas.');
         }

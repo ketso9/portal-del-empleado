@@ -2,7 +2,7 @@
 /**
  * Module Name: Control de Gastos y Dietas Mini App
  * Description: Gestión, justificación de dietas y tickets de compra por usuario con numeración secuencial global y declaración obligatoria de cierre.
- * Package: enterprise
+ * Package: pro_plus
  */
 
 defined('ABSPATH') || exit;

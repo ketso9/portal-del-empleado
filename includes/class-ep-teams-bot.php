@@ -45,6 +45,12 @@ class EP_Teams_Bot
 
     public static function send_proactive_message($user_id, $title, $message, $action_link = '')
     {
+        // Canal de Teams no contratado: el aviso ya se ha publicado en el portal
+        // y ha salido por correo, aqui solo se omite el envio a Teams.
+        if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {
+            return false;
+        }
+
         $tenant_id     = ep_get_option('ep_o365_tenant_id');
         $client_id     = ep_get_option('ep_o365_client_id');
         $client_secret = ep_get_option('ep_o365_client_secret');

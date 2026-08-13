@@ -24,8 +24,13 @@ class EP_Admin
         if (defined('EP_ALLOW_NUCLEAR_RESET') && EP_ALLOW_NUCLEAR_RESET === true
             && defined('WP_DEBUG') && WP_DEBUG === true) {
             add_action('wp_ajax_ep_run_nuclear_reset', array($this, 'ajax_run_nuclear_reset'));
-            add_action('wp_ajax_ep_export_blueprint', array($this, 'ajax_export_blueprint'));
         }
+
+        // Generar y descargar el Blueprint NO es destructivo: debe funcionar también
+        // en producción (antes quedaba inutilizado por el guard de arriba).
+        // El control de acceso lo hacen los propios handlers: nonce + manage_options.
+        add_action('wp_ajax_ep_export_blueprint', array($this, 'ajax_export_blueprint'));
+        add_action('wp_ajax_ep_download_blueprint', array($this, 'ajax_download_blueprint'));
         add_action('wp_ajax_ep_logout_all_users', array($this, 'ajax_logout_all_users'));
         add_action('wp_ajax_ep_diagnose_teams', array('EP_Teams_Bot', 'ajax_diagnose'));
         add_action('wp_ajax_ep_test_ai_connection', array($this, 'ajax_test_ai_connection'));
@@ -34,7 +39,11 @@ class EP_Admin
         add_action('wp_ajax_ep_test_o365_email', array($this, 'ajax_test_o365_email'));
         add_action('wp_ajax_ep_clear_bot_web_cache', array($this, 'ajax_clear_bot_web_cache'));
         add_action('wp_ajax_ep_get_system_health', array($this, 'ajax_get_system_health'));
-        // Autoaprendizaje
+        // Autoaprendizaje del bot: solo tiene sentido donde existe el bot (PRO MAX).
+        //
+        // El filtro NO puede ir aqui: esta clase se instancia antes de que se
+        // carguen los modulos, asi que la licencia todavia no se conoce y la
+        // comprobacion daria siempre negativa. Va dentro de cada manejador.
         add_action('wp_ajax_ep_bot_learning_approve', array($this, 'ajax_bot_learning_approve'));
         add_action('wp_ajax_ep_bot_learning_discard', array($this, 'ajax_bot_learning_discard'));
         add_action('ep_daily_learning_digest', array($this, 'send_learning_digest_email'));
@@ -79,19 +88,25 @@ class EP_Admin
      */
     public function admin_license_check()
     {
-        // 1. Autocuración del CRON
-        if (!wp_next_scheduled('ep_daily_license_sync')) {
-            $six_am = strtotime('06:00:00');
-            if ($six_am < time()) {
-                $six_am = strtotime('tomorrow 06:00:00');
-            }
-            wp_schedule_event($six_am, 'daily', 'ep_daily_license_sync');
+        // 1. Autocuración del CRON.
+        //    Frecuencia HORARIA: cada ejecución es un único GET al maestro que, además
+        //    de refrescar el plan y las apps, actúa como latido (last_seen). Así el
+        //    panel de Suscriptores refleja el estado real de cada cliente sin que
+        //    nadie tenga que entrar a pulsar "Validar y Sincronizar".
+        $scheduled = wp_next_scheduled('ep_daily_license_sync');
+        if (!$scheduled) {
+            wp_schedule_event(time() + 300, 'hourly', 'ep_daily_license_sync');
+        } elseif (wp_get_schedule('ep_daily_license_sync') !== 'hourly') {
+            // Migrar instalaciones antiguas que quedaron con periodicidad diaria
+            wp_clear_scheduled_hook('ep_daily_license_sync');
+            wp_schedule_event(time() + 300, 'hourly', 'ep_daily_license_sync');
+            ep_error_log('EP Licencia: cron migrado de diario a horario (latido de monitorización).');
         }
 
         // 2. Sincronización forzada si el transient expiró
         if (false === get_transient('ep_license_check_lock')) {
             $this->scheduled_license_sync();
-            set_transient('ep_license_check_lock', true, 12 * HOUR_IN_SECONDS);
+            set_transient('ep_license_check_lock', true, HOUR_IN_SECONDS);
         }
     }
 
@@ -100,25 +115,157 @@ class EP_Admin
      */
     public static function get_all_available_apps()
     {
+        $apps = [];
+
+        foreach (self::discover_apps() as $app_id => $main_file) {
+            // Los módulos base (RGPD, etc.) no son mini-apps contratables: van
+            // siempre incluidos, así que no deben aparecer como casilla de plan.
+            if (in_array($app_id, self::always_on_apps(), true)) {
+                continue;
+            }
+
+            $apps[$app_id] = self::get_app_label($app_id, $main_file);
+        }
+
+        asort($apps, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $apps;
+    }
+
+    /**
+     * Autodescubrimiento de apps: misma convención que el cargador del portal
+     * (plugins/<app-id>/<app-id>.php). Al copiar una carpeta nueva, la app aparece
+     * sola en los planes, en el alta de clientes y en el paquete de despliegue.
+     *
+     * @return array<string,string>  [app_id => ruta absoluta del archivo principal]
+     */
+    private static function discover_apps()
+    {
+        if (function_exists('ep_discover_local_modules')) {
+            $modules = ep_discover_local_modules();
+            $apps = [];
+            foreach ($modules as $app_id => $relative) {
+                $apps[$app_id] = EMPLOYEE_PORTAL_PATH . 'plugins/' . $relative;
+            }
+            return $apps;
+        }
+
+        // Reserva por si esta clase se carga fuera del arranque normal del plugin
         $apps_dir = EMPLOYEE_PORTAL_PATH . 'plugins/';
         $apps = [];
-        if (is_dir($apps_dir)) {
-            $dirs = array_filter(glob($apps_dir . '*'), 'is_dir');
-            foreach ($dirs as $dir) {
-                $app_id = basename($dir);
-                // Generate a human-readable name from the directory name
-                // e.g. 'ep-avisos' => 'Avisos', 'ep-downloads' => 'Downloads'
-                $name = str_replace('ep-', '', $app_id);
-                $name = ucfirst($name);
-                $apps[$app_id] = $name;
+        $dirs = is_dir($apps_dir) ? glob($apps_dir . '*', GLOB_ONLYDIR) : [];
+        foreach ((array) $dirs as $dir) {
+            $app_id = basename($dir);
+            $main = "$dir/$app_id.php";
+            if (file_exists($main)) {
+                $apps[$app_id] = $main;
             }
         }
         return $apps;
     }
 
     /**
+     * Módulos incluidos siempre, al margen del plan contratado.
+     */
+    private static function always_on_apps()
+    {
+        return function_exists('ep_always_on_modules') ? ep_always_on_modules() : ['ep-gdpr'];
+    }
+
+    /**
+     * Nombre legible de una app: usa la cabecera 'Module Name' del archivo
+     * principal y, si no existe, deriva uno del identificador.
+     */
+    private static function get_app_label($app_id, $main_file)
+    {
+        if (!function_exists('get_file_data')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        if ($main_file && file_exists($main_file)) {
+            // Los módulos usan 'Module Name'; los que nacieron como plugin suelto
+            // (ep-gdpr) traen 'Plugin Name'. Se acepta cualquiera de los dos.
+            $headers = get_file_data($main_file, [
+                'Module Name' => 'Module Name',
+                'Plugin Name' => 'Plugin Name',
+            ]);
+
+            $name = !empty($headers['Module Name']) ? $headers['Module Name'] : ($headers['Plugin Name'] ?? '');
+
+            if (!empty($name)) {
+                // Se limpian los prefijos y sufijos de catálogo para que la tabla
+                // se lea de un vistazo:
+                //   "EP Mini App: Agenda"                        -> "Agenda"
+                //   "Control de Gastos y Dietas Mini App"        -> "Control de Gastos y Dietas"
+                //   "Employee Portal - GDPR & Cookie Management" -> "GDPR & Cookie Management"
+                $name = preg_replace('/^(EP\s*)?Mini\s*App\s*:\s*/i', '', $name);
+                $name = preg_replace('/^Employee Portal\s*[-–:]\s*/i', '', $name);
+                $name = preg_replace('/\s*Mini\s*App\s*$/i', '', $name);
+
+                return trim($name);
+            }
+        }
+
+        return ucfirst(str_replace(['ep-', '-'], ['', ' '], $app_id));
+    }
+
+    /**
+     * Planes comerciales, de menor a mayor. Cada uno incluye los anteriores.
+     *
+     * Las claves son las que viajan a la base de datos, a la licencia y a la API;
+     * las etiquetas son las que se enseñan al cliente en la tarifa.
+     */
+    const PACKAGE_LABELS = [
+        'pro'      => 'PRO',
+        'pro_plus' => 'PRO+',
+        'pro_max'  => 'PRO MAX',
+    ];
+
+    /**
+     * Equivalencias de los nombres antiguos (basic|pro|enterprise) y de las
+     * cabeceras 'Package' que aún no se hayan actualizado.
+     */
+    const PACKAGE_ALIASES = [
+        'basic'      => 'pro',
+        'profesional' => 'pro',
+        'pro'        => 'pro',
+        'pro+'       => 'pro_plus',
+        'proplus'    => 'pro_plus',
+        'pro_plus'   => 'pro_plus',
+        'enterprise' => 'pro_max',
+        'promax'     => 'pro_max',
+        'pro_max'    => 'pro_max',
+    ];
+
+    /**
+     * Devuelve una clave de plan válida a partir de cualquier variante conocida.
+     *
+     * Ante un valor irreconocible se devuelve $fallback. Quien clasifica módulos
+     * debe pasar 'pro_max': una errata en una cabecera no puede acabar regalando
+     * un módulo de pago en el plan base.
+     */
+    public static function normalize_package($package, $fallback = 'pro')
+    {
+        $key = strtolower(trim((string) $package));
+        $key = str_replace([' ', '-'], ['', '_'], $key);
+
+        if (isset(self::PACKAGE_ALIASES[$key])) {
+            return self::PACKAGE_ALIASES[$key];
+        }
+
+        return isset(self::PACKAGE_LABELS[$fallback]) ? $fallback : 'pro';
+    }
+
+    /** Nombre comercial del plan, para la interfaz. */
+    public static function get_package_label($package)
+    {
+        $key = self::normalize_package($package);
+        return self::PACKAGE_LABELS[$key];
+    }
+
+    /**
      * Definición dinámica de paquetes basada en cabeceras de archivo.
-     * Lee la cabecera 'Package' (basic|pro|enterprise) de cada mini-app.
+     * Lee la cabecera 'Package' (pro|pro_plus|pro_max) de cada mini-app.
      */
     public static function get_packages_definition()
     {
@@ -126,42 +273,36 @@ class EP_Admin
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
 
-        $apps_dir = EMPLOYEE_PORTAL_PATH . 'plugins/';
         $packages = [
-            'basic' => [],
             'pro' => [],
-            'enterprise' => []
+            'pro_plus' => [],
+            'pro_max' => []
         ];
 
-        if (is_dir($apps_dir)) {
-            $dirs = array_filter(glob($apps_dir . '*'), 'is_dir');
-            foreach ($dirs as $dir) {
-                $app_id = basename($dir);
-                $main_file = "$dir/$app_id.php";
+        $always_on = self::always_on_apps();
 
-                if (!file_exists($main_file)) {
-                    $php_files = glob($dir . '/*.php');
-                    if (!empty($php_files))
-                        $main_file = $php_files[0];
-                }
-
-                $pkg = 'enterprise'; // Por defecto si no tiene cabecera
-                if (file_exists($main_file)) {
-                    $headers = get_file_data($main_file, ['Package' => 'Package']);
-                    if (!empty($headers['Package'])) {
-                        $pkg = strtolower(trim($headers['Package']));
-                    }
-                }
-
-                if ($pkg === 'basic') {
-                    $packages['basic'][] = $app_id;
-                }
-                if ($pkg === 'basic' || $pkg === 'pro') {
-                    $packages['pro'][] = $app_id;
-                }
-                // El paquete Enterprise siempre incluye todo lo detectado
-                $packages['enterprise'][] = $app_id;
+        foreach (self::discover_apps() as $app_id => $main_file) {
+            // Los módulos base no se venden por plan: van en todos.
+            if (in_array($app_id, $always_on, true)) {
+                continue;
             }
+
+            $pkg = 'pro_max'; // Por defecto si no tiene cabecera
+            if (file_exists($main_file)) {
+                $headers = get_file_data($main_file, ['Package' => 'Package']);
+                if (!empty($headers['Package'])) {
+                    $pkg = self::normalize_package($headers['Package'], 'pro_max');
+                }
+            }
+
+            if ($pkg === 'pro') {
+                $packages['pro'][] = $app_id;
+            }
+            if ($pkg === 'pro' || $pkg === 'pro_plus') {
+                $packages['pro_plus'][] = $app_id;
+            }
+            // El plan PRO MAX siempre incluye todo lo detectado
+            $packages['pro_max'][] = $app_id;
         }
 
         return $packages;
@@ -170,7 +311,192 @@ class EP_Admin
     public static function get_package_apps($package)
     {
         $packages = self::get_packages_definition();
-        return isset($packages[$package]) ? $packages[$package] : [];
+        $key = self::normalize_package($package);
+        return isset($packages[$key]) ? $packages[$key] : [];
+    }
+
+    // ── LLAVES MAESTRAS DE LOS CLIENTES ────────────────────────────────────
+    //
+    // La llave que cada portal cliente usa para identificarse contra el maestro
+    // NO se guarda. Se guarda su HMAC-SHA256 y una pista de cuatro caracteres
+    // para poder distinguirlas en el listado. Si un dia se filtra esta base de
+    // datos, no se filtran las llaves de todas las Cámaras a la vez.
+    //
+    // La llave en claro se enseña UNA sola vez, al dar de alta al cliente.
+
+    /**
+     * Línea de la llave para la ficha de alta.
+     *
+     * Solo hay llave que copiar en los quince minutos siguientes al alta, que es
+     * cuando se generó. Después, ni el panel la conoce: hay que generar una
+     * nueva desde el portal del cliente.
+     */
+    private function onboarding_key_line($sub)
+    {
+        $fresh = get_transient('ep_new_subscriber_key_' . get_current_user_id());
+
+        if (is_array($fresh) && !empty($fresh['key']) && untrailingslashit((string) ($fresh['site'] ?? '')) === untrailingslashit((string) $sub->site_url)) {
+            return $fresh['key'] . "   <-- copiala AHORA: no se guarda y no volvera a mostrarse";
+        }
+
+        $hint = ($sub->master_key_hint ?? '') ?: '••••';
+
+        return "(la que ya configuraste, empieza por {$hint} — no se conserva aqui)";
+    }
+
+    /** Huella de una llave maestra. Determinista: sirve para comparar. */
+    public static function hash_master_key($key)
+    {
+        return hash_hmac('sha256', (string) $key, wp_salt('auth'));
+    }
+
+    /** Pista visible para identificar una llave sin revelarla: "EP-AB…7F". */
+    public static function mask_master_key($key)
+    {
+        $key = (string) $key;
+        if (strlen($key) < 8) {
+            return '••••';
+        }
+
+        return substr($key, 0, 5) . '…' . substr($key, -2);
+    }
+
+    /**
+     * Localiza un suscriptor a partir de la llave que envía por la API.
+     *
+     * Compara con hash_equals (tiempo constante) en lugar de dejar que lo haga
+     * SQL, que además obligaba a tener la llave en claro en la tabla.
+     *
+     * Los clientes dados de alta antes de este cambio siguen funcionando: si la
+     * fila aún guarda la llave en claro, se valida contra ella y se aprovecha
+     * para calcular el hash y borrar el original.
+     *
+     * @return object|null
+     */
+    public static function find_subscriber_by_key($site_url, $key)
+    {
+        global $wpdb;
+        $table = "{$wpdb->prefix}ep_subscribers";
+
+        if ($key === '' || $site_url === '') {
+            return null;
+        }
+
+        $sub = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE site_url = %s AND status = 'active'",
+            untrailingslashit((string) $site_url)
+        ));
+
+        if (!$sub) {
+            return null;
+        }
+
+        $hash = self::hash_master_key($key);
+
+        if (!empty($sub->master_key_hash)) {
+            return hash_equals((string) $sub->master_key_hash, $hash) ? $sub : null;
+        }
+
+        // Fila heredada: todavía con la llave en claro.
+        if (!empty($sub->master_key) && hash_equals((string) $sub->master_key, (string) $key)) {
+            $wpdb->update($table, [
+                'master_key_hash' => $hash,
+                'master_key_hint' => self::mask_master_key($key),
+                'master_key'      => '',
+            ], ['id' => $sub->id]);
+
+            return $sub;
+        }
+
+        return null;
+    }
+
+    /**
+     * Sustituye las llaves en claro por su hash. Se ejecuta una sola vez.
+     *
+     * A partir de aquí la llave deja de ser recuperable desde el maestro: cada
+     * Cámara la tiene ya configurada en su portal, y en el listado queda la
+     * pista para saber cuál es cuál. Si alguna se pierde, se genera otra.
+     */
+    private static function migrate_master_keys()
+    {
+        if (get_option('ep_master_keys_hashed') === '1') {
+            return;
+        }
+
+        global $wpdb;
+        $table = "{$wpdb->prefix}ep_subscribers";
+
+        // Sin las columnas nuevas no se migra: se reintentará en la próxima carga.
+        $cols = $wpdb->get_col("SHOW COLUMNS FROM $table");
+        if (!in_array('master_key_hash', (array) $cols, true)) {
+            return;
+        }
+
+        $rows = $wpdb->get_results("SELECT id, master_key FROM $table WHERE master_key <> ''");
+        foreach ((array) $rows as $row) {
+            $wpdb->update($table, [
+                'master_key_hash' => self::hash_master_key($row->master_key),
+                'master_key_hint' => self::mask_master_key($row->master_key),
+                'master_key'      => '',
+            ], ['id' => $row->id]);
+        }
+
+        update_option('ep_master_keys_hashed', '1');
+    }
+
+    /**
+     * Cifra los secretos que quedaron guardados en claro por versiones previas.
+     *
+     * Releerlos con ep_get_option() los devuelve descifrados, así que basta con
+     * volver a escribirlos por la vía segura.
+     */
+    private static function migrate_secret_options()
+    {
+        if (get_option('ep_secrets_encrypted') === '1') {
+            return;
+        }
+
+        foreach (ep_secret_options() as $option) {
+            $raw = get_option($option, '');
+            if (is_string($raw) && $raw !== '' && !EP_Security::is_encrypted($raw)) {
+                ep_update_secret_option($option, $raw);
+            }
+        }
+
+        update_option('ep_secrets_encrypted', '1');
+    }
+
+    /**
+     * Renombrado de los planes antiguos (Básico/Profesional/Enterprise) a la
+     * tarifa comercial PRO / PRO+ / PRO MAX. Se ejecuta una sola vez.
+     *
+     * Solo cambia la etiqueta del plan: las apps autorizadas de cada cliente
+     * se respetan tal cual estaban, porque están guardadas aparte.
+     */
+    private static function migrate_package_names()
+    {
+        if (get_option('ep_packages_renamed') === '1') {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'ep_subscribers';
+
+        $map = [
+            'basic'      => 'pro',
+            'pro'        => 'pro',
+            'enterprise' => 'pro_max',
+        ];
+
+        foreach ($map as $old => $new) {
+            if ($old === $new) {
+                continue;
+            }
+            $wpdb->update($table, ['package' => $new], ['package' => $old]);
+        }
+
+        update_option('ep_packages_renamed', '1');
     }
 
     public function add_plugin_admin_menu()
@@ -198,15 +524,28 @@ class EP_Admin
         // para evitar que options.php las borre al guardar un formulario parcial.
     }
 
-    public function display_plugin_admin_page()
+    /**
+     * Pone la base de datos al día: columnas que falten y migraciones pendientes.
+     *
+     * Vive aparte del render del panel a propósito. Cuando estaba dentro, la
+     * unica forma de aplicar una migracion era que un administrador abriera esa
+     * pagina concreta en un navegador: no se podia lanzar desde la linea de
+     * comandos, ni desde un cron, ni comprobar tras un despliegue.
+     *
+     * Es idempotente: cada migracion lleva su propia bandera.
+     */
+    public static function ensure_database_ready()
     {
-        // Reparación manual quirúrgica de la base de datos
         global $wpdb;
         $table_name = $wpdb->prefix . 'ep_subscribers';
 
         $columns_to_check = [
-            'package' => "ALTER TABLE $table_name ADD COLUMN package varchar(50) DEFAULT 'basic' NOT NULL AFTER status",
-            'authorized_apps' => "ALTER TABLE $table_name ADD COLUMN authorized_apps text DEFAULT NULL AFTER package"
+            'package' => "ALTER TABLE $table_name ADD COLUMN package varchar(50) DEFAULT 'pro' NOT NULL AFTER status",
+            'authorized_apps' => "ALTER TABLE $table_name ADD COLUMN authorized_apps text DEFAULT NULL AFTER package",
+            // La llave del cliente se guarda como HMAC; la pista solo sirve
+            // para reconocerla en el listado.
+            'master_key_hash' => "ALTER TABLE $table_name ADD COLUMN master_key_hash varchar(64) DEFAULT '' NOT NULL AFTER master_key",
+            'master_key_hint' => "ALTER TABLE $table_name ADD COLUMN master_key_hint varchar(32) DEFAULT '' NOT NULL AFTER master_key_hash"
         ];
 
         foreach ($columns_to_check as $col => $sql) {
@@ -216,7 +555,18 @@ class EP_Admin
             }
         }
 
-        $this->handle_subscriber_actions();
+        self::migrate_package_names();
+        self::migrate_secret_options();
+        self::migrate_master_keys();
+    }
+
+    public function display_plugin_admin_page()
+    {
+        self::ensure_database_ready();
+
+        // No se llama aqui a handle_subscriber_actions(): ya corre en 'admin_init'
+        // (ver el constructor). Cuando estaba en los dos sitios, el POST del alta
+        // se procesaba dos veces y cada cliente nuevo entraba duplicado.
         $active_tab = isset($_GET['tab']) ? sanitize_text_field((string) ($_GET['tab'] ?? '')) : 'general';
         if (isset($_GET['page']) && (string) ($_GET['page'] ?? '') === 'ep-network' && $active_tab === 'general') {
             $active_tab = 'subscribers';
@@ -473,12 +823,18 @@ class EP_Admin
                 <a href="?page=employee-portal&tab=system"
                     class="nav-tab <?php echo $active_tab == 'system' ? 'nav-tab-active' : ''; ?>">Sistema</a>
                 <?php
-                $learning_count = count(get_option('ep_bot_learning_queue', []));
-                $lc_badge = $learning_count > 0 ? ' <span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px;">' . $learning_count . '</span>' : '';
-                ?>
-                <a href="?page=employee-portal&tab=learning"
-                    class="nav-tab <?php echo $active_tab == 'learning' ? 'nav-tab-active' : ''; ?>">
-                    🧠 Aprendizaje<?php echo $lc_badge; ?></a>
+                // El autoaprendizaje se nutre EXCLUSIVAMENTE de las conversaciones
+                // del bot (EP_Bot_Mensajeria). Sin el canal de Teams contratado la
+                // cola nunca recibe nada, asi que la pestaña solo daria una lista
+                // vacia y la sensacion de que algo no funciona.
+                if (!function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled()):
+                    $learning_count = count(get_option('ep_bot_learning_queue', []));
+                    $lc_badge = $learning_count > 0 ? ' <span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px;">' . $learning_count . '</span>' : '';
+                    ?>
+                    <a href="?page=employee-portal&tab=learning"
+                        class="nav-tab <?php echo $active_tab == 'learning' ? 'nav-tab-active' : ''; ?>">
+                        🧠 Aprendizaje<?php echo $lc_badge; ?></a>
+                <?php endif; ?>
             </nav>
 
 
@@ -531,7 +887,7 @@ class EP_Admin
                     <div class="ep-admin-card"><?php $this->render_ai_settings_page(); ?></div>
                 <?php elseif ($active_tab == 'system'): ?>
                     <div class="ep-admin-card"><?php $this->render_system_settings_page(); ?></div>
-                <?php elseif ($active_tab == 'learning'): ?>
+                <?php elseif ($active_tab == 'learning' && (!function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled())): ?>
                     <div class="ep-admin-card"><?php $this->render_learning_center(); ?></div>
                 <?php endif; ?>
             </div>
@@ -632,14 +988,144 @@ class EP_Admin
             <div class="ep-diag-log">/usr/bin/php <?php echo ABSPATH; ?>wp-cron.php >/dev/null 2>&1</div>
         </div>
 
+        <?php
+        // ── Inventario de módulos ─────────────────────────────────────────────
+        // Contrasta lo que hay en disco con lo que la licencia autoriza y con lo
+        // que realmente se ha registrado en el portal. Si una app nueva no sale
+        // aquí, el problema se ve en el acto y sin mirar código.
+        global $ep_app_manager;
+        $detected   = function_exists('ep_discover_local_modules') ? ep_discover_local_modules() : [];
+        $always_on  = function_exists('ep_always_on_modules') ? ep_always_on_modules() : [];
+        $registered = $ep_app_manager ? array_keys($ep_app_manager->get_apps()) : [];
+        $is_master  = defined('EP_IS_MASTER_PORTAL') && EP_IS_MASTER_PORTAL;
+
+        $licensed = get_option('ep_authorized_apps', []);
+        if (!is_array($licensed)) {
+            $licensed = [];
+        }
+
+        $next_sync = wp_next_scheduled('ep_daily_license_sync');
+        ?>
+        <div class="ep-diag-box" style="margin-top:20px; border-left:4px solid #8b5cf6;">
+            <h3>🧩 Módulos detectados en este portal</h3>
+            <p class="description">
+                Se autodescubren de <code>plugins/</code>: cualquier carpeta con su archivo principal entra sola en el
+                portal, en los paquetes de suscripción y en el ZIP de despliegue. No hay listas que mantener a mano.<br>
+                <strong>El paquete de despliegue siempre lleva los 15 módulos.</strong> Lo que decide cuáles se activan
+                en cada cliente es la licencia que envía el Maestro, no lo que se instala. Los
+                <span style="color:#7c3aed;">módulos base</span> son la excepción: son infraestructura (el banner RGPD),
+                no se venden por plan y van activos en todos los portales.
+            </p>
+            <table class="widefat striped" style="margin-top:10px;">
+                <thead>
+                    <tr>
+                        <th>Módulo</th>
+                        <th style="width:130px;">Plan mínimo</th>
+                        <th style="width:150px;">Licencia</th>
+                        <th style="width:150px;">Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $packages_def = self::get_packages_definition();
+                    foreach ($detected as $app_id => $relative):
+                        $main_file = EMPLOYEE_PORTAL_PATH . 'plugins/' . $relative;
+                        $label     = self::get_app_label($app_id, $main_file);
+
+                        if (in_array($app_id, $packages_def['pro'], true)) {
+                            $plan = self::PACKAGE_LABELS['pro'];
+                        } elseif (in_array($app_id, $packages_def['pro_plus'], true)) {
+                            $plan = self::PACKAGE_LABELS['pro_plus'];
+                        } elseif (in_array($app_id, $packages_def['pro_max'], true)) {
+                            $plan = self::PACKAGE_LABELS['pro_max'];
+                        } else {
+                            $plan = '—';
+                        }
+
+                        $is_always = in_array($app_id, $always_on, true);
+                        $is_lic    = $is_master || $is_always || empty($licensed) || in_array($app_id, $licensed, true);
+
+                        // El id que expone la app al gestor no siempre coincide con el
+                        // de la carpeta (p.ej. ep-expenses se registra como 'expenses').
+                        $short_id  = preg_replace('/^ep-/', '', $app_id);
+                        $is_loaded = in_array($app_id, $registered, true) || in_array($short_id, $registered, true);
+                        ?>
+                        <tr>
+                            <td><strong><?php echo esc_html($label); ?></strong><br>
+                                <small style="color:#94a3b8;"><?php echo esc_html($app_id); ?></small>
+                            </td>
+                            <td><?php echo esc_html($plan); ?></td>
+                            <td>
+                                <?php if ($is_always): ?>
+                                    <span style="color:#7c3aed;" title="Infraestructura del portal: no se vende por plan y no depende de la licencia">🔧 Módulo base</span>
+                                <?php elseif ($is_lic): ?>
+                                    <span style="color:#16a34a;">✅ Autorizado</span>
+                                <?php else: ?>
+                                    <span style="color:#94a3b8;">— No contratado</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($is_loaded): ?>
+                                    <span style="color:#16a34a;">✅ Registrado</span>
+                                <?php elseif ($is_always): ?>
+                                    <?php // Un módulo base no pinta icono en el escritorio: no registrarse es lo normal. ?>
+                                    <span style="color:#7c3aed;" title="Activo en segundo plano. No tiene icono en el escritorio del empleado.">⚙️ Activo sin interfaz</span>
+                                <?php elseif ($is_lic): ?>
+                                    <span style="color:#dc2626;" title="Autorizado pero no se ha registrado: revisa errores PHP en el módulo">⚠️ No registrado</span>
+                                <?php else: ?>
+                                    <span style="color:#94a3b8;">Inactivo</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php if (empty($detected)): ?>
+                        <tr>
+                            <td colspan="4">No se ha detectado ningún módulo en <code>plugins/</code>.</td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            <p class="description" style="margin-top:10px;">
+                <strong><?php echo count($detected); ?></strong> módulos en disco ·
+                <strong><?php echo count($registered); ?></strong> registrados en el portal ·
+                Sincronización automática de licencia:
+                <?php if ($is_master): ?>
+                    no aplica (este portal es el Maestro).
+                <?php elseif ($next_sync): ?>
+                    próxima <strong><?php echo esc_html(date_i18n('d/m/Y H:i', $next_sync)); ?></strong> (cada hora).
+                <?php else: ?>
+                    <span style="color:#dc2626;">no programada — entra en el escritorio para reactivarla.</span>
+                <?php endif; ?>
+            </p>
+        </div>
+
         <div id="ep-auth-status-msg"></div>
+        <?php
+        // Generar el Blueprint empaqueta TODAS las apps de plugins/, tenga o no
+        // licencia quien lo pide. Por eso es exclusivo del maestro: en un cliente
+        // equivaldria a entregarle el codigo de los modulos que no ha contratado.
+        // (Antes bastaba con tener licencia, que la tiene cualquier cliente activo.)
+        $deploy_tools_visible = $is_master;
+        ?>
         <div id="ep-deploy-tools-section"
-            style="<?php echo (defined('EP_IS_MASTER_PORTAL') && EP_IS_MASTER_PORTAL) || ep_get_option('ep_authorized_apps') ? '' : 'display:none;'; ?> margin-top: 20px; padding:20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+            style="<?php echo $deploy_tools_visible ? '' : 'display:none;'; ?> margin-top: 20px; padding:20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
             <h3>Generar Blueprint</h3>
+            <p class="description" style="margin-bottom:10px;">
+                Empaqueta el portal completo con <strong>todas</strong> las apps detectadas en <code>plugins/</code>,
+                listo para instalar como plugin en el sitio de un cliente. Quedan fuera los scripts de despliegue,
+                los logs y los documentos: el ZIP es entregable tal cual.
+            </p>
             <button type="button" id="ep_export_blueprint_btn" class="button button-primary">📦 Crear ZIP del Portal
                 Completo</button>
-            <button type="button" id="ep_run_reset_btn" class="button button-link-delete"
-                style="color:red; margin-left:10px;">Reset Total</button>
+            <?php
+            // El Reset Total solo existe en staging/dev: en producción su handler AJAX
+            // ni siquiera está registrado, así que mostrarlo solo confundía.
+            $reset_available = defined('EP_ALLOW_NUCLEAR_RESET') && EP_ALLOW_NUCLEAR_RESET === true
+                && defined('WP_DEBUG') && WP_DEBUG === true;
+            if ($reset_available): ?>
+                <button type="button" id="ep_run_reset_btn" class="button button-link-delete"
+                    style="color:red; margin-left:10px;">Reset Total</button>
+            <?php endif; ?>
 
             <hr style="margin:20px 0; border:0; border-top:1px solid #e2e8f0;">
 
@@ -684,7 +1170,11 @@ class EP_Admin
                 });
                 $('#ep_validate_key_btn').on('click', function () {
                     const b = $(this); const oldText = b.text(); b.text('Sincronizando...').prop('disabled', true);
-                    $.post(ajaxurl, { action: 'ep_validate_master_key', key: $('#ep_site_master_key').val(), security: '<?php echo wp_create_nonce("ep_deploy_nonce"); ?>' }, function (r) {
+                    // Se envia tambien la URL del maestro: si solo se manda la llave,
+                    // el servidor valida contra la URL que hubiera guardada, y quien
+                    // corrige el campo y pulsa aqui directamente recibe un "Invalid"
+                    // que en realidad viene de haber llamado a la direccion anterior.
+                    $.post(ajaxurl, { action: 'ep_validate_master_key', key: $('#ep_site_master_key').val(), remote_url: $('#ep_auth_remote_url').val(), security: '<?php echo wp_create_nonce("ep_deploy_nonce"); ?>' }, function (r) {
                         b.text(oldText).prop('disabled', false);
                         if (r.success) {
                             $('#ep-deploy-tools-section').fadeIn();
@@ -695,7 +1185,12 @@ class EP_Admin
                                 alert('Conexión validada localmente (Modo Maestro).');
                             <?php endif; ?>
                         } else {
-                            alert('Fallo de validación: ' + (r.data.error || r.data));
+                            // El motivo real (HTTP 404, dominio que no coincide,
+                            // sin salida a internet...) esta en el log; sin el, el
+                            // mensaje decia solo "Invalid" y no orientaba a nada.
+                            var motivo = (r.data && r.data.log && (r.data.log.error || r.data.log.status)) ? r.data.log.error || r.data.log.status : (r.data.error || r.data);
+                            var donde = (r.data && r.data.log && r.data.log.url) ? '\n\nSe llamó a:\n' + r.data.log.url : '';
+                            alert('Fallo de validación: ' + motivo + donde);
                             if (r.data.log) {
                                 $('#ep-diag-result').html('<div class="ep-diag-status"><span class="ep-health-indicator ep-health-red"></span> Error detectado ahora</div><div class="ep-diag-log">' + JSON.stringify(r.data.log, null, 2) + '</div>');
                             }
@@ -703,9 +1198,33 @@ class EP_Admin
                     });
                 });
                 $('#ep_export_blueprint_btn').on('click', function () {
-                    $(this).text('Generando...');
+                    const btn = $(this);
+                    btn.prop('disabled', true).text('Generando paquete...');
+                    $('#ep-deploy-response').html('');
                     $.post(ajaxurl, { action: 'ep_export_blueprint', security: '<?php echo wp_create_nonce("ep_deploy_nonce"); ?>', key: $('#ep_site_master_key').val() }, function (r) {
-                        $('#ep_export_blueprint_btn').text('📦 Crear ZIP'); if (r.success) $('#ep-deploy-response').html('<a href="' + r.data + '" class="button">Descargar</a>'); else alert(r.data);
+                        btn.prop('disabled', false).text('📦 Crear ZIP del Portal Completo');
+                        if (r.success) {
+                            $('#ep-deploy-response').html(
+                                '<div style="padding:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px;">' +
+                                '<strong>✅ Paquete listo</strong> — ' + r.data.file + ' (' + r.data.size + ')<br>' +
+                                '<a href="' + r.data.url + '" class="button button-primary" style="margin-top:8px;">⬇️ Descargar Blueprint</a>' +
+                                '<p class="description" style="margin-top:8px;">Enlace privado: exige sesión de administrador. Se conservan los 3 paquetes más recientes.</p>' +
+                                '</div>'
+                            );
+                        } else {
+                            $('#ep-deploy-response').html('<div style="padding:12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c;">❌ ' + (r.data || 'Error desconocido') + '</div>');
+                        }
+                    }).fail(function (xhr) {
+                        // Sin este manejador el boton se quedaba en "Generando..." para
+                        // siempre ante cualquier error HTTP, sin decir que habia pasado.
+                        btn.prop('disabled', false).text('📦 Crear ZIP del Portal Completo');
+                        var msg = 'Error HTTP ' + xhr.status + ' al contactar con el servidor.';
+                        if (xhr.status === 400) {
+                            msg += ' La acción AJAX no está registrada: el plugin del servidor no está actualizado.';
+                        } else if (xhr.status === 504 || xhr.status === 502) {
+                            msg += ' El servidor ha tardado demasiado generando el paquete.';
+                        }
+                        $('#ep-deploy-response').html('<div style="padding:12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; color:#b91c1c;">❌ ' + msg + '</div>');
                     });
                 });
             });
@@ -717,6 +1236,15 @@ class EP_Admin
     {
         if (!current_user_can('manage_options'))
             return;
+
+        // Una sola vez por peticion, pase lo que pase. El alta es una escritura
+        // en base de datos: si el metodo se engancha por error en dos sitios,
+        // el cliente entra duplicado y las dos filas comparten la misma llave.
+        static $ya_ejecutado = false;
+        if ($ya_ejecutado) {
+            return;
+        }
+        $ya_ejecutado = true;
 
         // Revocar licencia
         if (isset($_GET['action']) && (string) $_GET['action'] === 'delete_sub' && isset($_GET['sub_id'])) {
@@ -734,7 +1262,7 @@ class EP_Admin
             check_admin_referer('ep_edit_subscriber_nonce');
             global $wpdb;
             $id = intval($_POST['sub_id']);
-            $package = sanitize_text_field($_POST['package']);
+            $package = self::normalize_package(sanitize_text_field($_POST['package']));
             $apps = isset($_POST['apps']) ? (array) $_POST['apps'] : [];
 
             // Si no se seleccionaron apps manualmente, usar las del paquete por defecto
@@ -753,16 +1281,42 @@ class EP_Admin
         if (isset($_POST['ep_add_subscriber'])) {
             check_admin_referer('ep_add_subscriber_nonce');
             global $wpdb;
-            $pkg = ep_get_post_val('new_subscriber_package', 'basic');
+            $pkg = self::normalize_package(ep_get_post_val('new_subscriber_package', 'pro_plus'));
             $packages = self::get_packages_definition();
             $apps = isset($_POST['authorized_apps']) ? (array) $_POST['authorized_apps'] : ($packages[$pkg] ?? []);
-            $wpdb->insert("{$wpdb->prefix}ep_subscribers", [
-                'site_url' => untrailingslashit((string) esc_url_raw((string) ep_get_post_val('new_subscriber_url'))),
-                'master_key' => (string) ep_get_post_val('new_subscriber_key'),
+            // La llave se guarda hasheada: a partir de aquí el maestro ya no
+            // puede recuperarla. Se muestra una única vez, justo debajo, para
+            // que se copie a la ficha de alta del cliente.
+            $plain_key = (string) ep_get_post_val('new_subscriber_key');
+            $site_url  = untrailingslashit((string) esc_url_raw((string) ep_get_post_val('new_subscriber_url')));
+
+            $datos = [
+                'site_url' => $site_url,
+                'master_key' => '',
+                'master_key_hash' => self::hash_master_key($plain_key),
+                'master_key_hint' => self::mask_master_key($plain_key),
                 'package' => $pkg,
                 'authorized_apps' => json_encode($apps),
                 'status' => 'active'
-            ]);
+            ];
+
+            // Un dominio, una fila. Si ya existe, se actualiza: dos filas para el
+            // mismo cliente dejarian la validacion dependiendo de cual devuelve
+            // primero la consulta, y revocar una no revocaria la otra.
+            $tabla = "{$wpdb->prefix}ep_subscribers";
+            $existente = $wpdb->get_var($wpdb->prepare("SELECT id FROM $tabla WHERE site_url = %s", $site_url));
+
+            if ($existente) {
+                $wpdb->update($tabla, $datos, ['id' => (int) $existente]);
+                add_settings_error('ep_settings_group', 'ep_sub_reused', 'Ese portal ya estaba dado de alta: se han actualizado su plan, sus apps y su llave.', 'updated');
+            } else {
+                $wpdb->insert($tabla, $datos);
+            }
+
+            set_transient('ep_new_subscriber_key_' . get_current_user_id(), [
+                'key'  => $plain_key,
+                'site' => $site_url,
+            ], 15 * MINUTE_IN_SECONDS);
         }
 
         // Guardar ajustes RGPD
@@ -801,6 +1355,10 @@ class EP_Admin
 
             .ep-health-green {
                 background: #22c55e;
+            }
+
+            .ep-health-amber {
+                background: #f59e0b;
             }
 
             .ep-health-red {
@@ -858,6 +1416,47 @@ class EP_Admin
         <p class="description">Controla las licencias, el estado de salud y los módulos autorizados para cada portal cliente.
         </p>
 
+        <?php
+        global $wpdb;
+        $subs_table = "{$wpdb->prefix}ep_subscribers";
+        $all_subs   = $wpdb->get_results("SELECT * FROM $subs_table ORDER BY id DESC");
+        $all_subs   = is_array($all_subs) ? $all_subs : [];
+
+        // Resumen de flota: de un vistazo, cuántos portales responden y cuántos
+        // están por detrás de la versión que hay ahora mismo en el maestro.
+        $total_subs = count($all_subs);
+        $ok_subs = $stale_subs = $outdated_subs = 0;
+        foreach ($all_subs as $s) {
+            $ls = !empty($s->last_seen) ? strtotime((string) $s->last_seen) : 0;
+            if ($ls > 0 && (time() - $ls) < (3 * HOUR_IN_SECONDS)) {
+                $ok_subs++;
+            } else {
+                $stale_subs++;
+            }
+            if (!empty($s->ep_version) && version_compare((string) $s->ep_version, EMPLOYEE_PORTAL_VERSION, '<')) {
+                $outdated_subs++;
+            }
+        }
+        ?>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin:20px 0;">
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-left:4px solid #64748b; border-radius:8px; padding:14px;">
+                <div style="font-size:26px; font-weight:700; color:#0f172a;"><?php echo (int) $total_subs; ?></div>
+                <div style="font-size:12px; color:#64748b;">Portales dados de alta</div>
+            </div>
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; border-radius:8px; padding:14px;">
+                <div style="font-size:26px; font-weight:700; color:#15803d;"><?php echo (int) $ok_subs; ?></div>
+                <div style="font-size:12px; color:#166534;">Con latido reciente (&lt; 3 h)</div>
+            </div>
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #d97706; border-radius:8px; padding:14px;">
+                <div style="font-size:26px; font-weight:700; color:#b45309;"><?php echo (int) $stale_subs; ?></div>
+                <div style="font-size:12px; color:#92400e;">Sin señal / nunca conectados</div>
+            </div>
+            <div style="background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #dc2626; border-radius:8px; padding:14px;">
+                <div style="font-size:26px; font-weight:700; color:#b91c1c;"><?php echo (int) $outdated_subs; ?></div>
+                <div style="font-size:12px; color:#991b1b;">Desactualizados (maestro: v<?php echo esc_html(EMPLOYEE_PORTAL_VERSION); ?>)</div>
+            </div>
+        </div>
+
         <div style="background:#f8fafc; padding:25px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:20px;">
             <h3>Alta de Nuevo Cliente</h3>
             <form method="post" action="">
@@ -872,9 +1471,9 @@ class EP_Admin
                     <div>
                         <label style="font-weight:600; display:block; margin-bottom:5px;">Paquete de Suscripción</label>
                         <select name="new_subscriber_package" id="ep_sub_package" style="width:100%;">
-                            <option value="basic">Básico</option>
-                            <option value="pro" selected>Profesional</option>
-                            <option value="enterprise">Enterprise (Todo)</option>
+                            <option value="pro">PRO — 150 €/mes</option>
+                            <option value="pro_plus" selected>PRO+ — 250 €/mes</option>
+                            <option value="pro_max">PRO MAX — 350 €/mes</option>
                         </select>
                     </div>
                     <div>
@@ -906,21 +1505,38 @@ class EP_Admin
                 </tr>
             </thead>
             <tbody>
-                <?php global $wpdb;
-                $subs = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}ep_subscribers ORDER BY id DESC");
+                <?php
+                $subs = $all_subs; // ya consultado arriba para el resumen de flota
                 if ($subs):
                     foreach ($subs as $sub):
                         $last_seen_val = (string) ($sub->last_seen ?? '');
                         $last_seen = !empty($last_seen_val) ? strtotime($last_seen_val) : 0;
-                        $is_online = $last_seen > 0 && (time() - $last_seen) < 3600; // Online si conectó hace menos de 1 hora
-                        $apps_count = count(json_decode((string) (($sub->authorized_apps ?? '[]') ?: '[]'), true));
+                        $age = $last_seen > 0 ? (time() - $last_seen) : PHP_INT_MAX;
+
+                        // El cliente late cada hora (cron 'ep_daily_license_sync').
+                        // Verde: latido reciente. Ámbar: se ha saltado varios latidos.
+                        // Rojo: lleva más de 2 días sin dar señales, o nunca la ha dado.
+                        if ($age < (3 * HOUR_IN_SECONDS)) {
+                            $health_class = 'ep-health-green';
+                            $health_text  = 'Operativo';
+                        } elseif ($age < (2 * DAY_IN_SECONDS)) {
+                            $health_class = 'ep-health-amber';
+                            $health_text  = 'Latido retrasado — revisa el cron del cliente';
+                        } else {
+                            $health_class = 'ep-health-red';
+                            $health_text  = $last_seen > 0 ? 'Sin señal (más de 2 días)' : 'Nunca ha sincronizado';
+                        }
+
+                        $apps_count = count((array) json_decode((string) (($sub->authorized_apps ?? '[]') ?: '[]'), true));
                         ?>
                         <tr>
                             <td>
-                                <span
-                                    class="ep-health-indicator <?php echo $is_online ? 'ep-health-green' : 'ep-health-red'; ?>"></span>
+                                <span class="ep-health-indicator <?php echo $health_class; ?>"
+                                    title="<?php echo esc_attr($health_text); ?>"></span>
                                 <strong><?php echo esc_html($sub->site_url ?? ''); ?></strong><br>
-                                <small style="color:#64748b;"><?php echo esc_html($sub->master_key ?? ''); ?></small>
+                                <small style="color:#64748b;" title="Solo una pista: la llave completa no se guarda">🔑
+                                    <?php echo esc_html(($sub->master_key_hint ?? '') ?: '••••'); ?></small><br>
+                                <small style="color:#94a3b8;"><?php echo esc_html($health_text); ?></small>
                             </td>
                             <td>
                                 <span class="ep-v-badge" title="WordPress version">WP:
@@ -944,7 +1560,7 @@ class EP_Admin
                             </td>
                             <td>
                                 <span class="badge"
-                                    style="background:#e2e8f0; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:bold;"><?php echo strtoupper($sub->package ?? 'basic'); ?></span>
+                                    style="background:#e2e8f0; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:bold;"><?php echo esc_html(self::get_package_label($sub->package ?? 'pro')); ?></span>
                                 <small><?php echo $apps_count; ?> apps autorizadas</small>
                             </td>
                             <td><?php echo ($sub->last_seen ?? false) ? date_i18n('d/m/Y H:i', $last_seen) : 'Nunca'; ?></td>
@@ -964,12 +1580,14 @@ class EP_Admin
                                     <input type="hidden" name="sub_id" value="<?php echo $sub->id; ?>">
                                     <div style="width:200px;">
                                         <label style="font-weight:600; display:block; margin-bottom:5px;">Paquete</label>
+                                        <?php $sub_pkg = self::normalize_package($sub->package ?? 'pro'); ?>
                                         <select name="package" class="ep-edit-package" data-id="<?php echo $sub->id; ?>"
                                             style="width:100%;">
-                                            <option value="basic" <?php selected($sub->package, 'basic'); ?>>Básico</option>
-                                            <option value="pro" <?php selected($sub->package, 'pro'); ?>>Profesional</option>
-                                            <option value="enterprise" <?php selected($sub->package, 'enterprise'); ?>>Enterprise
-                                            </option>
+                                            <?php foreach (self::PACKAGE_LABELS as $pkg_key => $pkg_label): ?>
+                                                <option value="<?php echo esc_attr($pkg_key); ?>" <?php selected($sub_pkg, $pkg_key); ?>>
+                                                    <?php echo esc_html($pkg_label); ?>
+                                                </option>
+                                            <?php endforeach; ?>
                                         </select>
                                     </div>
                                     <div style="flex:1;">
@@ -991,6 +1609,32 @@ class EP_Admin
                                         <button type="submit" name="ep_update_subscriber" class="button button-primary">Guardar</button>
                                     </div>
                                 </form>
+
+                                <?php
+                                // Ficha de alta lista para copiar. Con esto el despliegue en el
+                                // cliente se reduce a: subir el ZIP, pegar 2 líneas y pulsar sincronizar.
+                                $onboarding = "1) Sube e instala el ZIP del Blueprint como plugin en {$sub->site_url}\n"
+                                    . "2) Pega esto en el wp-config.php del cliente (antes de /* That's all */):\n\n"
+                                    . "define('EP_AUTH_REMOTE_URL', '" . home_url('/wp-json/ep/v1/validate-key') . "');\n"
+                                    . "define('DISABLE_WP_CRON', true);\n\n"
+                                    . "3) Activa el plugin y ve a Portal Empleado -> Red & Despliegue\n"
+                                    . "4) Llave Maestra del Sitio: " . $this->onboarding_key_line($sub) . "\n"
+                                    . "5) Pulsa Guardar y despues Validar y Sincronizar\n"
+                                    . "6) Programa el cron real cada 5 minutos en Plesk/cPanel:\n"
+                                    . "   wget -q -O - \"{$sub->site_url}/wp-cron.php?doing_wp_cron\" >/dev/null 2>&1\n\n"
+                                    . "A partir de ahi el portal late cada hora y aparecera en verde en este panel.";
+                                ?>
+                                <div style="margin-top:15px; padding:15px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px;">
+                                    <strong>🚀 Ficha de alta / instalación</strong>
+                                    <button type="button" class="button ep-copy-onboarding" style="margin-left:10px;"
+                                        data-target="ep-onboarding-<?php echo (int) $sub->id; ?>">📋 Copiar instrucciones</button>
+                                    <?php if (!empty($sub->last_download)): ?>
+                                        <span style="margin-left:10px; font-size:11px; color:#64748b;">Última descarga del paquete:
+                                            <?php echo esc_html(date_i18n('d/m/Y H:i', strtotime((string) $sub->last_download))); ?></span>
+                                    <?php endif; ?>
+                                    <textarea id="ep-onboarding-<?php echo (int) $sub->id; ?>" readonly rows="12"
+                                        style="width:100%; margin-top:10px; font-family:monospace; font-size:11px; background:#fff;"><?php echo esc_textarea($onboarding); ?></textarea>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; else: ?>
@@ -1029,6 +1673,20 @@ class EP_Admin
                         $row.addClass('active');
                         $(this).text('Cerrar');
                     }
+                });
+
+                // Copiar la ficha de alta al portapapeles
+                $('.ep-copy-onboarding').on('click', function () {
+                    const btn = $(this);
+                    const el = document.getElementById(btn.data('target'));
+                    if (!el) return;
+                    el.select();
+                    el.setSelectionRange(0, 99999);
+                    try { document.execCommand('copy'); } catch (e) { }
+                    if (navigator.clipboard) { navigator.clipboard.writeText(el.value).catch(() => { }); }
+                    const old = btn.text();
+                    btn.text('✅ Copiado');
+                    setTimeout(() => btn.text(old), 2000);
                 });
 
                 // Plan changes in edit mode
@@ -1112,6 +1770,14 @@ class EP_Admin
         if (empty($k))
             wp_send_json_error('No key');
 
+        // Si el formulario manda la URL del maestro, se guarda ANTES de validar.
+        // De lo contrario se validaría contra la dirección anterior y el mensaje
+        // de error señalaría a la llave, que es donde nadie tiene el problema.
+        $remote_url = (string) ep_get_post_val('remote_url');
+        if ($remote_url !== '') {
+            update_option('ep_auth_remote_url', esc_url_raw($remote_url));
+        }
+
         if ($this->is_key_valid($k)) {
             // Limpiar caché de actualizaciones para forzar comprobación fresca
             delete_transient('ep_update_check_cache');
@@ -1130,7 +1796,10 @@ class EP_Admin
         check_ajax_referer('ep_deploy_nonce', 'security');
         if (!current_user_can('manage_options'))
             wp_send_json_error('Denied');
-        update_option('ep_site_master_key', sanitize_text_field((string) $_POST['key']));
+        // Esta es la llave con la que ESTE portal se identifica ante el maestro:
+        // hay que poder enviarla, así que no puede hashearse. Se guarda cifrada,
+        // que al menos la protege ante un volcado de la base de datos.
+        ep_update_secret_option('ep_site_master_key', sanitize_text_field((string) $_POST['key']));
         if (isset($_POST['remote_url']))
             update_option('ep_auth_remote_url', esc_url_raw((string) $_POST['remote_url']));
         wp_send_json_success('Saved');
@@ -1192,17 +1861,99 @@ class EP_Admin
         }
     }
 
+    /**
+     * Genera el paquete de despliegue y devuelve una URL de descarga de un solo uso.
+     *
+     * El ZIP se escribe en uploads/ep-blueprints/, un directorio blindado por
+     * .htaccess: no se sirve por URL directa. La descarga pasa por
+     * ajax_download_blueprint(), que vuelve a comprobar rol y nonce.
+     */
     public function ajax_export_blueprint()
     {
         check_ajax_referer('ep_deploy_nonce', 'security');
-        if (!$this->is_key_valid((string) ($_POST['key'] ?? '')))
-            wp_send_json_error('Denied');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Acceso denegado: se requiere rol de administrador de WordPress.');
+        }
+
+        // Solo el maestro empaqueta. Ocultar el boton no bastaria: esta accion se
+        // puede invocar directamente contra admin-ajax.php, y el paquete contiene
+        // TODAS las apps, tambien las que el cliente no tiene contratadas.
+        if (!defined('EP_IS_MASTER_PORTAL') || !EP_IS_MASTER_PORTAL) {
+            wp_send_json_error('Esta acción solo está disponible en el portal maestro.');
+        }
+
+        if (!$this->is_key_valid((string) ($_POST['key'] ?? ''))) {
+            wp_send_json_error('Clave maestra inválida: no se puede generar el paquete.');
+        }
+
         require_once plugin_dir_path(__FILE__) . 'class-ep-deployer.php';
-        $url = EP_Deployer::create_blueprint_zip();
-        if ($url)
-            wp_send_json_success($url);
-        else
-            wp_send_json_error('Fail');
+
+        $path = EP_Deployer::create_blueprint_zip();
+        if (!$path) {
+            wp_send_json_error('No se pudo generar el paquete. Revisa los permisos de wp-content/uploads y que la extensión ZipArchive esté activa.');
+        }
+
+        wp_send_json_success([
+            'file' => basename($path),
+            'size' => size_format((int) filesize($path)),
+            'url'  => wp_nonce_url(
+                admin_url('admin-ajax.php?action=ep_download_blueprint&file=' . rawurlencode(basename($path))),
+                'ep_download_blueprint'
+            ),
+        ]);
+    }
+
+    /**
+     * Entrega un Blueprint ya generado. Único camino de acceso al directorio blindado.
+     */
+    public function ajax_download_blueprint()
+    {
+        check_admin_referer('ep_download_blueprint');
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Acceso denegado.', 'Portal del Empleado', ['response' => 403]);
+        }
+
+        // Misma razón que en la generación: el paquete lleva el portal completo.
+        if (!defined('EP_IS_MASTER_PORTAL') || !EP_IS_MASTER_PORTAL) {
+            wp_die('Esta descarga solo está disponible en el portal maestro.', 'Portal del Empleado', ['response' => 403]);
+        }
+
+        require_once plugin_dir_path(__FILE__) . 'class-ep-deployer.php';
+
+        $dir = EP_Deployer::get_blueprint_dir();
+        if ($dir === false) {
+            wp_die('El directorio de paquetes no está disponible.', 'Portal del Empleado', ['response' => 500]);
+        }
+
+        // Solo el nombre del archivo: nunca una ruta enviada por el cliente.
+        $file = basename((string) wp_unslash($_GET['file'] ?? ''));
+
+        if ($file === '' || !preg_match('/^ep-blueprint-[A-Za-z0-9\-]+\.zip$/', $file)) {
+            wp_die('Nombre de paquete no válido.', 'Portal del Empleado', ['response' => 400]);
+        }
+
+        $path      = $dir . $file;
+        $real_path = realpath($path);
+        $real_dir  = realpath($dir);
+
+        if ($real_path === false || $real_dir === false || strpos($real_path, $real_dir) !== 0 || !is_file($real_path)) {
+            wp_die('El paquete solicitado ya no existe.', 'Portal del Empleado', ['response' => 404]);
+        }
+
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        nocache_headers();
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $file . '"');
+        header('Content-Length: ' . filesize($real_path));
+        header('X-Content-Type-Options: nosniff');
+
+        readfile($real_path);
+        exit;
     }
 
     /**
@@ -1242,7 +1993,9 @@ class EP_Admin
         }
 
         update_option('ep_o365_client_id',       sanitize_text_field(wp_unslash($_POST['ep_o365_client_id'] ?? '')));
-        update_option('ep_o365_client_secret',    sanitize_text_field(wp_unslash($_POST['ep_o365_client_secret'] ?? '')));
+        // Secreto de aplicacion de Microsoft 365: se guarda cifrado. La lectura
+        // con ep_get_option() lo descifra sola, asi que nada mas cambia.
+        ep_update_secret_option('ep_o365_client_secret', sanitize_text_field(wp_unslash($_POST['ep_o365_client_secret'] ?? '')));
         update_option('ep_o365_tenant_id',        sanitize_text_field(wp_unslash($_POST['ep_o365_tenant_id'] ?? '')));
         update_option('ep_teams_bot_id',          sanitize_text_field(wp_unslash($_POST['ep_teams_bot_id'] ?? '')));
         update_option('ep_teams_bot_secret',      sanitize_text_field(wp_unslash($_POST['ep_teams_bot_secret'] ?? '')));
@@ -1267,7 +2020,7 @@ class EP_Admin
         if (empty($key))
             return false;
         if (defined('EP_IS_MASTER_PORTAL') && EP_IS_MASTER_PORTAL)
-            return ($key === ep_get_option('ep_site_master_key'));
+            return hash_equals((string) ep_get_option('ep_site_master_key'), $key);
         $url = ep_get_option('ep_auth_remote_url');
         if (empty($url))
             return false;
@@ -1383,11 +2136,7 @@ class EP_Admin
         $table = "{$wpdb->prefix}ep_subscribers";
         $site_clean = untrailingslashit((string) $site);
 
-        $sub = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table WHERE site_url = %s AND master_key = %s AND status = 'active'",
-            $site_clean,
-            $key
-        ));
+        $sub = self::find_subscriber_by_key($site_clean, $key);
 
         if ($sub) {
             ep_error_log("REST Validate: SUCCESS for subscriber ID {$sub->id}");
@@ -1397,7 +2146,7 @@ class EP_Admin
             if (!$db_checked) {
                 $suppress = $wpdb->suppress_errors(true);
                 $missing_cols = [];
-                $cols_to_check = ['wp_version', 'ep_version', 'php_version', 'last_seen'];
+                $cols_to_check = ['wp_version', 'ep_version', 'php_version', 'last_seen', 'last_download'];
                 foreach ($cols_to_check as $col) {
                     $check = $wpdb->get_results("SHOW COLUMNS FROM $table LIKE '$col'");
                     if (empty($check)) {
@@ -1407,8 +2156,15 @@ class EP_Admin
 
                 if (!empty($missing_cols)) {
                     foreach ($missing_cols as $m_col) {
-                        $after = ($m_col === 'wp_version') ? 'authorized_apps' : ($m_col === 'ep_version' ? 'wp_version' : ($m_col === 'php_version' ? 'ep_version' : 'php_version'));
-                        $type = ($m_col === 'last_seen') ? 'datetime DEFAULT NULL' : 'varchar(10) DEFAULT NULL';
+                        $after_map = [
+                            'wp_version'    => 'authorized_apps',
+                            'ep_version'    => 'wp_version',
+                            'php_version'   => 'ep_version',
+                            'last_seen'     => 'php_version',
+                            'last_download' => 'last_seen',
+                        ];
+                        $after = $after_map[$m_col] ?? 'php_version';
+                        $type = in_array($m_col, ['last_seen', 'last_download'], true) ? 'datetime DEFAULT NULL' : 'varchar(10) DEFAULT NULL';
                         $wpdb->query("ALTER TABLE $table ADD COLUMN $m_col $type AFTER $after");
                     }
                     ep_error_log("REST Validate: SCHEMA MIGRATED - Added columns: " . implode(', ', $missing_cols));
@@ -1440,7 +2196,9 @@ class EP_Admin
         // Debug: Try to find by site alone to see what's wrong
         $partial = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE site_url = %s", $site_clean));
         if ($partial) {
-            ep_error_log("REST Validate: FAILED - Key mismatch or inactive. DB Key: [{$partial->master_key}], Req Key: [$key], DB Status: [{$partial->status}]");
+            // Nunca se escriben llaves en el log: ese archivo acaba siendo
+            // legible por HTTP con demasiada facilidad.
+            ep_error_log("REST Validate: FAILED - Llave incorrecta o cliente inactivo. Pista en BD: [{$partial->master_key_hint}], Estado: [{$partial->status}]");
         } else {
             ep_error_log("REST Validate: FAILED - Site [$site_clean] NOT FOUND in DB.");
         }
@@ -1466,11 +2224,7 @@ class EP_Admin
         // Validar suscriptor
         global $wpdb;
         $table = $wpdb->prefix . 'ep_subscribers';
-        $sub = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table WHERE master_key = %s AND site_url = %s AND status = 'active'",
-            $key,
-            $site
-        ));
+        $sub = self::find_subscriber_by_key($site, $key);
 
         if (!$sub) {
             return new WP_REST_Response(['update' => false, 'error' => 'Unauthorized'], 401);
@@ -1515,30 +2269,29 @@ class EP_Admin
         // Validar suscriptor
         global $wpdb;
         $table = $wpdb->prefix . 'ep_subscribers';
-        $sub = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $table WHERE master_key = %s AND site_url = %s AND status = 'active'",
-            $key,
-            $site
-        ));
+        $sub = self::find_subscriber_by_key($site, $key);
 
         if (!$sub) {
             return new WP_REST_Response(['error' => 'Unauthorized'], 401);
         }
 
-        // Generar Blueprint ZIP
+        // Generar Blueprint ZIP (devuelve la ruta absoluta del paquete)
         require_once EMPLOYEE_PORTAL_PATH . 'admin/class-ep-deployer.php';
-        $zip_url = EP_Deployer::create_blueprint_zip();
+        $zip_path = EP_Deployer::create_blueprint_zip();
 
-        if (!$zip_url) {
+        if (!$zip_path || !file_exists($zip_path)) {
             return new WP_REST_Response(['error' => 'Failed to generate update package'], 500);
         }
 
-        // Convertir URL a ruta local para servir el archivo
-        $upload_dir = wp_upload_dir();
-        $zip_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $zip_url);
+        // Registrar la descarga para el panel de monitorización del maestro.
+        // La columna la crea la autocuración de esquema de rest_validate_key; si
+        // todavía no existe, el error se silencia y la descarga sigue adelante.
+        $suppress = $wpdb->suppress_errors(true);
+        $wpdb->update($table, ['last_download' => current_time('mysql')], ['id' => $sub->id]);
+        $wpdb->suppress_errors($suppress);
 
-        if (!file_exists($zip_path)) {
-            return new WP_REST_Response(['error' => 'Package file not found'], 500);
+        while (ob_get_level()) {
+            ob_end_clean();
         }
 
         // Servir el archivo directamente
@@ -1695,6 +2448,18 @@ class EP_Admin
 
     private function render_ai_settings_page()
     {
+        // Esta pestaña mezcla dos cosas: las credenciales de Microsoft 365, que
+        // necesitan TODOS los planes para el inicio de sesión, y el bot de Teams
+        // con la IA, que es del plan PRO MAX. Se avisa para que nadie configure
+        // un bot que su licencia no va a dejar hablar.
+        if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {
+            echo '<div class="notice notice-warning inline" style="margin:0 0 20px; padding:12px;">'
+                . '<p style="margin:0;"><strong>El canal de Microsoft Teams no está incluido en tu plan.</strong><br>'
+                . 'Los ajustes de Microsoft 365 de esta página siguen siendo necesarios para el inicio de sesión y para la agenda, el correo y las tareas. '
+                . 'Lo que no funcionará es el bot: ni notificaciones en Teams ni consultas al asistente con IA. '
+                . 'Los avisos del portal seguirán llegando por pantalla y por correo.</p></div>';
+        }
+
         $api_key      = ep_get_option('ep_ai_api_key');
         $model        = ep_get_option('ep_ai_model', 'gemini-3.1-flash-lite-preview');
         $daily_limit  = ep_get_option('ep_ai_daily_limit', 100);
@@ -1905,6 +2670,10 @@ class EP_Admin
                             <div class="ep-step-item">
                                 <div class="ep-step-num">3</div>
                                 <div class="ep-step-text">En 'Certificados y secretos', genera un nuevo <b>Client Secret</b> y pégalo aquí. <strong style="color:#dc2626;">⚠️ Copia el VALUE, no el Secret ID.</strong></div>
+                            </div>
+                            <div class="ep-step-item">
+                                <div class="ep-step-num">4</div>
+                                <div class="ep-step-text">En <b>Permisos de API &gt; Microsoft Graph &gt; Permisos de aplicación</b>, añade <code>MailboxSettings.Read</code> y concede el <b>consentimiento del administrador</b>. Sin este permiso, el Directorio no puede leer las ausencias ("Fuera de la oficina") que los empleados activan desde Outlook o Teams.</div>
                             </div>
                         </div>
                     </div>
@@ -2457,6 +3226,13 @@ class EP_Admin
         check_ajax_referer('ep_learning_nonce', 'security');
         if (!current_user_can('manage_options')) wp_send_json_error('Sin permisos.');
 
+        // El aprendizaje pertenece al bot de Teams (plan PRO MAX). Sin el canal
+        // contratado la pestaña ni se muestra, pero la accion seguiria siendo
+        // invocable directamente contra admin-ajax.php.
+        if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {
+            wp_send_json_error('El asistente con IA no está incluido en tu plan.');
+        }
+
         $entry_id = sanitize_text_field($_POST['entry_id'] ?? '');
         $rule     = sanitize_textarea_field($_POST['rule'] ?? '');
 
@@ -2482,6 +3258,13 @@ class EP_Admin
         check_ajax_referer('ep_learning_nonce', 'security');
         if (!current_user_can('manage_options')) wp_send_json_error('Sin permisos.');
 
+        // El aprendizaje pertenece al bot de Teams (plan PRO MAX). Sin el canal
+        // contratado la pestaña ni se muestra, pero la accion seguiria siendo
+        // invocable directamente contra admin-ajax.php.
+        if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {
+            wp_send_json_error('El asistente con IA no está incluido en tu plan.');
+        }
+
         $entry_id = sanitize_text_field($_POST['entry_id'] ?? '');
         if (empty($entry_id)) wp_send_json_error('Falta entry_id.');
 
@@ -2495,6 +3278,12 @@ class EP_Admin
     // ── Autoaprendizaje: Email diario (cron) ─────────────────────────────────
     public function send_learning_digest_email(): void
     {
+        // Sin bot no hay nada que aprender: no se molesta al administrador con un
+        // resumen diario de una funcion que su plan no incluye.
+        if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {
+            return;
+        }
+
         $queue = get_option('ep_bot_learning_queue', []);
         if (empty($queue) || !is_array($queue)) return;
 

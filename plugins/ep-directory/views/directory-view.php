@@ -4,15 +4,13 @@
  * Variables available: $users
  */
 
-// Collect unique departments
-$departments = array();
-foreach ($users as $u) {
-    $dept = get_user_meta($u->ID, 'ep_department', true);
-    if (!empty($dept) && !in_array($dept, $departments)) {
-        $departments[] = $dept;
-    }
-}
-sort($departments);
+// Departamentos agrupados ignorando mayúsculas, tildes y separadores, para que
+// "COMUNICACIÓN" y "Comunicación" sean una sola entrada del filtro.
+$dept_index = EP_App_Directory::build_department_index($users);
+
+// Sólo administradores y RR.HH. ven el botón de editar ficha.
+$can_edit_directory = EP_App_Directory::can_edit_profiles();
+$edit_nonce         = $can_edit_directory ? wp_create_nonce('ep_directory_edit_profile') : '';
 ?>
 <div class="ep-directory-container">
     <div class="ep-directory-header" style="display: flex; justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap; margin-bottom: 20px;">
@@ -40,8 +38,8 @@ sort($departments);
             <div class="ep-dir-dept-wrap">
                 <select id="ep-dir-dept-filter" class="ep-input">
                     <option value="">Todos los departamentos</option>
-                    <?php foreach ($departments as $dept): ?>
-                        <option value="<?php echo esc_attr($dept); ?>"><?php echo esc_html($dept); ?></option>
+                    <?php foreach ($dept_index as $dept_key => $dept_info): ?>
+                        <option value="<?php echo esc_attr($dept_key); ?>"><?php echo esc_html($dept_info['label']); ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -89,21 +87,46 @@ sort($departments);
             }
             $job_title = get_user_meta($user->ID, 'ep_job_title', true);
             $department = get_user_meta($user->ID, 'ep_department', true);
+
+            // La tarjeta se filtra por la clave normalizada y muestra la
+            // etiqueta unificada del grupo, aunque el dato guardado varíe.
+            $dept_key   = EP_App_Directory::normalize_department_key($department);
+            $dept_label = isset($dept_index[$dept_key]) ? $dept_index[$dept_key]['label'] : $department;
             $phone = get_user_meta($user->ID, 'ep_mobile_phone', true);
             $office_phone = get_user_meta($user->ID, 'ep_business_phone', true);
             $email = $user->user_email;
             $saved_presence = get_user_meta($user->ID, 'ep_teams_presence', true) ?: 'Offline';
+
+            // Ausencia ya conocida (venga del portal o de Outlook/Teams): se pinta
+            // en el propio HTML para no depender de que llegue el AJAX.
+            $oof_data = class_exists('EP_OOF_Sync')
+                ? EP_OOF_Sync::get_user_oof_data($user->ID)
+                : array('is_oof' => false, 'message' => '', 'end_ts' => 0);
+            $is_oof_now = !empty($oof_data['is_oof']);
+            if ($is_oof_now) {
+                $saved_presence = 'OutOfOffice';
+            }
+            $oof_note = trim((string) ($oof_data['message'] ?? ''));
             ?>
-            <div class="ep-employee-card" data-user-id="<?php echo $user->ID; ?>" data-department="<?php echo esc_attr($department); ?>" data-presence-status="<?php echo esc_attr($saved_presence); ?>" data-search-text="<?php echo esc_attr(strtolower($user->display_name . ' ' . $job_title . ' ' . $department . ' ' . $email)); ?>">
+            <div class="ep-employee-card<?php echo $is_oof_now ? ' is-oof' : ''; ?>" data-user-id="<?php echo $user->ID; ?>" data-department="<?php echo esc_attr($department); ?>" data-department-key="<?php echo esc_attr($dept_key); ?>" data-presence-status="<?php echo esc_attr($saved_presence); ?>" data-is-oof="<?php echo $is_oof_now ? 'true' : 'false'; ?>" data-search-text="<?php echo esc_attr(strtolower($user->display_name . ' ' . $job_title . ' ' . $department . ' ' . $email)); ?>"<?php if ($can_edit_directory): ?> data-name="<?php echo esc_attr($user->display_name); ?>" data-job-title="<?php echo esc_attr($job_title); ?>" data-business-phone="<?php echo esc_attr($office_phone); ?>" data-mobile-phone="<?php echo esc_attr($phone); ?>" data-office-location="<?php echo esc_attr(get_user_meta($user->ID, 'ep_office_location', true)); ?>" data-pinned="<?php echo esc_attr(implode(',', array_keys(EP_Auth_O365::get_profile_overrides($user->ID)))); ?>"<?php endif; ?>>
                 <div class="ep-employee-photo-frame" style="position:relative;">
                     <img src="<?php echo esc_url($photo_url); ?>" alt="<?php echo esc_attr($user->display_name); ?>">
-                    <span class="ep-presence-badge-dot" style="position:absolute; bottom:4px; right:4px; width:14px; height:14px; border-radius:50%; border:2px solid #fff; background:#95a5a6;" title="Estado Teams"></span>
+                    <span class="ep-presence-badge-dot" style="position:absolute; bottom:4px; right:4px; width:14px; height:14px; border-radius:50%; border:2px solid #fff; background:<?php echo $is_oof_now ? '#8b5cf6' : '#95a5a6'; ?>;" title="Estado Teams"></span>
                 </div>
+                <?php if ($is_oof_now): ?>
+                    <div class="ep-card-oof-banner"<?php echo $oof_note ? ' title="' . esc_attr('Nota de fuera de la oficina: ' . $oof_note) . '"' : ''; ?>>
+                        <i class="fa-solid fa-umbrella-beach"></i> Fuera de la oficina<?php
+                            if ($oof_note) {
+                                echo '<span class="ep-oof-note-text">: "' . esc_html($oof_note) . '"</span>';
+                            }
+                        ?>
+                    </div>
+                <?php endif; ?>
 
                 <h3 class="ep-employee-name" style="margin-top:10px; margin-bottom:4px;"><?php echo esc_html($user->display_name); ?></h3>
 
                 <?php if ($department): ?>
-                    <div style="margin-bottom:6px;"><span class="ep-dept-badge" style="background:rgba(0,120,212,0.08); color:#0078d4; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; display:inline-block;"><?php echo esc_html($department); ?></span></div>
+                    <div style="margin-bottom:6px;"><span class="ep-dept-badge" style="background:rgba(0,120,212,0.08); color:#0078d4; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; display:inline-block;"><?php echo esc_html($dept_label); ?></span></div>
                 <?php endif; ?>
 
                 <div class="ep-employee-info">
@@ -151,6 +174,13 @@ sort($departments);
                             <i class="fa-solid fa-phone"></i>
                         </a>
                     <?php endif; ?>
+
+                    <?php if ($can_edit_directory): ?>
+                        <button type="button" class="ep-action-icon ep-edit-profile-btn" title="Editar ficha de <?php echo esc_attr($user->display_name); ?>"
+                            onclick="epOpenProfileEditor(<?php echo $user->ID; ?>)">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Presence status footer -->
@@ -167,6 +197,195 @@ sort($departments);
         <?php endforeach; ?>
     </div>
 </div>
+
+<?php if ($can_edit_directory): ?>
+    <!-- Editor de ficha (administradores y RR.HH.) -->
+    <datalist id="ep-dept-suggestions">
+        <?php foreach ($dept_index as $dept_info): ?>
+            <option value="<?php echo esc_attr($dept_info['label']); ?>"></option>
+        <?php endforeach; ?>
+    </datalist>
+
+    <div class="ep-edit-modal-overlay" id="ep-edit-modal" role="dialog" aria-modal="true" aria-labelledby="ep-edit-modal-title" hidden>
+        <div class="ep-edit-modal">
+            <div class="ep-edit-modal-head">
+                <h2 id="ep-edit-modal-title"><i class="fa-solid fa-pen"></i> Editar ficha</h2>
+                <button type="button" class="ep-edit-modal-close" onclick="epCloseProfileEditor()" aria-label="Cerrar">&times;</button>
+            </div>
+
+            <p class="ep-edit-modal-subject" id="ep-edit-subject"></p>
+
+            <form id="ep-edit-form" onsubmit="return epSaveProfile(event)">
+                <input type="hidden" id="ep-edit-user-id" value="">
+
+                <div class="ep-edit-field">
+                    <label for="ep-edit-job-title">Puesto</label>
+                    <input type="text" id="ep-edit-job-title" maxlength="120" autocomplete="off">
+                </div>
+
+                <div class="ep-edit-field">
+                    <label for="ep-edit-department">Departamento</label>
+                    <input type="text" id="ep-edit-department" list="ep-dept-suggestions" maxlength="120" autocomplete="off">
+                    <small>Elige uno de la lista para no crear variantes nuevas del mismo departamento.</small>
+                </div>
+
+                <div class="ep-edit-row">
+                    <div class="ep-edit-field">
+                        <label for="ep-edit-business-phone">Extensión</label>
+                        <input type="text" id="ep-edit-business-phone" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="ep-edit-field">
+                        <label for="ep-edit-mobile-phone">Móvil</label>
+                        <input type="text" id="ep-edit-mobile-phone" maxlength="40" autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="ep-edit-field">
+                    <label for="ep-edit-office-location">Ubicación / despacho</label>
+                    <input type="text" id="ep-edit-office-location" maxlength="120" autocomplete="off">
+                </div>
+
+                <div class="ep-edit-notice" id="ep-edit-pinned-notice" hidden>
+                    <i class="fa-solid fa-thumbtack"></i>
+                    <span>Esta ficha tiene campos fijados en el portal porque en su momento no se pudieron escribir en Microsoft 365. Mientras estén fijados, los cambios hechos en Office no llegarán a estos campos.</span>
+                    <button type="button" class="ep-edit-link" onclick="epResetProfile()">Volver a sincronizar desde M365</button>
+                </div>
+
+                <div class="ep-edit-result" id="ep-edit-result" hidden></div>
+
+                <div class="ep-edit-modal-actions">
+                    <button type="button" class="ep-edit-btn-secondary" onclick="epCloseProfileEditor()">Cancelar</button>
+                    <button type="submit" class="ep-edit-btn-primary" id="ep-edit-save-btn">
+                        <i class="fa-solid fa-floppy-disk"></i> Guardar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+<?php endif; ?>
+
+<?php if ($can_edit_directory): ?>
+<script>
+    // --- Editor de fichas del directorio (administradores y RR.HH.) ---
+    (function () {
+        const EDIT_NONCE = '<?php echo esc_js($edit_nonce); ?>';
+        const AJAX_URL   = '<?php echo esc_url_raw(admin_url('admin-ajax.php')); ?>';
+
+        const el = (id) => document.getElementById(id);
+        const cardOf = (userId) => document.querySelector('.ep-employee-card[data-user-id="' + userId + '"]');
+
+        function showResult(message, ok) {
+            const box = el('ep-edit-result');
+            box.textContent = message;
+            box.className = 'ep-edit-result ' + (ok ? 'is-ok' : 'is-error');
+            box.hidden = false;
+        }
+
+        window.epOpenProfileEditor = function (userId) {
+            const card = cardOf(userId);
+            if (!card) return;
+
+            el('ep-edit-user-id').value = userId;
+            el('ep-edit-subject').textContent = card.dataset.name || '';
+            el('ep-edit-job-title').value = card.dataset.jobTitle || '';
+            el('ep-edit-department').value = card.dataset.department || '';
+            el('ep-edit-business-phone').value = card.dataset.businessPhone || '';
+            el('ep-edit-mobile-phone').value = card.dataset.mobilePhone || '';
+            el('ep-edit-office-location').value = card.dataset.officeLocation || '';
+
+            el('ep-edit-pinned-notice').hidden = !(card.dataset.pinned || '').length;
+            el('ep-edit-result').hidden = true;
+
+            el('ep-edit-modal').hidden = false;
+            document.body.style.overflow = 'hidden';
+            el('ep-edit-job-title').focus();
+        };
+
+        window.epCloseProfileEditor = function () {
+            el('ep-edit-modal').hidden = true;
+            document.body.style.overflow = '';
+        };
+
+        window.epSaveProfile = function (event) {
+            event.preventDefault();
+
+            const userId = el('ep-edit-user-id').value;
+            const btn = el('ep-edit-save-btn');
+            const original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+
+            fetch(AJAX_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'ep_directory_ajax',
+                    sub_action: 'save_profile',
+                    security: EDIT_NONCE,
+                    user_id: userId,
+                    job_title: el('ep-edit-job-title').value,
+                    department: el('ep-edit-department').value,
+                    business_phone: el('ep-edit-business-phone').value,
+                    mobile_phone: el('ep-edit-mobile-phone').value,
+                    office_location: el('ep-edit-office-location').value
+                })
+            })
+            .then(r => r.json())
+            .then(res => {
+                btn.disabled = false;
+                btn.innerHTML = original;
+
+                if (!res.success) {
+                    showResult(typeof res.data === 'string' ? res.data : 'No se pudo guardar.', false);
+                    return;
+                }
+
+                showResult(res.data.message, true);
+
+                // Recargamos para que se recalculen departamentos, etiquetas y filtros.
+                setTimeout(() => window.location.reload(), 1600);
+            })
+            .catch(() => {
+                btn.disabled = false;
+                btn.innerHTML = original;
+                showResult('Error de red al guardar la ficha.', false);
+            });
+
+            return false;
+        };
+
+        window.epResetProfile = function () {
+            const userId = el('ep-edit-user-id').value;
+            if (!confirm('Se descartarán los valores fijados en el portal y volverá a mandar Microsoft 365. ¿Continuar?')) return;
+
+            fetch(AJAX_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'ep_directory_ajax',
+                    sub_action: 'reset_profile',
+                    security: EDIT_NONCE,
+                    user_id: userId
+                })
+            })
+            .then(r => r.json())
+            .then(res => {
+                showResult(typeof res.data === 'string' ? res.data : 'Hecho.', res.success);
+                if (res.success) setTimeout(() => window.location.reload(), 1600);
+            })
+            .catch(() => showResult('Error de red al liberar la ficha.', false));
+        };
+
+        // Cerrar con Escape o pulsando fuera de la tarjeta.
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !el('ep-edit-modal').hidden) window.epCloseProfileEditor();
+        });
+        el('ep-edit-modal').addEventListener('click', (e) => {
+            if (e.target === el('ep-edit-modal')) window.epCloseProfileEditor();
+        });
+    })();
+</script>
+<?php endif; ?>
 
 <script>
     function epDownloadVCard(userId, nonce) {
@@ -257,6 +476,13 @@ sort($departments);
     (function () {
         let activeStatusFilter = '';
 
+        const escapeHtml = (str) => String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
         const presenceColors = {
             'Available': '#00cc6a',
             'Busy': '#e74c3c',
@@ -329,7 +555,7 @@ sort($departments);
 
             document.querySelectorAll('.ep-employee-card[data-user-id]').forEach(card => {
                 const cardSearch = (card.dataset.searchText || '').toLowerCase();
-                const cardDept   = (card.dataset.department || '').toLowerCase();
+                const cardDept   = (card.dataset.departmentKey || card.dataset.department || '').toLowerCase();
                 const cardStatus = card.dataset.presenceStatus || 'Offline';
                 const isOof      = card.dataset.isOof === 'true' || cardStatus === 'OutOfOffice';
 
@@ -447,11 +673,18 @@ sort($departments);
                                 card.appendChild(oofBanner);
                             }
                         }
-                        const noteSnippet = presence.oof_message ? `<span class="ep-oof-note-text">: "${presence.oof_message}"</span>` : '';
-                        oofBanner.innerHTML = `<i class="fa-solid fa-umbrella-beach"></i> Fuera de la oficina ${noteSnippet}`;
+                        const noteSnippet = presence.oof_message ? `<span class="ep-oof-note-text">: "${escapeHtml(presence.oof_message)}"</span>` : '';
+                        const untilSnippet = presence.oof_until ? ` (hasta el ${escapeHtml(presence.oof_until)})` : '';
+                        oofBanner.innerHTML = `<i class="fa-solid fa-umbrella-beach"></i> Fuera de la oficina${untilSnippet}${noteSnippet}`;
                         if (presence.oof_message) {
                             oofBanner.title = 'Nota de fuera de la oficina: ' + presence.oof_message;
                         }
+                    } else {
+                        // Ya no está ausente (p. ej. la desactivó desde Outlook):
+                        // limpiamos lo que se hubiera pintado en el servidor.
+                        card.classList.remove('is-oof');
+                        const staleBanner = card.querySelector('.ep-card-oof-banner');
+                        if (staleBanner) staleBanner.remove();
                     }
                 });
 
