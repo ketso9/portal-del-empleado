@@ -156,13 +156,28 @@ class EP_Deployer
      */
     public static function get_blueprint_dir()
     {
-        $upload_dir = wp_upload_dir();
-        if (!empty($upload_dir['error'])) {
-            error_log('EP_Deployer: wp_upload_dir devolvió error: ' . $upload_dir['error']);
-            return false;
+        // Por defecto siguen en uploads/, pero se pueden sacar del árbol web con la
+        // constante EP_BLUEPRINT_DIR (en wp-config.php) o con el filtro.
+        //
+        // Merece la pena: estos paquetes llevan el código completo del portal y los
+        // .ps1 de despliegue con los datos de acceso SSH, y ahí dentro dependen de
+        // que la .htaccess esté bien puesta y de que el alojamiento la respete.
+        // Como EP_Admin::ajax_download_blueprint ya los entrega con readfile() tras
+        // comprobar el rol, la ruta web no aporta nada: solo expone.
+        $dir = false;
+
+        if (defined('EP_BLUEPRINT_DIR') && EP_BLUEPRINT_DIR) {
+            $dir = trailingslashit(EP_BLUEPRINT_DIR);
+        } else {
+            $upload_dir = wp_upload_dir();
+            if (!empty($upload_dir['error'])) {
+                error_log('EP_Deployer: wp_upload_dir devolvió error: ' . $upload_dir['error']);
+                return false;
+            }
+            $dir = trailingslashit($upload_dir['basedir']) . self::BLUEPRINT_DIR . '/';
         }
 
-        $dir = trailingslashit($upload_dir['basedir']) . self::BLUEPRINT_DIR . '/';
+        $dir = trailingslashit((string) apply_filters('ep_blueprint_dir', $dir));
 
         if (!is_dir($dir) && !wp_mkdir_p($dir)) {
             error_log("EP_Deployer: no se pudo crear el directorio de blueprints: {$dir}");

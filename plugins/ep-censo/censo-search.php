@@ -495,23 +495,57 @@
                 var term = $('#censo-search-term').val();
                 var mun = $('#censo-search-municipio').val();
 
-                $.post('<?php echo admin_url('admin-ajax.php'); ?>', {
-                    action: 'censo_export_csv',
+                // La descarga va en dos pasos. Primero se valida por AJAX, porque
+                // el CSV baja en streaming y en cuanto salen sus cabeceras ya no se
+                // puede responder con un JSON de error. Despues se pide el volcado
+                // con un formulario contra un iframe oculto: asi el navegador se
+                // descarga el archivo sin salir de la pagina y sin que el servidor
+                // llegue a guardar nada.
+                var exportParams = {
                     scope: scope,
                     columns: columns,
                     term: (scope === 'filtered' ? term : ''),
                     municipio: (scope === 'filtered' ? mun : ''),
                     filter_type: (scope === 'filtered' ? filterType : ''),
                     nonce: censo_nonce
-                }, function (response) {
-                    updateCensoNonce(response.data.new_nonce);
+                };
+
+                $.post('<?php echo admin_url('admin-ajax.php'); ?>', $.extend({ action: 'censo_export_check' }, exportParams), function (response) {
                     btn.prop('disabled', false).html(originalHtml);
-                    if (response.success && response.data.url) {
-                        window.location.href = response.data.url;
-                        $('#modal-export-censo').remove();
-                    } else {
-                        alert('Error al exportar: ' + (response.data || response.data.message || 'Error desconocido'));
+
+                    if (!response.success) {
+                        alert('Error al exportar: ' + (response.data || 'Error desconocido'));
+                        return;
                     }
+
+                    updateCensoNonce(response.data.new_nonce);
+                    exportParams.nonce = response.data.new_nonce;
+
+                    var $frame = $('#censo-export-frame');
+                    if (!$frame.length) {
+                        $frame = $('<iframe>', { id: 'censo-export-frame', name: 'censo-export-frame' })
+                            .css('display', 'none').appendTo('body');
+                    }
+
+                    var $form = $('<form>', {
+                        method: 'POST',
+                        action: '<?php echo admin_url('admin-ajax.php'); ?>',
+                        target: 'censo-export-frame'
+                    }).css('display', 'none');
+
+                    $form.append($('<input>', { type: 'hidden', name: 'action', value: 'censo_export_csv' }));
+                    $.each(exportParams, function (key, value) {
+                        if (key === 'columns') {
+                            $.each(value, function (i, col) {
+                                $form.append($('<input>', { type: 'hidden', name: 'columns[]', value: col }));
+                            });
+                        } else {
+                            $form.append($('<input>', { type: 'hidden', name: key, value: value }));
+                        }
+                    });
+
+                    $form.appendTo('body').submit().remove();
+                    $('#modal-export-censo').remove();
                 }).fail(function (xhr) {
                     btn.prop('disabled', false).html(originalHtml);
                     alert('Error de servidor al exportar.');

@@ -29,6 +29,7 @@ class CensoManager
         add_action('wp_ajax_censo_search', [$this, 'handle_search']);
         add_action('wp_ajax_censo_get_stats', [$this, 'handle_get_stats']);
         add_action('wp_ajax_censo_export_csv', [$this, 'handle_export_csv']);
+        add_action('wp_ajax_censo_export_check', [$this, 'handle_export_check']);
         add_action('wp_ajax_censo_enrich_batch', [$this, 'handle_enrich_batch']);
         add_action('wp_ajax_censo_reset_errors', [$this, 'handle_reset_errors']);
         add_action('wp_ajax_censo_reset_notfound', [$this, 'handle_reset_notfound']);
@@ -310,38 +311,37 @@ class CensoManager
         ]));
     }
 
-    public function handle_export_csv()
+    /**
+     * Valida una petición de export y devuelve todo lo necesario para ejecutarla.
+     *
+     * La usan los dos extremos: la comprobación previa por AJAX, que responde en
+     * JSON y permite avisar al usuario, y el volcado en streaming, que ya no puede
+     * responder JSON porque para entonces ha mandado las cabeceras de descarga.
+     *
+     * @return array|WP_Error
+     */
+    private function prepare_export()
     {
-        check_ajax_referer('censo_nonce', 'nonce');
+        global $wpdb;
 
         // El nonce no es una autorización: lo imprime censo-search.php, que se
-        // incluye para cualquiera con la sesión iniciada. Sin esta comprobación,
-        // una cuenta sin acceso al censo podía pedir el export igualmente.
+        // incluye para cualquiera con la sesión iniciada.
         if (!$this->can_view_censo()) {
-            wp_send_json_error('No autorizado');
+            return new WP_Error('no_autorizado', 'No autorizado');
         }
-
-        set_time_limit(900); // 15 minutes for very large exports
-
-        // wp-cron solo salta si el sitio recibe visitas. El export es la operación
-        // frecuente de este módulo, así que se aprovecha para ir barriendo.
-        $this->run_scheduled_cleanup();
-
-        global $wpdb;
-        $table_name = $wpdb->prefix . CensoConfig::TABLE_NAME;
 
         $scope = sanitize_text_field($_POST['scope'] ?? 'filtered');
 
         // El volcado completo es otra cosa que un export filtrado: son todos los
-        // datos de todas las empresas del censo en un solo CSV. Se exige el mismo
+        // datos de todas las empresas del censo de una vez. Se exige el mismo
         // permiso que para importar o enriquecer.
         if ($scope === 'all' && !$this->can_enrich_and_import()) {
-            wp_send_json_error('No autorizado para exportar el censo completo.');
+            return new WP_Error('no_autorizado', 'No autorizado para exportar el censo completo.');
         }
 
         $requested_columns = $_POST['columns'] ?? [];
         if (!is_array($requested_columns) || empty($requested_columns)) {
-            wp_send_json_error("No se han seleccionado columnas para exportar.");
+            return new WP_Error('sin_columnas', 'No se han seleccionado columnas para exportar.');
         }
 
         $term = sanitize_text_field($_POST['term'] ?? '');
@@ -379,9 +379,10 @@ class CensoManager
         }
 
         if (empty($headers)) {
-            wp_send_json_error("Columnas no válidas.");
+            return new WP_Error('columnas_no_validas', 'Columnas no válidas.');
         }
 
+        $table_name = $wpdb->prefix . CensoConfig::TABLE_NAME;
         $where = "WHERE 1=1";
         $params = [];
 
@@ -417,31 +418,92 @@ class CensoManager
 
         $total = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name $where", $params));
         if (!$total) {
-            wp_send_json_error("No se encontraron registros para exportar.");
+            return new WP_Error('sin_registros', 'No se encontraron registros para exportar.');
         }
 
-        $filename = 'censo_export_' . date('Y-m-d_H-i-s') . '.csv';
-        $upload_dir = wp_upload_dir();
-        $file_path = $upload_dir['basedir'] . '/' . $filename;
-        $file_url = $upload_dir['baseurl'] . '/' . $filename;
+        return [
+            'table_name' => $table_name,
+            'where' => $where,
+            'params' => $params,
+            'headers' => $headers,
+            'db_cols' => $db_cols,
+            'total' => (int) $total,
+        ];
+    }
 
-        $fp = fopen($file_path, 'w');
-        if (!$fp) {
-            wp_send_json_error("Error al crear el archivo CSV.");
+    /**
+     * Comprobación previa del export, antes de pedir la descarga.
+     *
+     * Existe porque el volcado va en streaming: en cuanto salen las cabeceras del
+     * CSV ya no se puede contestar con un JSON de error, así que los avisos de
+     * "no tienes permiso" o "no hay resultados" tienen que darse aquí.
+     */
+    public function handle_export_check()
+    {
+        check_ajax_referer('censo_nonce', 'nonce');
+
+        $export = $this->prepare_export();
+        if (is_wp_error($export)) {
+            wp_send_json_error($export->get_error_message());
         }
 
+        wp_send_json_success([
+            'total' => $export['total'],
+            'new_nonce' => wp_create_nonce('censo_nonce')
+        ]);
+    }
+
+    /**
+     * Vuelca el censo directamente al navegador, sin pasar por disco.
+     *
+     * Antes se escribía el CSV en uploads/ y se devolvía su URL, así que cada
+     * export dejaba en el servidor un volcado del censo de unos 8 MB que nadie
+     * volvía a mirar: 62 en siete meses, medio giga. Ahora las filas salen por
+     * php://output según se leen de la base de datos y no llega a existir ningún
+     * archivo, con lo que no hay nada que caducar ni que proteger.
+     */
+    public function handle_export_csv()
+    {
+        check_ajax_referer('censo_nonce', 'nonce');
+
+        $export = $this->prepare_export();
+        if (is_wp_error($export)) {
+            $code = ($export->get_error_code() === 'no_autorizado') ? 403 : 400;
+            wp_die(esc_html($export->get_error_message()), 'Portal del Empleado', ['response' => $code]);
+        }
+
+        set_time_limit(900); // 15 minutes for very large exports
+
+        // wp-cron solo salta si el sitio recibe visitas. El export es la operación
+        // frecuente de este módulo, así que se aprovecha para ir barriendo.
+        $this->run_scheduled_cleanup();
+
+        global $wpdb;
+
+        // Fuera cualquier buffer: el CSV puede pesar decenas de MB y hay que irlo
+        // soltando según se genera, no acumularlo en memoria.
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        nocache_headers();
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="censo_export_' . date('Y-m-d_H-i-s') . '.csv"');
+        header('X-Content-Type-Options: nosniff');
+
+        $fp = fopen('php://output', 'w');
         fputs($fp, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM
-        fputcsv($fp, $headers, ';');
+        fputcsv($fp, $export['headers'], ';');
 
         $offset = 0;
         $batch_size = 2000;
 
         // Si db_cols está vacío (solo exportan 'CONTROL'), evitamos error SQL
-        $sql_select = !empty($db_cols) ? '`' . implode('`, `', $db_cols) . '`' : "' ' as DUMMY";
+        $sql_select = !empty($export['db_cols']) ? '`' . implode('`, `', $export['db_cols']) . '`' : "' ' as DUMMY";
 
-        while ($offset < $total) {
-            $sql = "SELECT $sql_select FROM $table_name $where LIMIT %d, %d";
-            $prepared_sql = $wpdb->prepare($sql, array_merge($params, [$offset, $batch_size]));
+        while ($offset < $export['total']) {
+            $sql = "SELECT $sql_select FROM {$export['table_name']} {$export['where']} LIMIT %d, %d";
+            $prepared_sql = $wpdb->prepare($sql, array_merge($export['params'], [$offset, $batch_size]));
             $results = $wpdb->get_results($prepared_sql, ARRAY_A);
 
             if (empty($results))
@@ -449,7 +511,7 @@ class CensoManager
 
             foreach ($results as $row) {
                 $csv_row = [];
-                foreach ($headers as $h) {
+                foreach ($export['headers'] as $h) {
                     if ($h === 'CONTROL') {
                         $csv_row[] = '';
                     } else {
@@ -461,15 +523,19 @@ class CensoManager
                 }
                 fputcsv($fp, $csv_row, ';');
             }
+
+            flush();
             $offset += $batch_size;
             unset($results);
         }
 
         fclose($fp);
+
         if (function_exists('ep_stats_log')) {
-            ep_stats_log('censo', 'censo_export', null, ['count' => $total]);
+            ep_stats_log('censo', 'censo_export', null, ['count' => $export['total']]);
         }
-        wp_send_json_success(['url' => $file_url, 'new_nonce' => wp_create_nonce('censo_nonce')]);
+
+        exit;
     }
 
     /**
