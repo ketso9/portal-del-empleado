@@ -745,6 +745,14 @@ class CensoManager
             (int) apply_filters('ep_censo_export_ttl', 7 * DAY_IN_SECONDS)
         );
 
+        // Informes de enriquecimiento: la pantalla solo ofrece el de HOY, porque el
+        // nombre lleva la fecha del día. Cualquiera anterior es peso muerto por
+        // diseño; se le deja una semana por si alguien lo abre al día siguiente.
+        $this->delete_older_than(
+            glob($path . "/censo_enriquecimiento_*.csv"),
+            (int) apply_filters("ep_censo_enrich_ttl", 7 * DAY_IN_SECONDS)
+        );
+
         // Informes de cambios: se conservan los N más recientes y punto, sin
         // caducidad por fecha.
         //
