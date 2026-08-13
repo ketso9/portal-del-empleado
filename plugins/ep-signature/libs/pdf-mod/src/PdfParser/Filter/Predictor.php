@@ -44,6 +44,7 @@ class Predictor
      * @param int $colors
      * @param int $bitsPerComponent
      * @param int $columns
+     * @throws PredictorException
      */
     public function __construct(
         $predictor = 1,
@@ -55,14 +56,35 @@ class Predictor
             $this->predictor = (int) $predictor;
 
             if ($colors !== null) {
+                if (!\in_array((int)$colors, [1, 2, 3, 4], true)) { // the 2 is questionable?
+                    throw new PredictorException(
+                        'Invalid colors value for predictor.',
+                        PredictorException::INVALID_PREDICTOR_VALUE
+                    );
+                }
+
                 $this->colors = (int)$colors;
             }
 
             if ($bitsPerComponent !== null) {
+                if (!\in_array((int)$bitsPerComponent, [1, 2, 4, 8, 16], true)) {
+                    throw new PredictorException(
+                        'Invalid bits-per-component value for predictor.',
+                        PredictorException::INVALID_PREDICTOR_VALUE
+                    );
+                }
+
                 $this->bitsPerComponent = (int)$bitsPerComponent;
             }
 
             if ($columns !== null) {
+                if ((int)$columns < 0) {
+                    throw new PredictorException(
+                        'Invalid columns value for predictor.',
+                        PredictorException::INVALID_PREDICTOR_VALUE
+                    );
+                }
+
                 $this->columns = (int)$columns;
             }
         }
@@ -154,6 +176,13 @@ class Predictor
         $offset = 0; // the offset in the source data ($data) while reading/decoding it
         /** @noinspection PhpUnusedLocalVariableInspection */
         $currRowData = []; // the data of the current row
+
+        if ((\strlen($data) / $bytesPerRow) < 1) {
+            throw new PredictorException(
+                'Invalid columns value for predictor.',
+                PredictorException::INVALID_PREDICTOR_VALUE
+            );
+        }
         $priorRowData = \array_fill(0, $bytesPerRow, 0); // the data of the previous row
 
         // initialize the predictor for the current row

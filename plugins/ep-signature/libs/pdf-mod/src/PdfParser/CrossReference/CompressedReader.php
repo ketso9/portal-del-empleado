@@ -10,6 +10,7 @@
 
 namespace setasign\FpdiPdfParser\PdfParser\CrossReference;
 
+use setasign\Fpdi\PdfParser\CrossReference\CrossReferenceException;
 use setasign\Fpdi\PdfParser\CrossReference\ReaderInterface;
 use setasign\Fpdi\PdfParser\Filter\FilterException;
 use setasign\Fpdi\PdfParser\PdfParserException;
@@ -99,28 +100,48 @@ class CompressedReader implements ReaderInterface
     /**
      * Read the main cross-reference data.
      * @throws PdfTypeException
+     * @throws CrossReferenceException
      */
     protected function read()
     {
         $dict = $this->stream->value;
+        $size = PdfNumeric::ensure($dict->value['Size'])->value;
 
         if (isset($dict->value['Index'])) {
             $index = PdfArray::ensure($dict->value['Index']);
             for ($i = 0, $n = \count($index->value); $i < $n; $i += 2) {
                 $start = PdfNumeric::ensure($index->value[$i])->value;
                 $count = PdfNumeric::ensure($index->value[$i + 1])->value;
+                if ($start < 0 || $count < 0) {
+                    throw new CrossReferenceException(
+                        'Invalid value in Index array of cross-reference stream.',
+                        CrossReferenceException::INVALID_DATA
+                    );
+                }
+
+                if ($start >= $size || ($start + $count - 1) >= $size) {
+                    throw new CrossReferenceException(
+                        'Invalid value in Index array of cross-reference stream.',
+                        CrossReferenceException::INVALID_DATA
+                    );
+                }
+
                 $this->subSections[$start] = $count;
             }
         } else {
-            $this->subSections[0] = $dict->value['Size']->value;
+            $this->subSections[0] = $size;
         }
 
-        /**
-         * @var array $fieldSizes
-         */
-        $fieldSizes = PdfDictionary::get($dict, 'W', new PdfArray())->value;
+        $fieldSizes = PdfArray::ensure(PdfDictionary::get($dict, 'W', new PdfArray()), 3)->value;
         foreach ($fieldSizes as $fieldSize) {
-            $this->fieldSizes[] = PdfNumeric::ensure($fieldSize)->value;
+            $fieldSizeValue = PdfNumeric::ensure($fieldSize)->value;
+            if ($fieldSizeValue < 0) {
+                throw new CrossReferenceException(
+                    'Invalid values in W array of cross-reference stream.',
+                    CrossReferenceException::INVALID_DATA
+                );
+            }
+            $this->fieldSizes[] = $fieldSizeValue;
         }
 
         $this->fieldsSize = \array_sum($this->fieldSizes);
@@ -195,6 +216,14 @@ class CompressedReader implements ReaderInterface
         if ($this->streamReader === null) {
             $this->streamReader = StreamReader::createByString($this->stream->getUnfilteredStream());
             $this->stream = null;
+
+            $streamLength = $this->getStreamReader()->getTotalLength();
+            if ((\array_sum($this->subSections) * $this->fieldsSize) !== $streamLength) {
+                throw new CrossReferenceException(
+                    'Cross-references stream size does not match object count or field size.',
+                    CrossReferenceException::INVALID_DATA
+                );
+            }
         }
 
         return $this->streamReader;

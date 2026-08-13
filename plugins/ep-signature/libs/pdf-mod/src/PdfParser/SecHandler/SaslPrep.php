@@ -25,6 +25,11 @@ class SaslPrep
         #[\SensitiveParameter]
         $string
     ) {
+        $string = (string)$string;
+        if (!\preg_match("//u", $string)) {
+            throw new \InvalidArgumentException('Password uses prohibited characters.');
+        }
+
         // Implementation of the SASLprep Profile: https://tools.ietf.org/html/rfc4013
 
         // 2.1. Mapping
@@ -40,13 +45,13 @@ class SaslPrep
 
         // B.1 Commonly mapped to nothing (https://tools.ietf.org/html/rfc3454#appendix-B.1)
         $string = \preg_replace(
-            "~[\x{00AD}|\x{034F}\x{1806}\x{180B}-\x{180D}\x{200B}-\x{200D}\x{2060}\x{FE00}-\x{FE0F}\x{FEFF}]~u",
+            "~[\x{00AD}\x{034F}\x{1806}\x{180B}-\x{180D}\x{200B}-\x{200D}\x{2060}\x{FE00}-\x{FE0F}\x{FEFF}]~u",
             '',
             $string
         );
 
         // 2.2. Normalization
-        if (class_exists('Normalizer', false)) {
+        if (\class_exists('\\Normalizer', false)) {
             $string = \Normalizer::normalize($string, \Normalizer::FORM_KC);
         }
 
@@ -55,7 +60,7 @@ class SaslPrep
             \preg_match(
                 "~[" .
                 // ASCII control characters, C.2.1: https://tools.ietf.org/html/rfc3454#appendix-C.2.1
-                "\x{0000}-\x{001F}|\x{007F}" .
+                "\x{0000}-\x{001F}\x{007F}" .
                 // Non-ASCII control characters, C.2.2: https://tools.ietf.org/html/rfc3454#appendix-C.2.2
                 "\x{0080}-\x{009F}\x{06DD}\x{070F}\x{180E}\x{200C}\x{200D}\x{2028}\x{2029}\x{2060}-\x{2063}" .
                 "\x{206A}-\x{206F}\x{FEFF}\x{FFF9}-\x{FFFC}\x{1D173}-\x{1D17A}" .

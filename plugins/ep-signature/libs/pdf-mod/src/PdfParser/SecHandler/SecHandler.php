@@ -215,6 +215,11 @@ abstract class SecHandler
         #[\SensitiveParameter]
         $data
     ) {
+        $key = (string)$key;
+        if ($key === '') {
+            throw new \InvalidArgumentException('Key cannot be empty.');
+        }
+
         if (self::checkCipherSupport('rc4-40')) {
             return (string)\openssl_decrypt($data, 'rc4-40', $key, OPENSSL_RAW_DATA, '');
         }
@@ -301,6 +306,13 @@ abstract class SecHandler
             PdfType::resolve(PdfDictionary::get($encryptionDictionary, 'Length', PdfNumeric::create(40)), $parser)
         )->value;
 
+        if ($keyLength <= 0 || ($keyLength % 8) !== 0) {
+            throw new PdfTypeException(
+                'Key length has to be a mutiple of 8 bits.',
+                PdfTypeException::INVALID_DATA_SIZE
+            );
+        }
+
         $this->keyLength = $keyLength / 8;
 
         // Crypt Filters / V == 4
@@ -323,6 +335,13 @@ abstract class SecHandler
                     $parser
                 )
             )->value;
+
+            if ($keyLength <= 0 || ($keyLength % 8) !== 0) {
+                throw new PdfTypeException(
+                    'Key length has to be a mutiple of 8 bits.',
+                    PdfTypeException::INVALID_DATA_SIZE
+                );
+            }
 
             switch ($cryptFilterMethod) {
                 case 'V2':
@@ -355,6 +374,13 @@ abstract class SecHandler
                     $parser
                 )
             )->value;
+
+            if ($keyLength <= 0 || ($keyLength % 8) !== 0) {
+                throw new PdfTypeException(
+                    'Key length has to be a mutiple of 8 bits.',
+                    PdfTypeException::INVALID_DATA_SIZE
+                );
+            }
 
             switch ($cryptFilterMethod) {
                 case 'V2':

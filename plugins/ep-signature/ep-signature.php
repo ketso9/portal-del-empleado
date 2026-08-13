@@ -715,14 +715,15 @@ class EP_App_Signature_V4 implements EP_App_Interface
             }
 
             // Paso 4: PDF-Parser (Essential for signed PDFs / incremental updates)
+            // Solo se carga desde libs/. No se admite un fallback en wp-content/uploads:
+            // ese directorio es escribible desde el exterior y cargar PHP desde ahí
+            // convierte cualquier subida en ejecución de código.
             $parser_autoload = $this->libs_path . 'pdf-mod/src/autoload.php';
-            if (!file_exists($parser_autoload)) {
-                $wp_uploads = wp_upload_dir();
-                $parser_autoload = $wp_uploads['basedir'] . '/pdf-mod/src/autoload.php';
-            }
             if (file_exists($parser_autoload)) {
                 require_once $parser_autoload;
                 ep_error_log('EP_App_Signature_V4: [LIBS] PDF-Parser loaded.');
+            } else {
+                ep_error_log('EP_App_Signature_V4: [WARN] PDF-Parser no encontrado en ' . $parser_autoload . '. Los PDF con xref comprimido no se podrán preparar.');
             }
 
             // Paso 5: QR Code
@@ -748,6 +749,21 @@ class EP_App_Signature_V4 implements EP_App_Interface
                     'pdf_data_to_sign_base64' => base64_encode($pdf_content),
                     'message' => 'El documento ya está firmado digitalmente. Se firmará de forma incremental para conservar las firmas anteriores.',
                     'skipped_prep' => true
+                ]);
+                return;
+            }
+
+            // Tope de tamaño antes de parsear. La librería ya valida sus propios
+            // parámetros, pero un PDF enorme sigue pudiendo agotar la memoria del
+            // worker; preferimos un error claro a un fatal por OOM.
+            $max_pdf_bytes = (int) apply_filters('ep_signature_max_pdf_bytes', 25 * 1024 * 1024);
+            if ($max_pdf_bytes > 0 && strlen($pdf_content) > $max_pdf_bytes) {
+                ep_error_log('EP_App_Signature_V4: [WARN] PDF rechazado por tamaño: ' . strlen($pdf_content) . ' bytes (máx. ' . $max_pdf_bytes . ').');
+                wp_send_json_error([
+                    'message' => sprintf(
+                        'El documento supera el tamaño máximo admitido (%s MB). Redúzcalo e inténtelo de nuevo.',
+                        round($max_pdf_bytes / 1048576, 1)
+                    )
                 ]);
                 return;
             }

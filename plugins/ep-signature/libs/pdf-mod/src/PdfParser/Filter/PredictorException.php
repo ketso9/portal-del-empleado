@@ -26,4 +26,9 @@ class PredictorException extends FilterException
      * @var int
      */
     const UNRECOGNIZED_PREDICTOR = 0x010002;
+
+    /**
+     * @var int
+     */
+    const INVALID_PREDICTOR_VALUE = 0x010003;
 }

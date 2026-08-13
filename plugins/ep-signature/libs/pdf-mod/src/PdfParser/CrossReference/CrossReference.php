@@ -210,6 +210,13 @@ class CrossReference extends FpdiCrossReference
                 $dict = $stream->value;
                 $firstPos = $dict->value['First']->value;
                 $count = $dict->value['N']->value;
+                // Catch implausible N values (5 bytes per objet is a minumum value to catch only extreme lengths)
+                if ($count <= 0 || $count * 5 > $objectStreamParser->getStreamReader()->getTotalLength()) {
+                    throw new CrossReferenceException(
+                        'Invalid N value in object stream.',
+                        CrossReferenceException::INVALID_DATA
+                    );
+                }
 
                 $streamOffsets = [];
                 for ($i = 0; $i < $count; $i++) {
