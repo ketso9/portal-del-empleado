@@ -332,13 +332,6 @@ class CensoManager
 
         $scope = sanitize_text_field($_POST['scope'] ?? 'filtered');
 
-        // El volcado completo es otra cosa que un export filtrado: son todos los
-        // datos de todas las empresas del censo de una vez. Se exige el mismo
-        // permiso que para importar o enriquecer.
-        if ($scope === 'all' && !$this->can_enrich_and_import()) {
-            return new WP_Error('no_autorizado', 'No autorizado para exportar el censo completo.');
-        }
-
         $requested_columns = $_POST['columns'] ?? [];
         if (!is_array($requested_columns) || empty($requested_columns)) {
             return new WP_Error('sin_columnas', 'No se han seleccionado columnas para exportar.');
@@ -414,6 +407,17 @@ class CensoManager
                         break;
                 }
             }
+        }
+
+        // El permiso se decide por lo que la consulta acota, NO por el "scope" que
+        // manda el cliente: un export "filtrado" al que no se le pasa ningún filtro
+        // acaba en WHERE 1=1, o sea, el censo entero por la puerta de atrás. Atado
+        // al scope, bastaba con marcar la otra opción para saltarse el control.
+        //
+        // Mirando el WHERE, además, cualquier filtro que se añada en el futuro
+        // cuenta solo, sin tener que acordarse de tocar esto.
+        if ($where === 'WHERE 1=1' && !$this->can_enrich_and_import()) {
+            return new WP_Error('no_autorizado', 'No autorizado para exportar el censo completo.');
         }
 
         $total = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name $where", $params));
