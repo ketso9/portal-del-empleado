@@ -5,6 +5,8 @@ if (!defined('ABSPATH')) {
 
 class CensoManager
 {
+    /** Evento diario que retira los archivos que el modulo deja en uploads/. */
+    const CLEANUP_HOOK = 'censo_daily_cleanup';
 
     private $db;
     private $parser;
@@ -43,7 +45,12 @@ class CensoManager
 
         // Cron Hook
         add_action('censo_worker_cron_event', [$this, 'run_background_worker']);
+        add_action(self::CLEANUP_HOOK, [$this, 'run_scheduled_cleanup']);
         add_filter('cron_schedules', [$this, 'add_cron_intervals']);
+
+        if (!wp_next_scheduled(self::CLEANUP_HOOK)) {
+            wp_schedule_event(time() + 600, 'daily', self::CLEANUP_HOOK);
+        }
 
         // Shortcodes
         add_shortcode('portal_censo_manager', [$this, 'render_manager_view']);
@@ -307,6 +314,10 @@ class CensoManager
     {
         check_ajax_referer('censo_nonce', 'nonce');
         set_time_limit(900); // 15 minutes for very large exports
+
+        // wp-cron solo salta si el sitio recibe visitas. El export es la operación
+        // frecuente de este módulo, así que se aprovecha para ir barriendo.
+        $this->run_scheduled_cleanup();
 
         global $wpdb;
         $table_name = $wpdb->prefix . CensoConfig::TABLE_NAME;
@@ -619,22 +630,76 @@ class CensoManager
 
 
     /**
-     * Limpia archivos temporales de censo de más de 24 horas.
+     * Retira los archivos que el módulo va dejando en uploads/.
+     *
+     * Antes existía una limpieza de temporales que no llamaba nadie, así que en
+     * uploads/ se acumularon 2 GB entre las dos instalaciones: temporales de
+     * importación de hace seis meses y, sobre todo, exports. El censo se importa
+     * una o dos veces al año, pero los exports se piden a diario (32 solo en
+     * junio) y pesan unos 8 MB cada uno.
+     *
+     * El informe de cambios más reciente NO caduca nunca: es el que la pantalla
+     * de censo muestra como "última importación" y entre una importación y la
+     * siguiente pueden pasar meses.
      */
-    private function cleanup_old_temp_files()
+    public function run_scheduled_cleanup()
     {
         $upload_dir = wp_upload_dir();
         $path = $upload_dir['basedir'];
-        // Ajustamos el patrón globales para que coincida con la nueva nomenclatura
-        $files = glob($path . '/censo_temp_*.{txt,csv,xlsx,xls}', GLOB_BRACE);
-        $now = time();
-        $day_in_seconds = 86400;
 
+        // Temporales de importación: solo viven mientras dura la subida por trozos.
+        // Se buscan sin filtrar por extensión porque el nombre lleva la del archivo
+        // original (.xlsx, .xls) y el de proceso añade .txt encima.
+        $this->delete_older_than(
+            glob($path . '/censo_temp_*'),
+            (int) apply_filters('ep_censo_temp_ttl', DAY_IN_SECONDS)
+        );
+
+        // Exports bajo demanda: el navegador se los descarga en el momento y no
+        // vuelven a consultarse. Son volcados del censo con datos de empresas,
+        // así que cuanto menos tiempo estén en uploads/, mejor.
+        $this->delete_older_than(
+            glob($path . '/censo_export_*.csv'),
+            (int) apply_filters('ep_censo_export_ttl', 7 * DAY_IN_SECONDS)
+        );
+
+        // Informes de cambios: se conserva siempre el más reciente, tenga la edad
+        // que tenga, y de los demás se aplica caducidad.
+        $reports = glob($path . '/censo_cambios_*.csv');
+        if (is_array($reports) && count($reports) > 1) {
+            usort($reports, static function ($a, $b) {
+                return filemtime($b) - filemtime($a);
+            });
+            array_shift($reports);
+            $this->delete_older_than(
+                $reports,
+                (int) apply_filters('ep_censo_report_ttl', 30 * DAY_IN_SECONDS)
+            );
+        }
+    }
+
+    /**
+     * Borra los archivos de la lista con más antigüedad que $ttl segundos.
+     * Devuelve cuántos se han retirado.
+     */
+    private function delete_older_than($files, $ttl)
+    {
+        if (!is_array($files) || $ttl <= 0) {
+            return 0;
+        }
+
+        $now = time();
+        $deleted = 0;
         foreach ($files as $file) {
-            if (is_file($file) && ($now - filemtime($file) > $day_in_seconds)) {
-                @unlink($file);
+            if (!is_file($file)) {
+                continue;
+            }
+            if (($now - filemtime($file)) > $ttl && @unlink($file)) {
+                $deleted++;
             }
         }
+
+        return $deleted;
     }
 
     /**
