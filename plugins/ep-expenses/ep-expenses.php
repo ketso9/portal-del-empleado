@@ -21,7 +21,7 @@ if (class_exists('EP_App_Signature_V4') && !class_exists('EP_Signature')) {
 defined('EP_EXPENSES_PATH') || define('EP_EXPENSES_PATH', plugin_dir_path(__FILE__));
 defined('EP_EXPENSES_URL')  || define('EP_EXPENSES_URL',  plugin_dir_url(__FILE__));
 // Subir esta versión fuerza una única pasada de dbDelta / migración de columnas.
-defined('EP_EXPENSES_DB_VERSION') || define('EP_EXPENSES_DB_VERSION', '1.2.0');
+defined('EP_EXPENSES_DB_VERSION') || define('EP_EXPENSES_DB_VERSION', '1.3.0');
 
 if (!class_exists('EP_Expenses_DB', false)) {
     require_once EP_EXPENSES_PATH . 'class-ep-expenses-db.php';
@@ -502,6 +502,7 @@ class EP_Expenses
                     'liquidation_notes'  => isset($liq['liquidation_notes']) ? $liq['liquidation_notes'] : '',
                     'rejection_reason'   => isset($liq['rejection_reason']) ? $liq['rejection_reason'] : '',
                     'google_maps_url'    => isset($liq['google_maps_url']) ? $liq['google_maps_url'] : '',
+                    'imputa'             => isset($liq['imputa']) ? $liq['imputa'] : '',
                     'is_liquidation'     => true,
                     'signature_request_id' => $liq['signature_request_id'] ? intval($liq['signature_request_id']) : null,
                     'is_signed'          => $is_signed,
@@ -549,27 +550,61 @@ class EP_Expenses
     }
 
     /**
-     * Envía notificaciones a todos los usuarios de un rol/departamento (Dirección, Administración, etc.)
+     * Devuelve los usuarios que cumplen una capacidad del contexto de la app
+     * ('can_approve' para Dirección, 'can_liquidate' para Administración).
+     *
+     * Se resuelve con el mismo get_user_context() que autoriza cada acción, y no
+     * con una lista de roles de WordPress. Esa era la avería: los avisos se
+     * mandaban a get_users(role__in => 'ep_administration') y ese rol no lo
+     * tiene nadie en las instalaciones reales. El Dpto. de Administración se
+     * define por el permiso de escritura sobre la app (matriz de permisos u
+     * override por usuario), así que la lista salía vacía y ni el portal ni el
+     * bot de Teams entregaban nada, sin error visible en ninguna parte.
      */
-    private function notify_role_users($roles, $title, $message, $type = 'info', $exclude_user_id = 0)
+    private function get_users_with_capability($capability)
     {
-        if (!class_exists('EP_Notifications')) return;
+        $all_ids = get_users(array('fields' => 'ID'));
+        if (empty($all_ids)) {
+            return array();
+        }
 
-        $target_roles = (array) $roles;
+        // Una sola consulta para los datos y los metadatos de todos: si no, cada
+        // get_user_context() de dentro del bucle dispara las suyas.
+        cache_users($all_ids);
 
-        $users = get_users(array(
-            'role__in' => $target_roles,
-            'fields'   => 'ID'
-        ));
+        $matches = array();
+        foreach ($all_ids as $uid) {
+            $ctx = self::get_user_context($uid);
+            if (!empty($ctx[$capability])) {
+                $matches[] = intval($uid);
+            }
+        }
 
-        $admins = get_users(array(
-            'role__in' => array('administrator', 'ep_super_admin'),
-            'fields'   => 'ID'
-        ));
+        return $matches;
+    }
 
-        $all_target_ids = array_unique(array_merge($users, $admins));
+    /**
+     * Avisa a quien gestiona el gasto: Dirección ('can_approve'), Administración
+     * ('can_liquidate') o ambos. Cada aviso sale por los tres canales del portal
+     * (campana, bot de Teams y correo) según las preferencias de cada usuario.
+     */
+    private function notify_managers($capabilities, $title, $message, $type = 'info', $exclude_user_id = 0)
+    {
+        if (!class_exists('EP_Notifications')) {
+            if (function_exists('ep_error_log')) {
+                ep_error_log('EP Gastos: EP_Notifications no está disponible; se pierde el aviso "' . $title . '".');
+            }
+            return;
+        }
 
-        foreach ($all_target_ids as $uid) {
+        $target_ids = array();
+        foreach ((array) $capabilities as $capability) {
+            $target_ids = array_merge($target_ids, $this->get_users_with_capability($capability));
+        }
+        $target_ids = array_unique($target_ids);
+
+        $sent = array();
+        foreach ($target_ids as $uid) {
             if ($uid == $exclude_user_id) continue;
             EP_Notifications::add_notification($uid, array(
                 'type'    => $type,
@@ -577,6 +612,17 @@ class EP_Expenses
                 'message' => $message,
                 'link'    => '?view=expenses'
             ));
+            $sent[] = $uid;
+        }
+
+        // Sin este rastro, un aviso que no llega es indistinguible de un aviso
+        // que sí se mandó y el usuario no vio.
+        if (function_exists('ep_error_log')) {
+            ep_error_log(
+                'EP Gastos: aviso "' . $title . '" para [' . implode(', ', (array) $capabilities) . ']. '
+                . 'Destinatarios: ' . count($sent) . ' (' . implode(',', $sent) . '), '
+                . 'excluido: ' . intval($exclude_user_id) . '.'
+            );
         }
     }
 
@@ -705,8 +751,8 @@ class EP_Expenses
             if ($is_new) {
                 $user_data = get_userdata($user_id);
                 $user_name = $user_data ? $user_data->display_name : 'Un empleado';
-                $this->notify_role_users(
-                    array('ep_direction', 'ep_hr'),
+                $this->notify_managers(
+                    'can_approve',
                     'Nuevo Ticket de Gasto Registrado',
                     "El empleado {$user_name} ha registrado un nuevo ticket de gasto ({$concept}, " . number_format($amount, 2) . " €). Pendiente de autorización por Dirección.",
                     'warning',
@@ -799,8 +845,8 @@ class EP_Expenses
             // Notificar a Administración y Dirección
             $user_data = get_userdata($user_id);
             $user_name = $user_data ? $user_data->display_name : 'Un empleado';
-            $this->notify_role_users(
-                array('ep_administration', 'ep_direction'),
+            $this->notify_managers(
+                array('can_liquidate', 'can_approve'),
                 'Cierre Mensual de Gastos Declarado',
                 "El empleado {$user_name} ha declarado su resumen mensual de gastos para el periodo {$year_month}.",
                 'info',
@@ -952,8 +998,8 @@ class EP_Expenses
                         'success'
                     );
                     // Notificar al Dpto. de Administración
-                    $this->notify_role_users(
-                        'ep_administration',
+                    $this->notify_managers(
+                        'can_liquidate',
                         'Nuevo Gasto Aprobado para Liquidar',
                         "El ticket {$ticket_num} de {$emp_name} ({$concept}, {$amount_fmt}) ha sido autorizado por Dirección y está listo para su liquidación.",
                         'info',
@@ -968,6 +1014,13 @@ class EP_Expenses
                         "Tu ticket {$ticket_num} ({$concept}, {$amount_fmt}) ha sido RECHAZADO por Dirección. Motivo: {$reason}.",
                         'error'
                     );
+                    $this->notify_managers(
+                        'can_liquidate',
+                        'Ticket de Gasto Rechazado',
+                        "El ticket {$ticket_num} de {$emp_name} ({$concept}, {$amount_fmt}) ha sido rechazado por Dirección. Motivo: {$reason}.",
+                        'warning',
+                        $user_id
+                    );
                 } elseif ($status === 'declared') {
                     $method = $liquidation_data['liquidation_method'];
                     // Notificar al Empleado
@@ -976,6 +1029,13 @@ class EP_Expenses
                         'Tu Gasto ha sido Liquidado / Abonado',
                         "¡Buenas noticias! Tu ticket {$ticket_num} ({$concept}, {$amount_fmt}) ha sido LIQUIDADO por Administración vía {$method}.",
                         'success'
+                    );
+                    $this->notify_managers(
+                        'can_approve',
+                        'Ticket de Gasto Abonado',
+                        "El ticket {$ticket_num} de {$emp_name} ({$concept}, {$amount_fmt}) ha sido abonado por Administración vía {$method}.",
+                        'info',
+                        $user_id
                     );
                 }
             }
@@ -1082,8 +1142,16 @@ class EP_Expenses
 
         $destino = !empty($_POST['destino']) ? sanitize_text_field($_POST['destino']) : '';
         $motivo = !empty($_POST['motivo']) ? sanitize_textarea_field($_POST['motivo']) : '';
+        $imputa = !empty($_POST['imputa']) ? sanitize_text_field($_POST['imputa']) : 'Ninguno';
+        $google_maps_url = !empty($_POST['google_maps_url']) ? esc_url_raw($_POST['google_maps_url']) : '';
         $fecha_desde = !empty($_POST['fecha_desde']) ? sanitize_text_field($_POST['fecha_desde']) : '';
         $fecha_hasta = !empty($_POST['fecha_hasta']) ? sanitize_text_field($_POST['fecha_hasta']) : '';
+
+        // El justificante del trayecto es obligatorio en la liquidación de viaje
+        // (y solo en ella: los tickets sueltos no lo piden).
+        if (empty($google_maps_url)) {
+            wp_send_json_error('Debes indicar el enlace de ruta (Google Maps) que justifica el trayecto.');
+        }
 
         if (empty($destino) || empty($motivo) || empty($fecha_desde) || empty($fecha_hasta)) {
             wp_send_json_error('Por favor, rellene todos los campos obligatorios del viaje.');
@@ -1144,6 +1212,7 @@ class EP_Expenses
             'sede_id'            => !empty($_POST['sede_id']) ? intval($_POST['sede_id']) : 1,
             'destino'            => $destino,
             'motivo'             => $motivo,
+            'imputa'             => $imputa,
             'fecha_desde'        => $fecha_desde,
             'fecha_hasta'        => $fecha_hasta,
             'hora_desde'         => !empty($_POST['hora_desde']) ? sanitize_text_field($_POST['hora_desde']) : '',
@@ -1155,7 +1224,7 @@ class EP_Expenses
             'fecha_documento'    => !empty($_POST['fecha_documento']) ? sanitize_text_field($_POST['fecha_documento']) : current_time('Y-m-d'),
             'notes'              => isset($_POST['notes']) ? sanitize_textarea_field($_POST['notes']) : '',
             'payment_method'     => !empty($_POST['payment_method']) ? sanitize_text_field($_POST['payment_method']) : 'personal',
-            'google_maps_url'    => !empty($_POST['google_maps_url']) ? esc_url_raw($_POST['google_maps_url']) : '',
+            'google_maps_url'    => $google_maps_url,
         );
 
         if (!empty($uploaded_urls)) {
@@ -1171,6 +1240,24 @@ class EP_Expenses
         if ($liq_id) {
             // Generar PDF y crear la solicitud de firma electrónica automáticamente
             $request_id = $this->create_liquidation_signature_request($liq_id);
+
+            // Aviso a Dirección de que hay una liquidación nueva pendiente de autorizar,
+            // igual que ya se hacía con los tickets individuales.
+            if (empty($_POST['id'])) {
+                $liq_new   = $db->get_liquidation($liq_id);
+                $user_data = get_userdata($user_id);
+                $user_name = $user_data ? $user_data->display_name : 'Un empleado';
+                $liq_num   = $liq_new ? $liq_new['liquidation_number'] : '#' . $liq_id;
+                $liq_total = $liq_new ? number_format(floatval($liq_new['total_percibir']), 2) . ' €' : '';
+
+                $this->notify_managers(
+                    'can_approve',
+                    'Nueva Liquidación de Viaje Registrada',
+                    "El empleado {$user_name} ha registrado la liquidación {$liq_num} (viaje a {$destino}, {$liq_total}). Pendiente de autorización por Dirección.",
+                    'warning',
+                    $user_id
+                );
+            }
 
             wp_send_json_success(array(
                 'liquidation_id' => $liq_id,
@@ -1354,12 +1441,26 @@ class EP_Expenses
             $destino = $liq_before['destino'];
             $amount_fmt = number_format(floatval($liq_before['total_percibir']), 2) . ' €';
 
+            $actor_data = get_userdata($user_id);
+            $actor_name = $actor_data ? $actor_data->display_name : 'Dirección';
+            $emp_data   = get_userdata($emp_id);
+            $emp_name   = $emp_data ? $emp_data->display_name : 'Un empleado';
+
             if ($status === 'approved') {
                 $this->notify_user(
                     $emp_id,
                     'Tu liquidación ha sido Aprobada',
                     "La liquidación {$liq_num} ({$destino}, {$amount_fmt}) ha sido AUTORIZADA por Administración/Dirección.",
                     'success'
+                );
+                // Administración es quien la abona: sin este aviso la liquidación
+                // aprobada se quedaba esperando a que alguien entrase a mirarla.
+                $this->notify_managers(
+                    'can_liquidate',
+                    'Nueva Liquidación Aprobada para Abonar',
+                    "La liquidación {$liq_num} de {$emp_name} ({$destino}, {$amount_fmt}) ha sido autorizada por {$actor_name} y está lista para su abono.",
+                    'info',
+                    $user_id
                 );
             } elseif ($status === 'rejected') {
                 $reason = !empty($_POST['rejection_reason']) ? sanitize_text_field($_POST['rejection_reason']) : 'Sin motivo especificado';
@@ -1369,12 +1470,27 @@ class EP_Expenses
                     "Tu liquidación {$liq_num} ({$destino}, {$amount_fmt}) ha sido RECHAZADA. Motivo: {$reason}.",
                     'error'
                 );
+                $this->notify_managers(
+                    'can_liquidate',
+                    'Liquidación de Viaje Rechazada',
+                    "La liquidación {$liq_num} de {$emp_name} ({$destino}, {$amount_fmt}) ha sido rechazada por {$actor_name}. Motivo: {$reason}.",
+                    'warning',
+                    $user_id
+                );
             } elseif ($status === 'liquidated' || $status === 'declared') {
                 $this->notify_user(
                     $emp_id,
                     'Liquidación Abonada',
                     "¡Buenas noticias! Tu liquidación {$liq_num} ({$destino}, {$amount_fmt}) ha sido marcada como LIQUIDADA / ABONADA.",
                     'success'
+                );
+                // Dirección autorizó el gasto: se le cierra el circuito avisándole del abono.
+                $this->notify_managers(
+                    'can_approve',
+                    'Liquidación de Viaje Abonada',
+                    "La liquidación {$liq_num} de {$emp_name} ({$destino}, {$amount_fmt}) ha sido abonada por {$actor_name}.",
+                    'info',
+                    $user_id
                 );
             }
 
@@ -1648,6 +1764,7 @@ class EP_Expenses
                 $t['expense_date'],
                 self::get_display_name($t['user_id'], $cache),
                 $t['concept'],
+                '',
                 isset($formas_pago[$t['payment_method']]) ? $formas_pago[$t['payment_method']] : $t['payment_method'],
                 floatval($t['amount']),
                 isset($estados[$t['status']]) ? $estados[$t['status']] : $t['status'],
@@ -1680,6 +1797,7 @@ class EP_Expenses
                 $l['fecha_documento'],
                 self::get_display_name($l['user_id'], $cache),
                 'Viaje a ' . $l['destino'] . ' — ' . $l['motivo'],
+                !empty($l['imputa']) ? $l['imputa'] : 'Ninguno',
                 isset($formas_pago[$l['payment_method']]) ? $formas_pago[$l['payment_method']] : $l['payment_method'],
                 floatval($l['total_percibir']),
                 isset($estados[$l['status']]) ? $estados[$l['status']] : $l['status'],
@@ -1721,6 +1839,7 @@ class EP_Expenses
             array('titulo' => 'Fecha',                'tipo' => $F, 'ancho' => 12),
             array('titulo' => 'Empleado',             'tipo' => $T, 'ancho' => 26),
             array('titulo' => 'Concepto / Destino',   'tipo' => $T, 'ancho' => 45),
+            array('titulo' => 'Programa al que imputa', 'tipo' => $T, 'ancho' => 28),
             array('titulo' => 'Forma de pago',        'tipo' => $T, 'ancho' => 20),
             array('titulo' => 'Importe',              'tipo' => $E, 'ancho' => 14),
             array('titulo' => 'Estado',               'tipo' => $T, 'ancho' => 14),
@@ -2435,6 +2554,10 @@ class EP_Expenses
             <tr>
                 <td class="meta-label">MOTIVO:</td>
                 <td class="meta-val" colspan="3">' . esc_html($liq['motivo']) . '</td>
+            </tr>
+            <tr>
+                <td class="meta-label">PROGRAMA AL QUE IMPUTA:</td>
+                <td class="meta-val" colspan="3">' . esc_html(!empty($liq['imputa']) ? $liq['imputa'] : 'Ninguno') . '</td>
             </tr>
             <tr>
                 <td class="meta-label">FECHAS:</td>

@@ -97,6 +97,7 @@ class EP_Expenses_DB
             sede_id int(11) NOT NULL,
             destino varchar(255) NOT NULL,
             motivo text NOT NULL,
+            imputa varchar(255) DEFAULT 'Ninguno',
             fecha_desde date NOT NULL,
             hora_desde time DEFAULT NULL,
             fecha_hasta date NOT NULL,
@@ -205,6 +206,11 @@ class EP_Expenses_DB
         $col_liq_pay = $wpdb->get_results("SHOW COLUMNS FROM $table_liquidations LIKE 'payment_method'");
         if (empty($col_liq_pay)) {
             $wpdb->query("ALTER TABLE $table_liquidations ADD COLUMN payment_method varchar(50) DEFAULT 'personal' NOT NULL AFTER notes;");
+        }
+
+        $col_liq_imputa = $wpdb->get_results("SHOW COLUMNS FROM $table_liquidations LIKE 'imputa'");
+        if (empty($col_liq_imputa)) {
+            $wpdb->query("ALTER TABLE $table_liquidations ADD COLUMN imputa varchar(255) DEFAULT 'Ninguno' AFTER motivo;");
         }
 
         $col_liq_maps = $wpdb->get_results("SHOW COLUMNS FROM $table_liquidations LIKE 'google_maps_url'");
@@ -799,6 +805,7 @@ class EP_Expenses_DB
             'sede_id' => $sede_id,
             'destino' => sanitize_text_field($data['destino']),
             'motivo' => sanitize_textarea_field($data['motivo']),
+            'imputa' => !empty($data['imputa']) ? sanitize_text_field($data['imputa']) : 'Ninguno',
             'fecha_desde' => sanitize_text_field($data['fecha_desde']),
             'hora_desde' => !empty($data['hora_desde']) ? sanitize_text_field($data['hora_desde']) : null,
             'fecha_hasta' => sanitize_text_field($data['fecha_hasta']),

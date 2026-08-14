@@ -605,6 +605,10 @@ class EP_App_Expenses implements EP_App_Interface
                                     <label for="liq_motivo"><i class="fa-solid fa-heading"></i> Motivo del Viaje / Formación *</label>
                                     <input type="text" id="liq_motivo" name="motivo" class="ep-input" placeholder="Ej. Curso de Inteligencia Artificial...">
                                 </div>
+                                <div class="form-group">
+                                    <label for="liq_imputa"><i class="fa-solid fa-diagram-project"></i> Programa al que imputa</label>
+                                    <input type="text" id="liq_imputa" name="imputa" class="ep-input" value="Ninguno" placeholder="Ninguno">
+                                </div>
                             </div>
 
                             <!-- Fechas de Liquidación -->
@@ -625,6 +629,18 @@ class EP_App_Expenses implements EP_App_Interface
                                     <label for="liq_hora_hasta"><i class="fa-solid fa-clock"></i> Hora Regreso</label>
                                     <input type="time" id="liq_hora_hasta" name="hora_hasta" class="ep-input">
                                 </div>
+                            </div>
+
+                            <!-- Google Maps URL -->
+                            <div class="form-group full-width" style="margin-bottom: 20px;" id="group-google-maps-url">
+                                <label for="google_maps_url"><i class="fa-solid fa-map-location-dot text-danger"></i> Enlace de Ruta (Google Maps) / Justificante del Trayecto <span class="liq-maps-required">*</span></label>
+                                <input type="url" id="google_maps_url" name="google_maps_url" class="ep-input" placeholder="https://maps.app.goo.gl/... o https://www.google.com/maps/dir/...">
+                                <small class="text-muted" style="font-size: 11px; display: block; margin-top: 6px; line-height: 1.4; background: rgba(0,0,0,0.02); padding: 8px; border-radius: 4px; border: 1px dashed var(--ep-border);">
+                                    <strong>¿Cómo obtener el enlace de Google Maps?</strong><br>
+                                    1. Entra en <a href="https://maps.google.com" target="_blank" style="text-decoration: underline; color: var(--ep-primary); font-weight: 600;">Google Maps</a> (web o aplicación móvil) y calcula tu ruta (Origen y Destino).<br>
+                                    2. Pulsa en el botón <strong>Compartir</strong> (en móvil suele ser el icono de tres puntos arriba a la derecha y luego "Compartir", o el botón directo "Compartir" de la ruta) y elige <strong>Copiar enlace</strong>.<br>
+                                    3. Pega el enlace copiado en esta casilla.
+                                </small>
                             </div>
 
                             <!-- Kilometraje y tarifas -->
@@ -741,18 +757,6 @@ class EP_App_Expenses implements EP_App_Interface
 
                         <!-- GRUPO C: CAMPOS COMPARTIDOS (Se muestran siempre en la parte inferior) -->
                         <div class="ep-form-grid" style="margin-top: 15px; border-top: 1px solid var(--ep-border); padding-top: 15px;">
-                            <!-- Google Maps URL -->
-                            <div class="form-group full-width" id="group-google-maps-url">
-                                <label for="google_maps_url"><i class="fa-solid fa-map-location-dot text-danger"></i> Enlace de Ruta (Google Maps) / Justificante del Trayecto</label>
-                                <input type="url" id="google_maps_url" name="google_maps_url" class="ep-input" placeholder="https://maps.app.goo.gl/... o https://www.google.com/maps/dir/...">
-                                <small class="text-muted" style="font-size: 11px; display: block; margin-top: 6px; line-height: 1.4; background: rgba(0,0,0,0.02); padding: 8px; border-radius: 4px; border: 1px dashed var(--ep-border);">
-                                    <strong>¿Cómo obtener el enlace de Google Maps?</strong><br>
-                                    1. Entra en <a href="https://maps.google.com" target="_blank" style="text-decoration: underline; color: var(--ep-primary); font-weight: 600;">Google Maps</a> (web o aplicación móvil) y calcula tu ruta (Origen y Destino).<br>
-                                    2. Pulsa en el botón <strong>Compartir</strong> (en móvil suele ser el icono de tres puntos arriba a la derecha y luego "Compartir", o el botón directo "Compartir" de la ruta) y elige <strong>Copiar enlace</strong>.<br>
-                                    3. Pega el enlace copiado en esta casilla.
-                                </small>
-                            </div>
-
                             <!-- Forma de Pago (Shared) -->
                             <div class="form-group">
                                 <label for="payment_method"><i class="fa-solid fa-credit-card"></i> Forma de Pago / Liquidación *</label>

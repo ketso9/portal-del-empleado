@@ -585,6 +585,7 @@
             $('#ep-expense-form')[0].reset();
             $('#expense_id').val('');
             $('#google_maps_url').val('');
+            $('#liq_imputa').val('Ninguno');
             $('#notes').val('');
             $('#payment_method').val('personal');
             $('#ep-file-preview-container').hide();
@@ -616,7 +617,6 @@
                 // Liquidación de Viaje y Dietas
                 $('.group-ticket-only').hide();
                 $('.group-liq-only').show();
-                $('#group-google-maps-url').show(); // Siempre visible en liquidación
                 
                 $('#ep-expense-modal-title').html('<i class="fa-solid fa-file-invoice-dollar"></i> Nueva Liquidación de Viaje y Dietas');
                 $('#ep-btn-save-expense').html('<i class="fa-solid fa-signature"></i> Guardar y Firmar Documento');
@@ -624,7 +624,6 @@
                 // Ticket individual
                 $('.group-ticket-only').show();
                 $('.group-liq-only').hide();
-                $('#group-google-maps-url').hide(); // Oculto por defecto para tickets simples
                 
                 $('#ep-expense-modal-title').html('<i class="fa-solid fa-file-circle-plus"></i> Registrar Gasto / Ticket');
                 $('#ep-btn-save-expense').html('<i class="fa-solid fa-signature"></i> Guardar y Firmar Documento');
@@ -690,6 +689,14 @@
                     return;
                 }
 
+                // El justificante del trayecto solo es obligatorio en la liquidación de viaje.
+                var mapsUrl = $.trim($('#google_maps_url').val() || '');
+                if (!mapsUrl) {
+                    alert('Debes indicar el enlace de ruta (Google Maps) que justifica el trayecto.');
+                    $('#google_maps_url').focus();
+                    return;
+                }
+
                 var form = $('#ep-expense-form')[0];
                 var formData = new FormData(form);
                 formData.append('action', 'ep_expenses_save_liq');
@@ -704,6 +711,7 @@
                 formData.append('sede_id', $('#liq_sede').val());
                 formData.append('destino', destino);
                 formData.append('motivo', motivo);
+                formData.append('imputa', $('#liq_imputa').val());
                 formData.append('fecha_desde', $('#liq_fecha_desde').val());
                 formData.append('hora_desde', $('#liq_hora_desde').val());
                 formData.append('fecha_hasta', $('#liq_fecha_hasta').val());
