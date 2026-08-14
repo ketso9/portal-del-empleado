@@ -50,6 +50,9 @@ class EP_Expenses
         // Registrar App en EP_App_Manager
         add_action('ep_register_apps', array($this, 'register_app'));
 
+        // Qué se le cuenta al empleado cuando termina de firmar un justificante
+        add_filter('ep_signature_after_sign', array($this, 'signature_next_step'), 10, 2);
+
         // Encolar assets CSS y JS
         add_action('wp_enqueue_scripts', array($this, 'enqueue_assets'));
 
@@ -2460,6 +2463,84 @@ class EP_Expenses
             'csv'      => (string) $doc->csv_documento,
             'firmante' => (string) $doc->nombre_firmante,
         );
+    }
+
+    /**
+     * Cierre del trámite cuando se firma un documento de esta app.
+     *
+     * Al firmar, el empleado se quedaba en la app de firma con un "Se han
+     * procesado todos los documentos de la cola" y un botón de "Firmar otro
+     * documento": nada le decía que su gasto ya estaba presentado, que le tocaba
+     * a Dirección ni cómo volver. Aquí se declara ese cierre; lo pinta la app de
+     * firma a través del filtro ep_signature_after_sign.
+     */
+    public function signature_next_step($step, $request_id)
+    {
+        global $wpdb;
+
+        $request_id = intval($request_id);
+        if (!$request_id) {
+            return $step;
+        }
+
+        $volver = array(
+            'label' => 'Volver a Gastos y Dietas',
+            'url'   => home_url('/?view=expenses'),
+        );
+
+        $liq_table = EP_Expenses_DB::get_liquidations_table();
+        $liq = $wpdb->get_row($wpdb->prepare(
+            "SELECT liquidation_number, signature_request_id FROM $liq_table
+             WHERE signature_request_id = %d OR admin_signature_request_id = %d LIMIT 1",
+            $request_id,
+            $request_id
+        ), ARRAY_A);
+
+        if ($liq) {
+            if (intval($liq['signature_request_id']) === $request_id) {
+                return array(
+                    'title'   => 'Liquidación presentada',
+                    'message' => 'Tu liquidación ' . $liq['liquidation_number'] . ' ha quedado firmada y registrada. '
+                        . 'Dirección ya tiene el aviso para autorizarla: por tu parte el trámite está terminado.',
+                    'button'  => $volver,
+                );
+            }
+
+            return array(
+                'title'   => 'Abono firmado',
+                'message' => 'La liquidación ' . $liq['liquidation_number'] . ' queda marcada como abonada '
+                    . 'y el empleado ha recibido el aviso.',
+                'button'  => $volver,
+            );
+        }
+
+        $exp_table = EP_Expenses_DB::get_expenses_table();
+        $exp = $wpdb->get_row($wpdb->prepare(
+            "SELECT ticket_number, signature_request_id FROM $exp_table
+             WHERE signature_request_id = %d OR admin_signature_request_id = %d LIMIT 1",
+            $request_id,
+            $request_id
+        ), ARRAY_A);
+
+        if ($exp) {
+            if (intval($exp['signature_request_id']) === $request_id) {
+                return array(
+                    'title'   => 'Gasto presentado',
+                    'message' => 'Tu justificante ' . $exp['ticket_number'] . ' ha quedado firmado y registrado. '
+                        . 'Dirección ya tiene el aviso para autorizarlo: por tu parte el trámite está terminado.',
+                    'button'  => $volver,
+                );
+            }
+
+            return array(
+                'title'   => 'Abono firmado',
+                'message' => 'El justificante ' . $exp['ticket_number'] . ' queda marcado como abonado '
+                    . 'y el empleado ha recibido el aviso.',
+                'button'  => $volver,
+            );
+        }
+
+        return $step;
     }
 
     /**

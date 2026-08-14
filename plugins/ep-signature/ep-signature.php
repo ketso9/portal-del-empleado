@@ -1096,9 +1096,24 @@ class EP_App_Signature_V4 implements EP_App_Interface
                     ]);
                 }
 
+                /**
+                 * Cierre del trámite al que pertenece el documento.
+                 *
+                 * La app de firma es genérica y al terminar solo sabía decir "Se
+                 * han procesado todos los documentos de la cola", que no le
+                 * aclara a nadie si su trámite ha quedado presentado ni qué pasa
+                 * después. Cada app declara aquí su propio cierre (título, texto
+                 * y a dónde volver) sin que esta tenga que saber nada de ellas.
+                 *
+                 * Se espera null, o un array con 'title', 'message' y un 'button'
+                 * de 'label' y 'url'.
+                 */
+                $after_sign = apply_filters('ep_signature_after_sign', null, $id_to_return, $current_user_id);
+
                 wp_send_json_success([
                     'id' => $id_to_return,
                     'message' => 'Documento guardado y firmado correctamente.',
+                    'after_sign' => is_array($after_sign) ? $after_sign : null,
                     'download_url' => admin_url('admin-ajax.php') . '?action=ep_app_signature&sub_action=serve_doc&id=' . $id_to_return . '&nonce=' . wp_create_nonce('ep_signature_nonce') . '&t=' . time()
                 ]);
             }

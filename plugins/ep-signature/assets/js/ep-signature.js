@@ -768,10 +768,39 @@ jQuery(document).ready(function ($) {
             $editorArea.hide();
             $('#fds-queue-area').hide();
             $resultArea.fadeIn();
-            $('#fds-result-text').text('Se han procesado todos los documentos de la cola.');
 
             // Manejar descarga final (Un solo archivo vs Lote)
             const signedFiles = fileQueue.filter(f => f.signed);
+
+            // Si la app de origen ha declarado un cierre propio (ver el filtro
+            // ep_signature_after_sign), se cuenta lo que ha pasado de verdad y se
+            // ofrece la vuelta a esa app. Solo cuando se ha firmado un único
+            // documento: en un lote el cierre sería el de uno cualquiera.
+            const cierre = (signedFiles.length === 1) ? signedFiles[0].after_sign : null;
+            if (cierre) {
+                $('#fds-result-title').text(cierre.title || '¡Documento Firmado!');
+                $('#fds-result-text').text(cierre.message || '');
+                if (cierre.button && cierre.button.url) {
+                    // Botón propio en lugar de reaprovechar "Firmar otro documento":
+                    // ese lleva un manejador delegado en document que recarga la
+                    // página, y .off() no lo quita, así que competiría con la
+                    // redirección.
+                    $('#fds-sign-another-button').hide();
+                    $('#fds-back-to-app').remove();
+                    $('<button/>', {
+                        id: 'fds-back-to-app',
+                        class: 'ep-btn ep-btn-primary',
+                        text: cierre.button.label || 'Volver'
+                    }).on('click', () => {
+                        window.location.href = cierre.button.url;
+                    }).appendTo($resultArea.find('.ep-actions-row'));
+                }
+            } else {
+                $('#fds-sign-another-button').show();
+                $('#fds-back-to-app').remove();
+                $('#fds-result-title').text('¡Documento Firmado!');
+                $('#fds-result-text').text('Se han procesado todos los documentos de la cola.');
+            }
             const $downloadLink = $('#fds-download-link');
             const $emailBtn = $('#fds-email-button');
 
@@ -935,6 +964,7 @@ jQuery(document).ready(function ($) {
                 if (response.success) {
                     item.signed = true;
                     item.download_url = response.data.download_url;
+                    item.after_sign = response.data.after_sign || null;
                     renderQueue();
 
                     $('#fds-result-info-container').append(`
