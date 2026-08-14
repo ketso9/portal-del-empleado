@@ -1644,7 +1644,7 @@ class EP_Expenses
 
         // Descargar el PDF
         header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="Liquidacion_' . $liq['liquidation_number'] . '.pdf"');
+        header('Content-Disposition: inline; filename="Liquidacion_' . self::slug_documento($liq['liquidation_number']) . '.pdf"');
         header('Content-Length: ' . filesize($pdf_path));
         readfile($pdf_path);
         
@@ -1959,7 +1959,7 @@ class EP_Expenses
         }
 
         header('Content-Type: application/pdf');
-        header('Content-Disposition: inline; filename="Justificante_' . $exp['ticket_number'] . '.pdf"');
+        header('Content-Disposition: inline; filename="Justificante_' . self::slug_documento($exp['ticket_number']) . '.pdf"');
         header('Content-Length: ' . filesize($pdf_path));
         readfile($pdf_path);
 
@@ -2313,7 +2313,7 @@ class EP_Expenses
         }
 
         list($target_dir, ) = self::ensure_upload_dir();
-        $pdf_path = $target_dir . 'just_' . $exp['ticket_number'] . '_' . time() . '.pdf';
+        $pdf_path = $target_dir . 'just_' . self::slug_documento($exp['ticket_number']) . '_' . time() . '.pdf';
         $pdf->Output($pdf_path, 'F');
 
         return $pdf_path;
@@ -2460,6 +2460,25 @@ class EP_Expenses
             'csv'      => (string) $doc->csv_documento,
             'firmante' => (string) $doc->nombre_firmante,
         );
+    }
+
+    /**
+     * Convierte un número de documento en un fragmento seguro de nombre de fichero.
+     *
+     * La serie lleva barra (CAC-2026/001) y en una ruta la barra es un separador
+     * de directorio: el PDF se intentaba escribir en una carpeta "liq_CAC-2026"
+     * que no existe, fopen fallaba y con él se caía la solicitud de firma entera,
+     * que es lo que veía el empleado al pulsar "Guardar y Firmar".
+     *
+     * El número que se guarda y se imprime no se toca: esto es solo para el
+     * nombre del fichero.
+     */
+    private static function slug_documento($numero)
+    {
+        $slug = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) $numero);
+        $slug = trim($slug, '-');
+
+        return $slug !== '' ? $slug : 'documento';
     }
 
     /**
@@ -2843,7 +2862,7 @@ class EP_Expenses
 
         list($target_dir, ) = self::ensure_upload_dir();
 
-        $pdf_path = $target_dir . 'liq_' . $liq['liquidation_number'] . '_' . time() . '.pdf';
+        $pdf_path = $target_dir . 'liq_' . self::slug_documento($liq['liquidation_number']) . '_' . time() . '.pdf';
         $pdf->Output($pdf_path, 'F');
 
         return $pdf_path;
