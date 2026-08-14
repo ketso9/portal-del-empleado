@@ -582,7 +582,6 @@
             $('#ep-expense-form')[0].reset();
             $('#expense_id').val('');
             $('#google_maps_url').val('');
-            $('#liq_imputa').val('Ninguno');
             $('#notes').val('');
             $('#payment_method').val('personal');
             $('#ep-file-preview-container').hide();
@@ -686,6 +685,13 @@
                     return;
                 }
 
+                var imputa = $.trim($('#liq_imputa').val() || '');
+                if (!imputa) {
+                    alert('Indica el programa imputado. Si el gasto no se imputa a ninguno, escribe «Ninguno».');
+                    $('#liq_imputa').focus();
+                    return;
+                }
+
                 // El justificante del trayecto solo es obligatorio en la liquidación de viaje.
                 var mapsUrl = $.trim($('#google_maps_url').val() || '');
                 if (!mapsUrl) {
@@ -708,7 +714,7 @@
                 formData.append('sede_id', $('#liq_sede').val());
                 formData.append('destino', destino);
                 formData.append('motivo', motivo);
-                formData.append('imputa', $('#liq_imputa').val());
+                formData.append('imputa', imputa);
                 formData.append('fecha_desde', $('#liq_fecha_desde').val());
                 formData.append('hora_desde', $('#liq_hora_desde').val());
                 formData.append('fecha_hasta', $('#liq_fecha_hasta').val());

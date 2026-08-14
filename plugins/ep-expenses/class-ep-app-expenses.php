@@ -607,8 +607,8 @@ class EP_App_Expenses implements EP_App_Interface
                                     <input type="text" id="liq_motivo" name="motivo" class="ep-input" placeholder="Ej. Curso de Inteligencia Artificial...">
                                 </div>
                                 <div class="form-group">
-                                    <label for="liq_imputa"><i class="fa-solid fa-diagram-project"></i> Programa imputado</label>
-                                    <input type="text" id="liq_imputa" name="imputa" class="ep-input" value="Ninguno" placeholder="Ninguno">
+                                    <label for="liq_imputa"><i class="fa-solid fa-diagram-project"></i> Programa imputado *</label>
+                                    <input type="text" id="liq_imputa" name="imputa" class="ep-input" placeholder="Ej. PICE 2026, España Emprende... o «Ninguno»">
                                 </div>
                             </div>
 

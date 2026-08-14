@@ -1145,7 +1145,7 @@ class EP_Expenses
 
         $destino = !empty($_POST['destino']) ? sanitize_text_field($_POST['destino']) : '';
         $motivo = !empty($_POST['motivo']) ? sanitize_textarea_field($_POST['motivo']) : '';
-        $imputa = !empty($_POST['imputa']) ? sanitize_text_field($_POST['imputa']) : 'Ninguno';
+        $imputa = !empty($_POST['imputa']) ? sanitize_text_field($_POST['imputa']) : '';
         $google_maps_url = !empty($_POST['google_maps_url']) ? esc_url_raw($_POST['google_maps_url']) : '';
         $fecha_desde = !empty($_POST['fecha_desde']) ? sanitize_text_field($_POST['fecha_desde']) : '';
         $fecha_hasta = !empty($_POST['fecha_hasta']) ? sanitize_text_field($_POST['fecha_hasta']) : '';
@@ -1158,6 +1158,10 @@ class EP_Expenses
 
         if (empty($destino) || empty($motivo) || empty($fecha_desde) || empty($fecha_hasta)) {
             wp_send_json_error('Por favor, rellene todos los campos obligatorios del viaje.');
+        }
+
+        if (empty($imputa)) {
+            wp_send_json_error('Indica el programa imputado. Si el gasto no se imputa a ninguno, escribe «Ninguno».');
         }
 
         // Procesar subida de múltiples archivos / comprobantes para la liquidación
