@@ -1843,7 +1843,7 @@ class EP_Expenses
             array('titulo' => 'Fecha',                'tipo' => $F, 'ancho' => 12),
             array('titulo' => 'Empleado',             'tipo' => $T, 'ancho' => 26),
             array('titulo' => 'Concepto / Destino',   'tipo' => $T, 'ancho' => 45),
-            array('titulo' => 'Programa al que imputa', 'tipo' => $T, 'ancho' => 28),
+            array('titulo' => 'Programa imputado',      'tipo' => $T, 'ancho' => 28),
             array('titulo' => 'Forma de pago',        'tipo' => $T, 'ancho' => 20),
             array('titulo' => 'Importe',              'tipo' => $E, 'ancho' => 14),
             array('titulo' => 'Estado',               'tipo' => $T, 'ancho' => 14),
@@ -2787,7 +2787,7 @@ class EP_Expenses
                 <td class="meta-block"><span class="meta-block-label">MOTIVO DEL VIAJE</span><br><span class="meta-block-val">' . esc_html($liq['motivo']) . '</span></td>
             </tr>
             <tr>
-                <td class="meta-block"><span class="meta-block-label">PROGRAMA AL QUE IMPUTA</span><br><span class="meta-block-val">' . esc_html(!empty($liq['imputa']) ? $liq['imputa'] : 'Ninguno') . '</span></td>
+                <td class="meta-block"><span class="meta-block-label">PROGRAMA IMPUTADO</span><br><span class="meta-block-val">' . esc_html(!empty($liq['imputa']) ? $liq['imputa'] : 'Ninguno') . '</span></td>
             </tr>
         </table>
 
