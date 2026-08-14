@@ -2219,88 +2219,83 @@ class EP_Expenses
 
         $adjuntos = EP_Expenses_DB::decode_attachment_field($exp['attachment_url']);
 
-        $html = '
-        <style>
-            .title { text-align: center; font-size: 20px; font-weight: bold; color: #1e3a8a; margin-bottom: 20px; text-transform: uppercase; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
-            .meta-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-            .meta-table td { padding: 6px; font-size: 11px; }
-            .meta-label { font-weight: bold; color: #475569; width: 25%; }
-            .meta-val { color: #1e293b; width: 25%; border-bottom: 1px solid #e2e8f0; }
-            .section-title { font-size: 13px; font-weight: bold; color: #1e3a8a; background-color: #f1f5f9; padding: 6px; margin-top: 15px; margin-bottom: 8px; border-left: 3px solid #3b82f6; }
-            .totals-highlight-label { font-size: 13px; font-weight: bold; color: #1e3a8a; background-color: #eff6ff; text-align: right; width: 70%; padding: 8px; border-top: 2px solid #3b82f6; border-bottom: 2px solid #3b82f6; }
-            .totals-highlight-val { font-size: 13px; font-weight: bold; color: #1e3a8a; background-color: #eff6ff; text-align: right; width: 30%; padding: 8px; border-top: 2px solid #3b82f6; border-bottom: 2px solid #3b82f6; }
-            .signatures-box { width: 100%; margin-top: 40px; }
-            .signatures-box td { font-size: 11px; width: 50%; }
-            .nota { font-size: 10px; color: #475569; }
-        </style>
+        $pal = self::get_pdf_palette();
 
-        <div class="title">Justificante de Gasto</div>
+        $html = self::get_pdf_stylesheet($pal)
+            . self::get_pdf_header_html(
+                $pal,
+                'Justificante de gasto',
+                'Ticket individual de gasto',
+                'Nº de justificante',
+                $exp['ticket_number']
+            ) . '
 
         <table class="meta-table">
             <tr>
-                <td class="meta-label">EMPLEADO:</td>
+                <td class="meta-label">EMPLEADO</td>
                 <td class="meta-val">' . esc_html($empleado) . '</td>
-                <td class="meta-label">Nº JUSTIFICANTE:</td>
-                <td class="meta-val" style="font-weight: bold; color: #2563eb;">' . esc_html($exp['ticket_number']) . '</td>
-            </tr>
-            <tr>
-                <td class="meta-label">FECHA DEL GASTO:</td>
+                <td class="meta-label">FECHA DEL GASTO</td>
                 <td class="meta-val">' . date('d/m/Y', strtotime($exp['expense_date'])) . '</td>
-                <td class="meta-label">TIPO:</td>
-                <td class="meta-val">' . esc_html($categoria) . '</td>
             </tr>
             <tr>
-                <td class="meta-label">FORMA DE PAGO:</td>
-                <td class="meta-val" colspan="3">' . esc_html($forma_pago) . '</td>
+                <td class="meta-label">TIPO DE GASTO</td>
+                <td class="meta-val">' . esc_html($categoria) . '</td>
+                <td class="meta-label">FORMA DE PAGO</td>
+                <td class="meta-val">' . esc_html($forma_pago) . '</td>
             </tr>
         </table>
 
-        <div class="section-title">Concepto</div>
-        <p class="nota">' . esc_html($exp['concept']) . '</p>';
+        <div style="height: 10px;"></div>
+        <div class="section-title">CONCEPTO</div>
+        <div class="nota">' . esc_html($exp['concept']) . '</div>';
 
         if (!empty($exp['notes'])) {
-            $html .= '<div class="section-title">Observaciones</div><p class="nota">' . esc_html($exp['notes']) . '</p>';
+            $html .= '<div style="height: 10px;"></div><div class="section-title">OBSERVACIONES</div><div class="nota">' . esc_html($exp['notes']) . '</div>';
         }
 
         if (!empty($exp['google_maps_url'])) {
-            $html .= '<div class="section-title">Justificante del trayecto</div><p class="nota">' . esc_html($exp['google_maps_url']) . '</p>';
+            $html .= '<div style="height: 10px;"></div><div class="section-title">JUSTIFICANTE DEL TRAYECTO</div><div class="nota">' . esc_html($exp['google_maps_url']) . '</div>';
         }
 
-        $html .= '<div class="section-title">Comprobantes Aportados</div>';
+        $html .= '<div style="height: 10px;"></div><div class="section-title">COMPROBANTES APORTADOS</div>';
         if (empty($adjuntos)) {
-            $html .= '<p class="nota" style="font-style: italic; color: #64748b;">No se aportan comprobantes adjuntos.</p>';
+            $html .= '<div class="empty-note">No se aportan comprobantes adjuntos.</div>';
         } else {
-            $html .= '<p class="nota">Se aportan ' . count($adjuntos) . ' comprobante(s):</p><ul>';
+            $html .= '<div class="nota">Se aportan ' . count($adjuntos) . ' comprobante(s):</div><ul>';
             foreach ($adjuntos as $url) {
-                $html .= '<li class="nota">' . esc_html(basename(parse_url($url, PHP_URL_PATH))) . '</li>';
+                $html .= '<li style="font-size: 10px; color: #3f4753;">' . esc_html(basename(parse_url($url, PHP_URL_PATH))) . '</li>';
             }
             $html .= '</ul>';
         }
 
+        $liquidado = ($exp['status'] === 'liquidated' || $exp['status'] === 'declared');
+
         $html .= '
-        <table class="meta-table" style="margin-top: 20px;">
+        <div style="height: 16px;"></div>
+        <table class="totals-table">
             <tr>
-                <td class="totals-highlight-label">IMPORTE TOTAL:</td>
+                <td class="totals-highlight-label">IMPORTE TOTAL</td>
                 <td class="totals-highlight-val">' . number_format(floatval($exp['amount']), 2, ',', '.') . ' €</td>
             </tr>
         </table>
 
-        <table class="signatures-box">
-            <tr><td style="height: 30px;" colspan="2"></td></tr>
+        <table class="sign-table">
+            <tr><td style="height: 26px;" colspan="3"></td></tr>
             <tr>
-                <td>
-                    <strong>CONFORME:</strong><br>
-                    <span style="font-size: 9px; color: #64748b;">Presentado electrónicamente por el empleado</span><br>
+                <td class="sign-box">
+                    <span class="sign-role">CONFORME</span><br>
+                    <span class="sign-note">Presentado electrónicamente por el empleado</span><br><br>
                     Fecha: ' . date('d/m/Y', strtotime($exp['expense_date'])) . '
-                    ' . ($employee_signature ? '<br><span style="font-size: 8px; color: #64748b;">Firmado electrónicamente el ' . esc_html($employee_signature['fecha']) . '</span>'
-                        . ($employee_signature['csv'] ? '<br><span style="font-size: 7px; color: #94a3b8;">CSV: ' . esc_html($employee_signature['csv']) . '</span>' : '') : '') . '
+                    ' . ($employee_signature ? '<br><span class="sign-note">Firmado electrónicamente el ' . esc_html($employee_signature['fecha']) . '</span>'
+                        . ($employee_signature['csv'] ? '<br><span class="sign-fine">CSV: ' . esc_html($employee_signature['csv']) . '</span>' : '') : '') . '
                 </td>
-                <td style="text-align: right;">
-                    <strong>RECIBÍ / LIQUIDADO POR:</strong><br>
-                    <span style="font-size: 9px; color: #64748b;">Administración / Contabilidad</span><br>
-                    ' . ($exp['status'] === 'declared' ? 'Estado: LIQUIDADO' : 'Estado: PENDIENTE') . '
-                    ' . (!empty($exp['liquidation_method']) ? '<br><span style="font-size: 9px; color: #64748b;">Forma de pago: ' . esc_html($exp['liquidation_method']) . '</span>' : '') . '
-                    ' . (!empty($exp['liquidation_notes']) ? '<br><span style="font-size: 9px; color: #64748b;">' . esc_html($exp['liquidation_notes']) . '</span>' : '') . '
+                <td class="sign-gap"></td>
+                <td class="sign-box">
+                    <span class="sign-role">RECIBÍ / LIQUIDADO POR</span><br>
+                    <span class="sign-note">Administración / Contabilidad</span><br><br>
+                    <span class="sign-state">' . ($liquidado ? 'LIQUIDADO' : 'PENDIENTE') . '</span>
+                    ' . (!empty($exp['liquidation_method']) ? '<br><span class="sign-note">Forma de pago: ' . esc_html($exp['liquidation_method']) . '</span>' : '') . '
+                    ' . (!empty($exp['liquidation_notes']) ? '<br><span class="sign-note">' . esc_html($exp['liquidation_notes']) . '</span>' : '') . '
                 </td>
             </tr>
         </table>';
@@ -2467,6 +2462,145 @@ class EP_Expenses
     }
 
     /**
+     * Paleta de los justificantes en PDF, tomada del color corporativo del
+     * portal (Ajustes > Personalización).
+     *
+     * Los documentos salían en azul fijo mientras el resto del portal va en el
+     * rojo de la Cámara: quien recibía el PDF no lo reconocía como del mismo
+     * sitio. Al leer la misma opción que la interfaz, cambiar el color del
+     * portal recolorea también los documentos, sin tocar código.
+     */
+    private static function get_pdf_palette()
+    {
+        $custom  = get_option('ep_portal_customization', array());
+        $primary = !empty($custom['primary_color']) ? sanitize_hex_color($custom['primary_color']) : '';
+        if (empty($primary)) {
+            $primary = '#a81c24';
+        }
+
+        $portal = !empty($custom['portal_name']) ? $custom['portal_name'] : 'Portal del Empleado';
+
+        return array(
+            'primary' => $primary,
+            // Titulares: el corporativo puro sobre blanco pesa demasiado en textos grandes.
+            'dark'    => self::mix_hex($primary, '#000000', 0.32),
+            // Fondos de banda: el mismo tono lavado, para teñir sin competir con el texto.
+            'tint'    => self::mix_hex($primary, '#ffffff', 0.93),
+            'portal'  => trim(preg_replace('/\s+/', ' ', $portal)),
+        );
+    }
+
+    /**
+     * Mezcla dos colores hexadecimales. $weight es cuánto pesa el segundo (0..1).
+     */
+    private static function mix_hex($hex_a, $hex_b, $weight)
+    {
+        $to_rgb = function ($hex) {
+            $hex = ltrim((string) $hex, '#');
+            if (strlen($hex) === 3) {
+                $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+            }
+            if (strlen($hex) !== 6 || !ctype_xdigit($hex)) {
+                return array(0, 0, 0);
+            }
+            return array(
+                hexdec(substr($hex, 0, 2)),
+                hexdec(substr($hex, 2, 2)),
+                hexdec(substr($hex, 4, 2))
+            );
+        };
+
+        $a = $to_rgb($hex_a);
+        $b = $to_rgb($hex_b);
+        $weight = max(0, min(1, (float) $weight));
+
+        return sprintf(
+            '#%02x%02x%02x',
+            (int) round($a[0] + ($b[0] - $a[0]) * $weight),
+            (int) round($a[1] + ($b[1] - $a[1]) * $weight),
+            (int) round($a[2] + ($b[2] - $a[2]) * $weight)
+        );
+    }
+
+    /**
+     * Hoja de estilos común al justificante de ticket y a la liquidación, para
+     * que los dos salgan del mismo molde.
+     *
+     * TCPDF entiende muy poco CSS: ni flex, ni radios, ni sombras, ni márgenes
+     * fiables entre bloques. Todo lo que aquí parece una caja es una tabla, la
+     * separación se da con padding (no con margin) y los huecos verticales con
+     * filas espaciadoras. Las abreviaturas de padding sí las admite.
+     */
+    private static function get_pdf_stylesheet($p)
+    {
+        return '
+        <style>
+            .doc-kicker { width: 100%; }
+            .doc-kicker td { font-size: 8px; color: #9aa1ab; padding-bottom: 6px; }
+            .doc-kicker-right { text-align: right; }
+            .doc-kicker-num { font-size: 11px; font-weight: bold; color: ' . $p['primary'] . '; }
+
+            .title { text-align: center; font-size: 18px; font-weight: bold; color: ' . $p['dark'] . '; padding-top: 12px; }
+            .title-sub { text-align: center; font-size: 8px; color: #9aa1ab; padding-top: 6px; padding-bottom: 12px; border-bottom: 2px solid ' . $p['primary'] . '; }
+
+            .meta-table { width: 100%; border-collapse: collapse; }
+            .meta-table td { padding: 9px 7px; font-size: 10px; line-height: 1.5; border-bottom: 1px solid #ebedf0; }
+            .meta-label { font-weight: bold; color: #7b828c; font-size: 8px; width: 26%; }
+            .meta-val { color: #1f2933; width: 24%; }
+
+            .section-title { font-size: 10px; font-weight: bold; color: ' . $p['dark'] . '; background-color: ' . $p['tint'] . '; padding: 8px 10px; border-left: 3px solid ' . $p['primary'] . '; }
+
+            .data-table { width: 100%; border-collapse: collapse; }
+            .data-table th { background-color: #f6f7f9; font-weight: bold; color: #5b6270; font-size: 8px; padding: 8px 7px; border-bottom: 1px solid #d7dbe0; }
+            .data-table td { padding: 8px 7px; font-size: 10px; border-bottom: 1px solid #ebedf0; }
+
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+
+            .empty-note { font-size: 9px; color: #9aa1ab; font-style: italic; padding: 4px 12px; }
+            .nota { font-size: 10px; color: #3f4753; line-height: 1.5; padding: 8px 12px; }
+
+            .totals-table { width: 100%; border-collapse: collapse; }
+            .totals-table td { padding: 8px; font-size: 10px; }
+            .totals-label { color: #5b6270; text-align: right; width: 72%; }
+            .totals-val { font-weight: bold; color: #1f2933; text-align: right; width: 28%; border-bottom: 1px solid #ebedf0; }
+            .totals-neg { font-weight: bold; color: ' . $p['primary'] . '; text-align: right; width: 28%; border-bottom: 1px solid #ebedf0; }
+            .totals-highlight-label { font-size: 12px; font-weight: bold; color: ' . $p['dark'] . '; background-color: ' . $p['tint'] . '; text-align: right; width: 72%; padding: 11px 8px; border-top: 2px solid ' . $p['primary'] . '; border-bottom: 2px solid ' . $p['primary'] . '; }
+            .totals-highlight-val { font-size: 12px; font-weight: bold; color: ' . $p['dark'] . '; background-color: ' . $p['tint'] . '; text-align: right; width: 28%; padding: 11px 8px; border-top: 2px solid ' . $p['primary'] . '; border-bottom: 2px solid ' . $p['primary'] . '; }
+
+            .sign-table { width: 100%; }
+            .sign-box { width: 47%; border: 1px solid #dfe3e8; padding: 11px; font-size: 9px; line-height: 1.5; }
+            .sign-gap { width: 6%; }
+            .sign-role { font-size: 8px; font-weight: bold; color: ' . $p['primary'] . '; }
+            .sign-note { font-size: 8px; color: #9aa1ab; }
+            .sign-state { font-size: 10px; font-weight: bold; color: #1f2933; }
+            .sign-fine { font-size: 7px; color: #b0b6bd; }
+        </style>';
+    }
+
+    /**
+     * Cabecera común: marca del portal y número de documento arriba, y el título
+     * del justificante bajo un filete del color corporativo.
+     *
+     * El número vive aquí y no en la tabla de datos, que es donde estaba: en una
+     * columna del 15% se partía por la mitad ("Nº DOCUME / NTO") y encima
+     * robaba la fila a un dato del viaje.
+     */
+    private static function get_pdf_header_html($p, $titulo, $subtitulo, $num_label, $numero)
+    {
+        return '
+        <table class="doc-kicker">
+            <tr>
+                <td>' . esc_html($p['portal']) . '</td>
+                <td class="doc-kicker-right">' . esc_html($num_label) . ' <span class="doc-kicker-num">' . esc_html($numero) . '</span></td>
+            </tr>
+        </table>
+        <div class="title">' . esc_html(mb_strtoupper($titulo, 'UTF-8')) . '</div>
+        <div class="title-sub">' . esc_html(mb_strtoupper($subtitulo, 'UTF-8')) . '</div>
+        <div style="height: 14px;"></div>';
+    }
+
+    /**
      * Genera el PDF de la liquidación.
      *
      * @param array $liq         Liquidación.
@@ -2513,198 +2647,184 @@ class EP_Expenses
         $alojamiento = json_decode($liq['gastos_alojamiento'], true) ?: [];
         $otros = json_decode($liq['otros_gastos'], true) ?: [];
 
-        $html = '
-        <style>
-            .title { text-align: center; font-size: 20px; font-weight: bold; color: #1e3a8a; margin-bottom: 20px; text-transform: uppercase; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
-            .meta-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-            .meta-table td { padding: 6px; font-size: 11px; }
-            .meta-label { font-weight: bold; color: #475569; width: 15%; }
-            .meta-val { color: #1e293b; width: 35%; border-bottom: 1px solid #e2e8f0; }
-            .section-title { font-size: 13px; font-weight: bold; color: #1e3a8a; background-color: #f1f5f9; padding: 6px; margin-top: 15px; margin-bottom: 8px; border-left: 3px solid #3b82f6; }
-            .data-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-            .data-table th { background-color: #f8fafc; font-weight: bold; color: #475569; font-size: 10px; padding: 6px; border: 1px solid #cbd5e1; }
-            .data-table td { padding: 6px; font-size: 10px; border: 1px solid #e2e8f0; }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
-            .totals-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            .totals-table td { padding: 6px; font-size: 11px; }
-            .totals-label { font-weight: bold; color: #475569; text-align: right; width: 75%; }
-            .totals-val { font-weight: bold; color: #1e293b; text-align: right; width: 25%; border-bottom: 1px solid #cbd5e1; }
-            .totals-highlight-label { font-size: 13px; font-weight: bold; color: #1e3a8a; background-color: #eff6ff; text-align: right; width: 75%; padding: 8px; border-top: 2px solid #3b82f6; border-bottom: 2px solid #3b82f6; }
-            .totals-highlight-val { font-size: 13px; font-weight: bold; color: #1e3a8a; background-color: #eff6ff; text-align: right; width: 25%; padding: 8px; border-top: 2px solid #3b82f6; border-bottom: 2px solid #3b82f6; }
-            .signatures-box { width: 100%; margin-top: 40px; }
-            .signatures-box td { font-size: 11px; width: 50%; }
-        </style>
-        
-        <div class="title">Liquidación de Dietas y Gastos</div>
-        
+        $pal = self::get_pdf_palette();
+
+        $fecha_ida = date('d/m/Y', strtotime($liq['fecha_desde']))
+            . (!empty($liq['hora_desde']) ? ', ' . substr($liq['hora_desde'], 0, 5) . ' h' : '');
+        $fecha_vuelta = date('d/m/Y', strtotime($liq['fecha_hasta']))
+            . (!empty($liq['hora_hasta']) ? ', ' . substr($liq['hora_hasta'], 0, 5) . ' h' : '');
+
+        $html = self::get_pdf_stylesheet($pal)
+            . self::get_pdf_header_html(
+                $pal,
+                'Liquidación de dietas y gastos',
+                'Justificante de desplazamiento y gastos de viaje',
+                'Nº de documento',
+                $liq['liquidation_number']
+            ) . '
+
         <table class="meta-table">
             <tr>
-                <td class="meta-label">ASISTENTE:</td>
+                <td class="meta-label">ASISTENTE</td>
                 <td class="meta-val">' . esc_html($asistente) . '</td>
-                <td class="meta-label">Nº DOCUMENTO:</td>
-                <td class="meta-val" style="font-weight: bold; color: #2563eb;">' . esc_html($liq['liquidation_number']) . '</td>
-            </tr>
-            <tr>
-                <td class="meta-label">VIAJE A:</td>
-                <td class="meta-val">' . esc_html($liq['destino']) . '</td>
-                <td class="meta-label">SEDE:</td>
+                <td class="meta-label">SEDE</td>
                 <td class="meta-val">' . esc_html($sede_name) . '</td>
             </tr>
             <tr>
-                <td class="meta-label">MOTIVO:</td>
+                <td class="meta-label">VIAJE A (DESTINO)</td>
+                <td class="meta-val">' . esc_html($liq['destino']) . '</td>
+                <td class="meta-label">FECHAS DEL DESPLAZAMIENTO</td>
+                <td class="meta-val">Del ' . esc_html($fecha_ida) . '<br>al ' . esc_html($fecha_vuelta) . '</td>
+            </tr>
+            <tr>
+                <td class="meta-label">MOTIVO DEL VIAJE</td>
                 <td class="meta-val" colspan="3">' . esc_html($liq['motivo']) . '</td>
             </tr>
             <tr>
-                <td class="meta-label">PROGRAMA AL QUE IMPUTA:</td>
+                <td class="meta-label">PROGRAMA AL QUE IMPUTA</td>
                 <td class="meta-val" colspan="3">' . esc_html(!empty($liq['imputa']) ? $liq['imputa'] : 'Ninguno') . '</td>
             </tr>
-            <tr>
-                <td class="meta-label">FECHAS:</td>
-                <td class="meta-val" colspan="3">
-                    Del ' . date('d/m/Y', strtotime($liq['fecha_desde'])) . ' ' . (!empty($liq['hora_desde']) ? 'a las ' . substr($liq['hora_desde'], 0, 5) . ' h.' : '') . ' 
-                    al ' . date('d/m/Y', strtotime($liq['fecha_hasta'])) . ' ' . (!empty($liq['hora_hasta']) ? 'a las ' . substr($liq['hora_hasta'], 0, 5) . ' h.' : '') . '
-                </td>
-            </tr>
         </table>
-        
-        <div class="section-title">Desplazamientos y Kilometraje</div>
+
+        <div style="height: 10px;"></div>
+        <div class="section-title">DESPLAZAMIENTOS Y KILOMETRAJE</div>
         <table class="data-table">
             <thead>
                 <tr>
-                    <th style="width: 25%;">Distancia (Km)</th>
-                    <th style="width: 25%;">Precio / Km</th>
-                    <th style="width: 25%;">Importe Exento</th>
-                    <th style="width: 25%;">Importe Sujeto</th>
+                    <th style="width: 25%;">DISTANCIA</th>
+                    <th style="width: 25%;">PRECIO / KM</th>
+                    <th style="width: 25%; text-align: right;">IMPORTE EXENTO</th>
+                    <th style="width: 25%; text-align: right;">IMPORTE SUJETO</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td class="text-center">' . number_format($liq['kilometros'], 2, ',', '.') . ' Km</td>
-                    <td class="text-center">' . number_format($liq['precio_km'], 2, ',', '.') . ' €</td>
-                    <td class="text-right">' . number_format($liq['exento_km'], 2, ',', '.') . ' €</td>
-                    <td class="text-right">' . number_format($liq['sujeto_km'], 2, ',', '.') . ' €</td>
+                    <td style="width: 25%;">' . number_format($liq['kilometros'], 2, ',', '.') . ' Km</td>
+                    <td style="width: 25%;">' . number_format($liq['precio_km'], 2, ',', '.') . ' €</td>
+                    <td style="width: 25%;" class="text-right">' . number_format($liq['exento_km'], 2, ',', '.') . ' €</td>
+                    <td style="width: 25%;" class="text-right">' . number_format($liq['sujeto_km'], 2, ',', '.') . ' €</td>
                 </tr>
             </tbody>
         </table>
         ';
 
-        $html .= '<div class="section-title">Gastos de Manutención Justificados</div>';
+        $html .= '<div style="height: 10px;"></div><div class="section-title">GASTOS DE MANUTENCIÓN JUSTIFICADOS</div>';
         if (empty($manutencion)) {
-            $html .= '<p style="font-size: 10px; color: #64748b; font-style: italic; margin-left: 10px;">No se registran gastos de manutención.</p>';
+            $html .= '<div class="empty-note">No se registran gastos de manutención.</div>';
         } else {
             $html .= '<table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 20%;">Fecha</th>
-                        <th style="width: 60%;">Concepto / Descripción</th>
-                        <th style="width: 20%; text-align: right;">Importe</th>
+                        <th style="width: 18%;">FECHA</th>
+                        <th style="width: 62%;">CONCEPTO / DESCRIPCIÓN</th>
+                        <th style="width: 20%; text-align: right;">IMPORTE</th>
                     </tr>
                 </thead>
                 <tbody>';
             foreach ($manutencion as $row) {
                 $html .= '<tr>
-                    <td class="text-center">' . esc_html($row['fecha']) . '</td>
-                    <td>' . esc_html($row['concepto']) . '</td>
-                    <td class="text-right">' . number_format(floatval($row['importe']), 2, ',', '.') . ' €</td>
+                    <td style="width: 18%;">' . esc_html($row['fecha']) . '</td>
+                    <td style="width: 62%;">' . esc_html($row['concepto']) . '</td>
+                    <td style="width: 20%;" class="text-right">' . number_format(floatval($row['importe']), 2, ',', '.') . ' €</td>
                 </tr>';
             }
             $html .= '</tbody></table>';
         }
 
-        $html .= '<div class="section-title">Gastos de Alojamiento Justificados</div>';
+        $html .= '<div style="height: 10px;"></div><div class="section-title">GASTOS DE ALOJAMIENTO JUSTIFICADOS</div>';
         if (empty($alojamiento)) {
-            $html .= '<p style="font-size: 10px; color: #64748b; font-style: italic; margin-left: 10px;">No se registran gastos de alojamiento.</p>';
+            $html .= '<div class="empty-note">No se registran gastos de alojamiento.</div>';
         } else {
             $html .= '<table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 20%;">Fecha</th>
-                        <th style="width: 60%;">Concepto / Descripción</th>
-                        <th style="width: 20%; text-align: right;">Importe</th>
+                        <th style="width: 18%;">FECHA</th>
+                        <th style="width: 62%;">CONCEPTO / DESCRIPCIÓN</th>
+                        <th style="width: 20%; text-align: right;">IMPORTE</th>
                     </tr>
                 </thead>
                 <tbody>';
             foreach ($alojamiento as $row) {
                 $html .= '<tr>
-                    <td class="text-center">' . esc_html($row['fecha']) . '</td>
-                    <td>' . esc_html($row['concepto']) . '</td>
-                    <td class="text-right">' . number_format(floatval($row['importe']), 2, ',', '.') . ' €</td>
+                    <td style="width: 18%;">' . esc_html($row['fecha']) . '</td>
+                    <td style="width: 62%;">' . esc_html($row['concepto']) . '</td>
+                    <td style="width: 20%;" class="text-right">' . number_format(floatval($row['importe']), 2, ',', '.') . ' €</td>
                 </tr>';
             }
             $html .= '</tbody></table>';
         }
 
-        $html .= '<div class="section-title">Otros Gastos Justificados</div>';
+        $html .= '<div style="height: 10px;"></div><div class="section-title">OTROS GASTOS JUSTIFICADOS</div>';
         if (empty($otros)) {
-            $html .= '<p style="font-size: 10px; color: #64748b; font-style: italic; margin-left: 10px;">No se registran otros gastos.</p>';
+            $html .= '<div class="empty-note">No se registran otros gastos.</div>';
         } else {
             $html .= '<table class="data-table">
                 <thead>
                     <tr>
-                        <th style="width: 20%;">Fecha</th>
-                        <th style="width: 60%;">Concepto / Descripción</th>
-                        <th style="width: 20%; text-align: right;">Importe</th>
+                        <th style="width: 18%;">FECHA</th>
+                        <th style="width: 62%;">CONCEPTO / DESCRIPCIÓN</th>
+                        <th style="width: 20%; text-align: right;">IMPORTE</th>
                     </tr>
                 </thead>
                 <tbody>';
             foreach ($otros as $row) {
                 $html .= '<tr>
-                    <td class="text-center">' . esc_html($row['fecha']) . '</td>
-                    <td>' . esc_html($row['concepto']) . '</td>
-                    <td class="text-right">' . number_format(floatval($row['importe']), 2, ',', '.') . ' €</td>
+                    <td style="width: 18%;">' . esc_html($row['fecha']) . '</td>
+                    <td style="width: 62%;">' . esc_html($row['concepto']) . '</td>
+                    <td style="width: 20%;" class="text-right">' . number_format(floatval($row['importe']), 2, ',', '.') . ' €</td>
                 </tr>';
             }
             $html .= '</tbody></table>';
         }
 
+        $liquidada = ($liq['status'] === 'liquidated' || $liq['status'] === 'declared');
+
         $html .= '
-        <div style="margin-top: 15px;"></div>
+        <div style="height: 16px;"></div>
         <table class="totals-table">
             <tr>
-                <td class="totals-label">TOTAL BRUTO:</td>
+                <td class="totals-label">Total bruto</td>
                 <td class="totals-val">' . number_format($liq['total_bruto'], 2, ',', '.') . ' €</td>
             </tr>
             <tr>
-                <td class="totals-label">BASE DE RETENCIÓN (Sujeto a IRPF/SS):</td>
+                <td class="totals-label">Base de retención (sujeto a IRPF / SS)</td>
                 <td class="totals-val">' . number_format($liq['base_retencion'], 2, ',', '.') . ' €</td>
             </tr>
             <tr>
-                <td class="totals-label">RENTA EXENTA DE RETENCIONES:</td>
+                <td class="totals-label">Renta exenta de retenciones</td>
                 <td class="totals-val">' . number_format($liq['renta_exenta'], 2, ',', '.') . ' €</td>
             </tr>
             <tr>
-                <td class="totals-label">menos: ' . number_format($liq['irpf_porcentaje'], 2, ',', '.') . '% retención I.R.P.F. s/ Base:</td>
-                <td class="totals-val" style="color: #dc2626;">- ' . number_format($liq['irpf_importe'], 2, ',', '.') . ' €</td>
+                <td class="totals-label">Retención I.R.P.F. (' . number_format($liq['irpf_porcentaje'], 2, ',', '.') . '% s/ base)</td>
+                <td class="totals-neg">- ' . number_format($liq['irpf_importe'], 2, ',', '.') . ' €</td>
             </tr>
             <tr>
-                <td class="totals-label">menos: ' . number_format($liq['ss_porcentaje'], 2, ',', '.') . '% seguridad social s/ Base:</td>
-                <td class="totals-val" style="color: #dc2626;">- ' . number_format($liq['ss_importe'], 2, ',', '.') . ' €</td>
+                <td class="totals-label">Seguridad Social (' . number_format($liq['ss_porcentaje'], 2, ',', '.') . '% s/ base)</td>
+                <td class="totals-neg">- ' . number_format($liq['ss_importe'], 2, ',', '.') . ' €</td>
             </tr>
             <tr>
-                <td class="totals-highlight-label">TOTAL NETO A PERCIBIR:</td>
+                <td class="totals-highlight-label">TOTAL NETO A PERCIBIR</td>
                 <td class="totals-highlight-val">' . number_format($liq['total_percibir'], 2, ',', '.') . ' €</td>
             </tr>
         </table>
-        
-        <table class="signatures-box">
+
+        <table class="sign-table">
+            <tr><td style="height: 26px;" colspan="3"></td></tr>
             <tr>
-                <td style="height: 40px;" colspan="2"></td>
-            </tr>
-            <tr>
-                <td>
-                    <strong>CONFORME:</strong><br>
-                    <span style="font-size: 9px; color: #64748b;">Presentado electrónicamente por el asistente</span><br>
+                <td class="sign-box">
+                    <span class="sign-role">CONFORME</span><br>
+                    <span class="sign-note">Presentado electrónicamente por el asistente</span><br><br>
                     Fecha: ' . date('d/m/Y', strtotime($liq['fecha_documento'])) . '
-                    ' . ($employee_signature ? '<br><span style="font-size: 8px; color: #64748b;">Firmado electrónicamente el ' . esc_html($employee_signature['fecha']) . '</span>'
-                        . ($employee_signature['csv'] ? '<br><span style="font-size: 7px; color: #94a3b8;">CSV: ' . esc_html($employee_signature['csv']) . '</span>' : '') : '') . '
+                    ' . ($employee_signature ? '<br><span class="sign-note">Firmado electrónicamente el ' . esc_html($employee_signature['fecha']) . '</span>'
+                        . ($employee_signature['csv'] ? '<br><span class="sign-fine">CSV: ' . esc_html($employee_signature['csv']) . '</span>' : '') : '') . '
                 </td>
-                <td style="text-align: right;">
-                    <strong>RECIBÍ / LIQUIDADO POR:</strong><br>
-                    <span style="font-size: 9px; color: #64748b;">Administración / Contabilidad</span><br>
-                    ' . ($liq['status'] === 'liquidated' || $liq['status'] === 'declared' ? 'Estado: LIQUIDADO' : 'Estado: PENDIENTE') . '
-                    ' . (!empty($liq['liquidation_method']) ? '<br><span style="font-size: 9px; color: #64748b;">Forma de pago: ' . esc_html($liq['liquidation_method']) . '</span>' : '') . '
-                    ' . (!empty($liq['liquidation_notes']) ? '<br><span style="font-size: 9px; color: #64748b;">' . esc_html($liq['liquidation_notes']) . '</span>' : '') . '
+                <td class="sign-gap"></td>
+                <td class="sign-box">
+                    <span class="sign-role">RECIBÍ / LIQUIDADO POR</span><br>
+                    <span class="sign-note">Administración / Contabilidad</span><br><br>
+                    <span class="sign-state">' . ($liquidada ? 'LIQUIDADO' : 'PENDIENTE') . '</span>
+                    ' . (!empty($liq['liquidation_method']) ? '<br><span class="sign-note">Forma de pago: ' . esc_html($liq['liquidation_method']) . '</span>' : '') . '
+                    ' . (!empty($liq['liquidation_notes']) ? '<br><span class="sign-note">' . esc_html($liq['liquidation_notes']) . '</span>' : '') . '
                 </td>
             </tr>
         </table>
