@@ -2246,19 +2246,19 @@ class EP_Expenses
             </tr>
         </table>
 
-        <div style="height: 10px;"></div>
+        <div style="height: 6px;"></div>
         <div class="section-title">CONCEPTO</div>
         <div class="nota">' . esc_html($exp['concept']) . '</div>';
 
         if (!empty($exp['notes'])) {
-            $html .= '<div style="height: 10px;"></div><div class="section-title">OBSERVACIONES</div><div class="nota">' . esc_html($exp['notes']) . '</div>';
+            $html .= '<div style="height: 6px;"></div><div class="section-title">OBSERVACIONES</div><div class="nota">' . esc_html($exp['notes']) . '</div>';
         }
 
         if (!empty($exp['google_maps_url'])) {
-            $html .= '<div style="height: 10px;"></div><div class="section-title">JUSTIFICANTE DEL TRAYECTO</div><div class="nota">' . esc_html($exp['google_maps_url']) . '</div>';
+            $html .= '<div style="height: 6px;"></div><div class="section-title">JUSTIFICANTE DEL TRAYECTO</div><div class="nota">' . esc_html($exp['google_maps_url']) . '</div>';
         }
 
-        $html .= '<div style="height: 10px;"></div><div class="section-title">COMPROBANTES APORTADOS</div>';
+        $html .= '<div style="height: 6px;"></div><div class="section-title">COMPROBANTES APORTADOS</div>';
         if (empty($adjuntos)) {
             $html .= '<div class="empty-note">No se aportan comprobantes adjuntos.</div>';
         } else {
@@ -2272,7 +2272,7 @@ class EP_Expenses
         $liquidado = ($exp['status'] === 'liquidated' || $exp['status'] === 'declared');
 
         $html .= '
-        <div style="height: 16px;"></div>
+        <div style="height: 10px;"></div>
         <table class="totals-table">
             <tr>
                 <td class="totals-highlight-label">IMPORTE TOTAL</td>
@@ -2281,8 +2281,8 @@ class EP_Expenses
         </table>
 
         <table class="sign-table">
-            <tr><td style="height: 26px;" colspan="3"></td></tr>
-            <tr>
+            <tr><td style="height: 14px;" colspan="3"></td></tr>
+            <tr nobr="true">
                 <td class="sign-box">
                     <span class="sign-role">CONFORME</span><br>
                     <span class="sign-note">Presentado electrónicamente por el empleado</span><br><br>
@@ -2545,24 +2545,27 @@ class EP_Expenses
             .title-sub { text-align: center; font-size: 8px; color: #9aa1ab; padding-top: 6px; padding-bottom: 12px; border-bottom: 2px solid ' . $p['primary'] . '; }
 
             .meta-table { width: 100%; border-collapse: collapse; }
-            .meta-table td { padding: 9px 7px; font-size: 10px; line-height: 1.5; border-bottom: 1px solid #ebedf0; }
+            .meta-table td { padding: 7px 0; font-size: 10px; line-height: 1.4; border-bottom: 1px solid #ebedf0; }
             .meta-label { font-weight: bold; color: #7b828c; font-size: 8px; width: 26%; }
             .meta-val { color: #1f2933; width: 24%; }
+            .meta-block { width: 100%; }
+            .meta-block-label { font-weight: bold; color: #7b828c; font-size: 8px; }
+            .meta-block-val { color: #1f2933; font-size: 10px; }
 
-            .section-title { font-size: 10px; font-weight: bold; color: ' . $p['dark'] . '; background-color: ' . $p['tint'] . '; padding: 8px 10px; border-left: 3px solid ' . $p['primary'] . '; }
+            .section-title { font-size: 10px; font-weight: bold; color: ' . $p['dark'] . '; background-color: ' . $p['tint'] . '; padding: 6px 10px; border-left: 3px solid ' . $p['primary'] . '; }
 
             .data-table { width: 100%; border-collapse: collapse; }
-            .data-table th { background-color: #f6f7f9; font-weight: bold; color: #5b6270; font-size: 8px; padding: 8px 7px; border-bottom: 1px solid #d7dbe0; }
-            .data-table td { padding: 8px 7px; font-size: 10px; border-bottom: 1px solid #ebedf0; }
+            .data-table th { background-color: #f6f7f9; font-weight: bold; color: #5b6270; font-size: 8px; padding: 6px 7px; border-bottom: 1px solid #d7dbe0; }
+            .data-table td { padding: 6px 7px; font-size: 10px; border-bottom: 1px solid #ebedf0; }
 
             .text-right { text-align: right; }
             .text-center { text-align: center; }
 
-            .empty-note { font-size: 9px; color: #9aa1ab; font-style: italic; padding: 4px 12px; }
-            .nota { font-size: 10px; color: #3f4753; line-height: 1.5; padding: 8px 12px; }
+            .empty-note { font-size: 9px; color: #9aa1ab; font-style: italic; padding: 4px 0; }
+            .nota { font-size: 10px; color: #3f4753; line-height: 1.5; padding: 6px 0; }
 
             .totals-table { width: 100%; border-collapse: collapse; }
-            .totals-table td { padding: 8px; font-size: 10px; }
+            .totals-table td { padding: 6px 0; font-size: 10px; }
             .totals-label { color: #5b6270; text-align: right; width: 72%; }
             .totals-val { font-weight: bold; color: #1f2933; text-align: right; width: 28%; border-bottom: 1px solid #ebedf0; }
             .totals-neg { font-weight: bold; color: ' . $p['primary'] . '; text-align: right; width: 28%; border-bottom: 1px solid #ebedf0; }
@@ -2570,7 +2573,7 @@ class EP_Expenses
             .totals-highlight-val { font-size: 12px; font-weight: bold; color: ' . $p['dark'] . '; background-color: ' . $p['tint'] . '; text-align: right; width: 28%; padding: 11px 8px; border-top: 2px solid ' . $p['primary'] . '; border-bottom: 2px solid ' . $p['primary'] . '; }
 
             .sign-table { width: 100%; }
-            .sign-box { width: 47%; border: 1px solid #dfe3e8; padding: 11px; font-size: 9px; line-height: 1.5; }
+            .sign-box { width: 47%; border: 1px solid #dfe3e8; padding: 9px; font-size: 9px; line-height: 1.4; }
             .sign-gap { width: 6%; }
             .sign-role { font-size: 8px; font-weight: bold; color: ' . $p['primary'] . '; }
             .sign-note { font-size: 8px; color: #9aa1ab; }
@@ -2677,17 +2680,18 @@ class EP_Expenses
                 <td class="meta-label">FECHAS DEL DESPLAZAMIENTO</td>
                 <td class="meta-val">Del ' . esc_html($fecha_ida) . '<br>al ' . esc_html($fecha_vuelta) . '</td>
             </tr>
+        </table>
+
+        <table class="meta-table">
             <tr>
-                <td class="meta-label">MOTIVO DEL VIAJE</td>
-                <td class="meta-val" colspan="3">' . esc_html($liq['motivo']) . '</td>
+                <td class="meta-block"><span class="meta-block-label">MOTIVO DEL VIAJE</span><br><span class="meta-block-val">' . esc_html($liq['motivo']) . '</span></td>
             </tr>
             <tr>
-                <td class="meta-label">PROGRAMA AL QUE IMPUTA</td>
-                <td class="meta-val" colspan="3">' . esc_html(!empty($liq['imputa']) ? $liq['imputa'] : 'Ninguno') . '</td>
+                <td class="meta-block"><span class="meta-block-label">PROGRAMA AL QUE IMPUTA</span><br><span class="meta-block-val">' . esc_html(!empty($liq['imputa']) ? $liq['imputa'] : 'Ninguno') . '</span></td>
             </tr>
         </table>
 
-        <div style="height: 10px;"></div>
+        <div style="height: 6px;"></div>
         <div class="section-title">DESPLAZAMIENTOS Y KILOMETRAJE</div>
         <table class="data-table">
             <thead>
@@ -2709,7 +2713,7 @@ class EP_Expenses
         </table>
         ';
 
-        $html .= '<div style="height: 10px;"></div><div class="section-title">GASTOS DE MANUTENCIÓN JUSTIFICADOS</div>';
+        $html .= '<div style="height: 6px;"></div><div class="section-title">GASTOS DE MANUTENCIÓN JUSTIFICADOS</div>';
         if (empty($manutencion)) {
             $html .= '<div class="empty-note">No se registran gastos de manutención.</div>';
         } else {
@@ -2732,7 +2736,7 @@ class EP_Expenses
             $html .= '</tbody></table>';
         }
 
-        $html .= '<div style="height: 10px;"></div><div class="section-title">GASTOS DE ALOJAMIENTO JUSTIFICADOS</div>';
+        $html .= '<div style="height: 6px;"></div><div class="section-title">GASTOS DE ALOJAMIENTO JUSTIFICADOS</div>';
         if (empty($alojamiento)) {
             $html .= '<div class="empty-note">No se registran gastos de alojamiento.</div>';
         } else {
@@ -2755,7 +2759,7 @@ class EP_Expenses
             $html .= '</tbody></table>';
         }
 
-        $html .= '<div style="height: 10px;"></div><div class="section-title">OTROS GASTOS JUSTIFICADOS</div>';
+        $html .= '<div style="height: 6px;"></div><div class="section-title">OTROS GASTOS JUSTIFICADOS</div>';
         if (empty($otros)) {
             $html .= '<div class="empty-note">No se registran otros gastos.</div>';
         } else {
@@ -2781,7 +2785,7 @@ class EP_Expenses
         $liquidada = ($liq['status'] === 'liquidated' || $liq['status'] === 'declared');
 
         $html .= '
-        <div style="height: 16px;"></div>
+        <div style="height: 10px;"></div>
         <table class="totals-table">
             <tr>
                 <td class="totals-label">Total bruto</td>
@@ -2810,8 +2814,8 @@ class EP_Expenses
         </table>
 
         <table class="sign-table">
-            <tr><td style="height: 26px;" colspan="3"></td></tr>
-            <tr>
+            <tr><td style="height: 14px;" colspan="3"></td></tr>
+            <tr nobr="true">
                 <td class="sign-box">
                     <span class="sign-role">CONFORME</span><br>
                     <span class="sign-note">Presentado electrónicamente por el asistente</span><br><br>
