@@ -1545,7 +1545,8 @@ class EP_Expenses
                         $sanitized_numbering[intval($key)] = [
                             'name' => sanitize_text_field($sede['name']),
                             'prefix' => sanitize_text_field($sede['prefix']),
-                            'next_number' => max(1, intval($sede['next_number']))
+                            // 'next_number' ya no se guarda: el correlativo se deduce de
+                            // lo emitido en el ejercicio (ver next_in_series).
                         ];
                     }
                 }

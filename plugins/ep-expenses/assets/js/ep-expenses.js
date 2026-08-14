@@ -36,7 +36,6 @@
                 var tr = $('<tr class="sede-row"></tr>');
                 tr.append('<td><input type="text" class="ep-input cfg-sede-name" value="" required placeholder="Ej. Nueva Sede..."></td>');
                 tr.append('<td><input type="text" class="ep-input cfg-sede-prefix" value="" required placeholder="Ej. NSEDE-"></td>');
-                tr.append('<td><input type="number" min="1" class="ep-input cfg-sede-next" value="1" required></td>');
                 
                 var deleteBtnTd = $('<td class="text-center"></td>');
                 var deleteBtn = $('<button type="button" class="ep-btn ep-btn-sm ep-btn-light btn-delete-sede" style="color: #ef4444; padding: 4px 8px;" title="Eliminar Sede"><i class="fa-solid fa-trash"></i></button>');
@@ -162,12 +161,10 @@
                 $('#cfg-sedes-tbody tr').each(function (index) {
                     var name = $(this).find('.cfg-sede-name').val();
                     var prefix = $(this).find('.cfg-sede-prefix').val();
-                    var next_number = parseInt($(this).find('.cfg-sede-next').val()) || 1;
                     if (name && prefix) {
                         numberingConfig[index + 1] = {
                             name: name,
-                            prefix: prefix,
-                            next_number: next_number
+                            prefix: prefix
                         };
                     }
                 });

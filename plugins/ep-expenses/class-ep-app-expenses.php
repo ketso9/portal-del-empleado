@@ -325,9 +325,8 @@ class EP_App_Expenses implements EP_App_Interface
                                         <table class="ep-table" style="min-width: 100%;" id="cfg-sedes-table">
                                             <thead>
                                                 <tr>
-                                                    <th style="width: 45%;">Nombre de la Sede</th>
-                                                    <th style="width: 25%;">Prefijo Serie (ej: MAD-)</th>
-                                                    <th style="width: 20%;">Próximo Número</th>
+                                                    <th style="width: 50%;">Nombre de la Sede</th>
+                                                    <th style="width: 40%;">Prefijo Serie (ej: MAD-)</th>
                                                     <th style="width: 10%; text-align: center;">Acción</th>
                                                 </tr>
                                             </thead>
@@ -346,9 +345,6 @@ class EP_App_Expenses implements EP_App_Interface
                                                             <td>
                                                                 <input type="text" class="ep-input cfg-sede-prefix" value="<?php echo esc_attr($sede['prefix']); ?>" required placeholder="Ej. CAC-">
                                                             </td>
-                                                            <td>
-                                                                <input type="number" min="1" class="ep-input cfg-sede-next" value="<?php echo intval($sede['next_number']); ?>" required>
-                                                            </td>
                                                             <td class="text-center">
                                                                 <button type="button" class="ep-btn ep-btn-sm ep-btn-light btn-delete-sede" style="color: #ef4444; padding: 4px 8px;" title="Eliminar Sede"><i class="fa-solid fa-trash"></i></button>
                                                             </td>
@@ -365,9 +361,6 @@ class EP_App_Expenses implements EP_App_Interface
                                                         <td>
                                                             <input type="text" class="ep-input cfg-sede-prefix" value="CAC-" required placeholder="Ej. CAC-">
                                                         </td>
-                                                        <td>
-                                                            <input type="number" min="1" class="ep-input cfg-sede-next" value="1" required>
-                                                        </td>
                                                         <td class="text-center">
                                                             <button type="button" class="ep-btn ep-btn-sm ep-btn-light btn-delete-sede" style="color: #ef4444; padding: 4px 8px;" title="Eliminar Sede"><i class="fa-solid fa-trash"></i></button>
                                                         </td>
@@ -377,6 +370,14 @@ class EP_App_Expenses implements EP_App_Interface
                                                 ?>
                                             </tbody>
                                         </table>
+                                        <p class="text-muted" style="font-size: 12px; margin-top: 10px; line-height: 1.5;">
+                                            <i class="fa-solid fa-circle-info"></i>
+                                            La numeración es anual y <strong>se reinicia sola cada 1 de enero</strong>:
+                                            las liquidaciones siguen la serie <code>PREFIJO-AAAA/NNN</code> (por ejemplo
+                                            <code>CAC-<?php echo date('Y'); ?>/001</code>) y los tickets sueltos la serie
+                                            <code>T-AAAA/NNN</code>. El correlativo se deduce de lo ya emitido en el
+                                            ejercicio, así que no hay ningún contador que poner a cero a mano.
+                                        </p>
                                     </div>
                                 </div>
                             </div>

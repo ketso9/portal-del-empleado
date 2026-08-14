@@ -148,10 +148,10 @@ class EP_Expenses_DB
         // Inicializar opciones por defecto para numeración de sedes
         if (!get_option('ep_expenses_numbering_config')) {
             $default_numbering = [
-                1 => ['name' => 'Sede Cáceres', 'prefix' => 'CAC-', 'next_number' => 1],
-                2 => ['name' => 'Sede Plasencia', 'prefix' => 'PLA-', 'next_number' => 1],
-                3 => ['name' => 'Sede Badajoz', 'prefix' => 'BAD-', 'next_number' => 1],
-                4 => ['name' => 'Sede Mérida', 'prefix' => 'MER-', 'next_number' => 1]
+                1 => ['name' => 'Sede Cáceres', 'prefix' => 'CAC-'],
+                2 => ['name' => 'Sede Plasencia', 'prefix' => 'PLA-'],
+                3 => ['name' => 'Sede Badajoz', 'prefix' => 'BAD-'],
+                4 => ['name' => 'Sede Mérida', 'prefix' => 'MER-']
             ];
             update_option('ep_expenses_numbering_config', $default_numbering);
         }
@@ -302,28 +302,52 @@ class EP_Expenses_DB
     }
 
     /**
-     * Genera el siguiente ticket_number correlativo global en el mes (Formato: AAAAMMTXXXX)
-     * Ejemplo: 202608T0001, 202608T0002, 202608T0003
+     * Genera el siguiente ticket_number del ejercicio (formato: T-AAAA/NNN).
+     *
+     * Antes el prefijo llevaba año y mes (202608T0001), así que el correlativo
+     * se reiniciaba cada mes. Ahora la serie es anual y arranca sola el 1 de
+     * enero, igual que la de las liquidaciones.
      */
     public function generate_ticket_number($expense_date = null)
     {
-        global $wpdb;
-        $table = self::get_expenses_table();
-
         $expense_date = $expense_date ? $expense_date : current_time('Y-m-d');
-        $prefix = date('Ym', strtotime($expense_date)) . 'T'; // ej: 202608T
 
-        // Ordenar por el número, no por id: si se editan/insertan fuera de orden
-        // el correlativo se repetiría y chocaría con el UNIQUE KEY.
+        return self::next_in_series(
+            self::get_expenses_table(),
+            'ticket_number',
+            'T-' . date('Y', strtotime($expense_date)) . '/'
+        );
+    }
+
+    /**
+     * Siguiente correlativo de una serie, deducido de lo ya emitido.
+     *
+     * El número sale de consultar el máximo ya usado en la serie y no de un
+     * contador guardado en opciones. Eso es lo que hace que la numeración se
+     * reinicie sola cada 1 de enero (la serie lleva el año, y en enero no hay
+     * nada emitido todavía) y lo que impide que choque con el índice único de
+     * la columna: no hay forma de "rebobinar" el contador a mano y provocar un
+     * duplicado.
+     */
+    private static function next_in_series($table, $column, $serie)
+    {
+        global $wpdb;
+
+        // MySQL cuenta SUBSTRING en caracteres, no en bytes: el prefijo de sede
+        // lo escribe un humano y puede llevar acentos.
+        $desde = function_exists('mb_strlen') ? mb_strlen($serie, 'UTF-8') : strlen($serie);
+
+        // Se ordena por el número, no por id: si se insertan fuera de orden, el
+        // correlativo se repetiría y chocaría con el UNIQUE KEY.
         $latest = $wpdb->get_var($wpdb->prepare(
-            "SELECT MAX(CAST(SUBSTRING(`ticket_number`, %d) AS UNSIGNED)) FROM $table WHERE `ticket_number` LIKE %s",
-            strlen($prefix) + 1,
-            $wpdb->esc_like($prefix) . '%'
+            "SELECT MAX(CAST(SUBSTRING(`" . $column . "`, %d) AS UNSIGNED)) FROM $table WHERE `" . $column . "` LIKE %s",
+            $desde + 1,
+            $wpdb->esc_like($serie) . '%'
         ));
 
-        $next_number = $latest ? intval($latest) + 1 : 1;
+        $siguiente = $latest ? intval($latest) + 1 : 1;
 
-        return $prefix . str_pad($next_number, 4, '0', STR_PAD_LEFT);
+        return $serie . str_pad($siguiente, 3, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -689,7 +713,7 @@ class EP_Expenses_DB
     /**
      * Genera el siguiente número correlativo para una liquidación de una sede específica
      */
-    public function generate_liquidation_number($sede_id)
+    public function generate_liquidation_number($sede_id, $fecha_documento = null)
     {
         $numbering_config = get_option('ep_expenses_numbering_config', []);
         if (!isset($numbering_config[$sede_id])) {
@@ -697,14 +721,14 @@ class EP_Expenses_DB
         }
 
         $prefix = isset($numbering_config[$sede_id]['prefix']) ? $numbering_config[$sede_id]['prefix'] : 'CAC-';
-        $next_number = isset($numbering_config[$sede_id]['next_number']) ? intval($numbering_config[$sede_id]['next_number']) : 1;
+        $anio   = date('Y', $fecha_documento ? strtotime($fecha_documento) : current_time('timestamp'));
 
-        $number = $prefix . str_pad($next_number, 4, '0', STR_PAD_LEFT);
-
-        $numbering_config[$sede_id]['next_number'] = $next_number + 1;
-        update_option('ep_expenses_numbering_config', $numbering_config);
-
-        return $number;
+        // Serie por sede y ejercicio: CAC-2026/001.
+        return self::next_in_series(
+            self::get_liquidations_table(),
+            'liquidation_number',
+            $prefix . $anio . '/'
+        );
     }
 
     /**
@@ -846,7 +870,7 @@ class EP_Expenses_DB
             return $id;
         } else {
             // Nuevo: Generar número correlativo
-            $fields['liquidation_number'] = $this->generate_liquidation_number($sede_id);
+            $fields['liquidation_number'] = $this->generate_liquidation_number($sede_id, $fields['fecha_documento']);
             $fields['status'] = 'pending';
             $fields['created_at'] = current_time('mysql');
             
