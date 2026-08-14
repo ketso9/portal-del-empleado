@@ -588,7 +588,7 @@ class EP_App_Expenses implements EP_App_Interface
                             <div class="ep-form-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
                                 <div class="form-group">
                                     <label><i class="fa-solid fa-user"></i> Asistente / Empleado</label>
-                                    <input type="text" class="ep-input" value="<?php echo esc_attr($current_user->display_name); ?>" readonly style="background-color: rgba(255,255,255,0.05); cursor: not-allowed;">
+                                    <input type="text" id="liq_asistente" class="ep-input" value="<?php echo esc_attr($current_user->display_name); ?>" readonly style="background-color: rgba(255,255,255,0.05); cursor: not-allowed;">
                                 </div>
                                 <div class="form-group">
                                     <label for="liq_sede"><i class="fa-solid fa-building"></i> Sede para Numeración *</label>
@@ -802,6 +802,45 @@ class EP_App_Expenses implements EP_App_Interface
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!--
+            Revisión previa a la firma.
+
+            Es el último punto en el que los datos siguen siendo libremente
+            editables: todavía no hay número asignado, ni PDF, ni solicitud de
+            firma. Quien vea aquí un error vuelve al formulario y lo corrige sin
+            dejar rastro. Pasado este punto, corregir obliga a borrar y rehacer.
+        -->
+        <div id="ep-modal-backdrop-confirm" class="ep-modal-backdrop" style="display:none;">
+            <div class="ep-modal-content glass" style="max-width: 760px; width: 94%;">
+                <div class="ep-modal-header">
+                    <h3><i class="fa-solid fa-list-check"></i> Revisa antes de firmar</h3>
+                    <button class="ep-modal-close" onclick="EP_Expenses_App.closeConfirmModal()">&times;</button>
+                </div>
+
+                <div class="ep-modal-body" style="max-height: 68vh; overflow-y: auto; padding: 20px;">
+                    <div style="background: rgba(220, 38, 38, 0.06); border-left: 4px solid #dc2626; padding: 12px 14px; border-radius: 6px; margin-bottom: 18px;">
+                        <strong style="color: #b91c1c;"><i class="fa-solid fa-triangle-exclamation"></i> El documento que vas a firmar no se puede modificar.</strong>
+                        <div style="font-size: 12px; color: var(--ep-text-muted); margin-top: 6px; line-height: 1.5;">
+                            Comprueba que el gasto está justificado y que los datos son correctos.
+                            Si algo no cuadra, vuelve atrás y corrígelo ahora: después de firmar
+                            habría que anular el justificante y volver a empezar.
+                        </div>
+                    </div>
+
+                    <div id="ep-confirm-summary"></div>
+                </div>
+
+                <div class="ep-modal-footer">
+                    <button type="button" class="ep-btn ep-btn-light" onclick="EP_Expenses_App.closeConfirmModal()">
+                        <i class="fa-solid fa-pen"></i> Revisar / Corregir
+                    </button>
+                    <button type="button" class="ep-btn ep-btn-primary" id="ep-btn-confirm-sign" onclick="EP_Expenses_App.confirmAndSubmit()">
+                        <i class="fa-solid fa-signature"></i> Confirmar y firmar
+                    </button>
+                </div>
             </div>
         </div>
 

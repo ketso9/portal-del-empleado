@@ -628,21 +628,181 @@
 
         closeExpenseModal: function () {
             $('#ep-modal-backdrop-unified').fadeOut();
+            $('#ep-modal-backdrop-confirm').hide();
         },
 
+        /**
+         * Comprueba los obligatorios del tipo de justificante que toque.
+         * Devuelve false y avisa en cuanto encuentra el primero que falta.
+         */
+        validateExpenseForm: function (type) {
+            if (type !== 'dieta') {
+                if (!$.trim($('#concept').val() || '') || (parseFloat($('#amount').val()) || 0) <= 0) {
+                    alert('Debes especificar un concepto e importe válido.');
+                    return false;
+                }
+                return true;
+            }
+
+            if (!$.trim($('#liq_destino').val() || '') || !$.trim($('#liq_motivo').val() || '')) {
+                alert('Por favor, rellene el destino y el motivo del viaje.');
+                return false;
+            }
+
+            if (!$.trim($('#liq_imputa').val() || '')) {
+                alert('Indica el programa imputado. Si el gasto no se imputa a ninguno, escribe «Ninguno».');
+                $('#liq_imputa').focus();
+                return false;
+            }
+
+            // El justificante del trayecto solo es obligatorio en la liquidación de viaje.
+            if (!$.trim($('#google_maps_url').val() || '')) {
+                alert('Debes indicar el enlace de ruta (Google Maps) que justifica el trayecto.');
+                $('#google_maps_url').focus();
+                return false;
+            }
+
+            return true;
+        },
+
+        /**
+         * Punto de entrada del botón: valida, enseña lo introducido y espera
+         * confirmación. Aquí todavía no se ha guardado nada, que es lo que
+         * permite volver al formulario sin consecuencias.
+         */
         saveExpenseUnified: function () {
+            var type = $('#registration_type').val();
+
+            if (!this.validateExpenseForm(type)) {
+                return;
+            }
+
+            $('#ep-confirm-summary').html(this.buildConfirmSummary(type));
+            $('#ep-modal-backdrop-confirm').fadeIn();
+        },
+
+        closeConfirmModal: function () {
+            $('#ep-modal-backdrop-confirm').fadeOut();
+        },
+
+        confirmAndSubmit: function () {
+            this.closeConfirmModal();
+            this.submitExpenseUnified();
+        },
+
+        /**
+         * Resumen de lo introducido, en los mismos términos que el formulario.
+         *
+         * Se muestran los datos y no una vista previa del PDF: el documento aún
+         * no existe (no hay número asignado todavía) y el PDF real se ve entero
+         * en la pantalla de firma, justo antes de firmar.
+         */
+        buildConfirmSummary: function (type) {
+            var self = this;
+
+            var fila = function (etiqueta, valor, resaltado) {
+                var texto = (valor === null || valor === undefined || valor === '') ? '—' : valor;
+                return '<tr>'
+                    + '<td style="padding:7px 10px; font-size:11px; color:var(--ep-text-muted); text-transform:uppercase; width:34%; vertical-align:top;">' + self.escapeHtml(etiqueta) + '</td>'
+                    + '<td style="padding:7px 10px; font-size:13px; vertical-align:top;' + (resaltado ? ' font-weight:700;' : '') + '">' + self.escapeHtml(texto) + '</td>'
+                    + '</tr>';
+            };
+
+            var bloque = function (titulo, filas) {
+                return '<h4 style="font-size:12px; font-weight:700; color:var(--ep-primary); text-transform:uppercase; margin:16px 0 6px;">' + self.escapeHtml(titulo) + '</h4>'
+                    + '<table style="width:100%; border-collapse:collapse; background:rgba(15,23,42,0.02); border:1px solid var(--ep-border); border-radius:6px;">' + filas + '</table>';
+            };
+
+            var adjuntos = 0;
+            var input = $('#ep_expense_file')[0];
+            if (input && input.files) {
+                adjuntos = input.files.length;
+            }
+            var textoAdjuntos = adjuntos === 0 ? 'Ninguno' : (adjuntos + (adjuntos === 1 ? ' archivo' : ' archivos'));
+
+            var html = '';
+
+            if (type !== 'dieta') {
+                html += bloque('Gasto', ''
+                    + fila('Tipo', $('#registration_type option:selected').text())
+                    + fila('Fecha del gasto', $('#expense_date').val())
+                    + fila('Concepto', $('#concept').val())
+                    + fila('Importe total', (parseFloat($('#amount').val()) || 0).toFixed(2) + ' €', true)
+                    + fila('Forma de pago', $('#payment_method option:selected').text())
+                    + fila('Observaciones', $('#notes').val())
+                    + fila('Comprobantes adjuntos', textoAdjuntos)
+                );
+                return html;
+            }
+
+            var horaDesde = $('#liq_hora_desde').val();
+            var horaHasta = $('#liq_hora_hasta').val();
+
+            html += bloque('Viaje', ''
+                + fila('Asistente', $('#liq_asistente').val())
+                + fila('Sede', $('#liq_sede option:selected').text())
+                + fila('Viaje a (destino)', $('#liq_destino').val())
+                + fila('Motivo del viaje', $('#liq_motivo').val())
+                + fila('Programa imputado', $('#liq_imputa').val())
+                + fila('Salida', $('#liq_fecha_desde').val() + (horaDesde ? ' a las ' + horaDesde : ''))
+                + fila('Regreso', $('#liq_fecha_hasta').val() + (horaHasta ? ' a las ' + horaHasta : ''))
+                + fila('Enlace de ruta', $('#google_maps_url').val())
+            );
+
+            html += bloque('Kilometraje', ''
+                + fila('Distancia', (parseFloat($('#liq_kilometros').val()) || 0).toFixed(2) + ' Km')
+                + fila('Importe exento', $('#liq-calc-exempt').text())
+                + fila('Importe sujeto', $('#liq-calc-subject').text())
+            );
+
+            // Tablas de dietas: se listan para que se vea qué se está declarando
+            // y no solo el total al que suman.
+            var tablas = [
+                ['manutencion', 'Gastos de manutención'],
+                ['alojamiento', 'Gastos de alojamiento'],
+                ['otros', 'Otros gastos']
+            ];
+
+            for (var i = 0; i < tablas.length; i++) {
+                var lineas = self.serializeLiqTable(tablas[i][0]) || [];
+                var filas = '';
+                if (!lineas.length) {
+                    filas = fila('Sin líneas', 'No se declara ningún gasto de este tipo.');
+                } else {
+                    for (var j = 0; j < lineas.length; j++) {
+                        filas += fila(
+                            lineas[j].fecha || 'Sin fecha',
+                            (lineas[j].concepto || 'Sin concepto') + '  ·  ' + (parseFloat(lineas[j].importe) || 0).toFixed(2) + ' €'
+                        );
+                    }
+                }
+                html += bloque(tablas[i][1], filas);
+            }
+
+            html += bloque('Cálculo y retenciones', ''
+                + fila('Total bruto', $('#liq-show-bruto').text())
+                + fila('Base de retención', $('#liq-show-base').text())
+                + fila('Renta exenta', $('#liq-show-exento').text())
+                + fila('Retención I.R.P.F. (' + $('#liq-show-irpf-pct').text() + '%)', $('#liq-show-irpf-amt').text())
+                + fila('Seguridad Social (' + $('#liq-show-ss-pct').text() + '%)', $('#liq-show-ss-amt').text())
+                + fila('Neto a percibir', $('#liq-show-neto').text(), true)
+            );
+
+            html += bloque('Otros datos', ''
+                + fila('Forma de pago', $('#payment_method option:selected').text())
+                + fila('Observaciones', $('#notes').val())
+                + fila('Comprobantes adjuntos', textoAdjuntos)
+            );
+
+            return html;
+        },
+
+        submitExpenseUnified: function () {
             var self = this;
             var type = $('#registration_type').val();
 
             if (type !== 'dieta') {
                 // Registro de Ticket Individual (categoría = type)
-                var concept = $('#concept').val();
-                var amount = parseFloat($('#amount').val()) || 0;
-                if (!concept || amount <= 0) {
-                    alert('Debes especificar un concepto e importe válido.');
-                    return;
-                }
-
                 var form = $('#ep-expense-form')[0];
                 var formData = new FormData(form);
                 formData.append('action', 'ep_expenses_save');
@@ -680,25 +840,7 @@
                 // Registro de Liquidación de Viajes
                 var destino = $('#liq_destino').val();
                 var motivo = $('#liq_motivo').val();
-                if (!destino || !motivo) {
-                    alert('Por favor, rellene el destino y el motivo del viaje.');
-                    return;
-                }
-
                 var imputa = $.trim($('#liq_imputa').val() || '');
-                if (!imputa) {
-                    alert('Indica el programa imputado. Si el gasto no se imputa a ninguno, escribe «Ninguno».');
-                    $('#liq_imputa').focus();
-                    return;
-                }
-
-                // El justificante del trayecto solo es obligatorio en la liquidación de viaje.
-                var mapsUrl = $.trim($('#google_maps_url').val() || '');
-                if (!mapsUrl) {
-                    alert('Debes indicar el enlace de ruta (Google Maps) que justifica el trayecto.');
-                    $('#google_maps_url').focus();
-                    return;
-                }
 
                 var form = $('#ep-expense-form')[0];
                 var formData = new FormData(form);
