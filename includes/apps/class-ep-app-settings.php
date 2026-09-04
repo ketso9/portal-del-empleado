@@ -69,6 +69,8 @@ class EP_App_Settings implements EP_App_Interface
             // sabria por que.
             if (!function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled()) {
                 update_user_meta($user_id, 'ep_notifications_teams', isset($form_data['notifications_teams']) ? 1 : 0);
+                // Briefing matinal del bot (EP_Bot_Briefing). Opt-in: por defecto apagado.
+                update_user_meta($user_id, 'ep_bot_briefing', isset($form_data['bot_briefing']) ? 1 : 0);
             }
 
             wp_send_json_success('Preferencias guardadas.');

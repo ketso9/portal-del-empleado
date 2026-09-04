@@ -36,6 +36,7 @@ class EP_Loader
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-teams-bot.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-teams-webhook.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-bot-mensajeria.php';
+        require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-bot-briefing.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-bot-context.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-communications.php';
         require_once EMPLOYEE_PORTAL_PATH . 'includes/class-ep-notifications.php';
@@ -104,6 +105,7 @@ class EP_Loader
         // IA) solo existe en los portales con el canal de Teams contratado.
         if (!function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled()) {
             new EP_Bot_Mensajeria();
+            new EP_Bot_Briefing(); // briefing matinal de las 8:00, usa el bot anterior
         }
         new EP_Communications();
         new EP_Notifications();

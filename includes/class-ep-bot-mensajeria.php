@@ -9,8 +9,17 @@ defined('ABSPATH') || exit;
  */
 class EP_Bot_Mensajeria
 {
+    /** @var EP_Bot_Mensajeria|null Instancia viva, para que otros módulos (briefing) envíen tarjetas sin duplicar hooks. */
+    private static $instance = null;
+
+    public static function instance(): ?EP_Bot_Mensajeria
+    {
+        return self::$instance;
+    }
+
     public function __construct()
     {
+        self::$instance = $this;
         $uri = $_SERVER['REQUEST_URI'] ?? 'N/A';
         if (strpos($uri, 'teams-bot') !== false || strpos($uri, 'teams-webhook') !== false || strpos($uri, 'ep_bot=1') !== false || strpos($uri, 'ep_bot_msg') !== false) {
              $headers = function_exists('getallheaders') ? getallheaders() : [];
@@ -33,6 +42,11 @@ class EP_Bot_Mensajeria
         if (isset($_GET['ep_bot']) && $_GET['ep_bot'] === '1') {
             ep_error_log('EP Bot: Endpoint nativo detectado. Método: ' . $_SERVER['REQUEST_METHOD']);
             if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                if (!$this->peticion_autenticada()) {
+                    ep_error_log('EP Bot SECURITY ALERT: Endpoint nativo sin token Bearer válido. Petición rechazada.', true);
+                    status_header(401);
+                    exit;
+                }
                 $this->procesar_peticion_teams();
                 exit;
             } else {
@@ -55,22 +69,41 @@ class EP_Bot_Mensajeria
 
     public function manejar_mensaje_ajax()
     {
-        // Require Authentication header to prevent basic spoofing
-        $auth_header = isset($_SERVER['HTTP_AUTHORIZATION']) ? $_SERVER['HTTP_AUTHORIZATION'] : (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) ? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] : '');
-        if (empty($auth_header) || strpos((string)$auth_header, 'Bearer ') !== 0) {
-            ep_error_log('EP Bot SECURITY ALERT: Unauthenticated AJAX request rejected.');
-            wp_send_json_error(['error' => 'Unauthorized. Missing valid Bearer token.'], 401);
+        if (!$this->peticion_autenticada()) {
+            ep_error_log('EP Bot SECURITY ALERT: Petición AJAX sin token Bearer válido. Rechazada.', true);
+            wp_send_json_error(['error' => 'Unauthorized. Missing or invalid Bearer token.'], 401);
             exit;
         }
 
-        if (!$this->validar_token_microsoft(substr((string)$auth_header, 7))) {
-            ep_error_log('EP Bot SECURITY ALERT: Token Bearer inválido en petición AJAX.', true);
-            wp_send_json_error(['error' => 'Unauthorized. Invalid token.'], 401);
-            exit;
-        }
-        
         $this->procesar_peticion_teams();
         exit;
+    }
+
+    /**
+     * Cabecera Authorization tal y como llega a PHP. El .htaccess del portal
+     * la reenvía como HTTP_AUTHORIZATION, y en producción llega siempre
+     * (comprobado en el log el 2026-09-04): no hay que tolerar su ausencia.
+     */
+    private function cabecera_authorization(?WP_REST_Request $request = null): string
+    {
+        $auth = $request ? (string)$request->get_header('authorization') : '';
+        if ($auth === '') {
+            $auth = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+        }
+        return trim($auth);
+    }
+
+    /**
+     * True solo si la petición trae un JWT firmado por Bot Framework (o por el
+     * tenant, en bots de inquilino único) y dirigido a este bot.
+     */
+    private function peticion_autenticada(?WP_REST_Request $request = null): bool
+    {
+        $auth = $this->cabecera_authorization($request);
+        if ($auth === '' || stripos($auth, 'Bearer ') !== 0) {
+            return false;
+        }
+        return $this->validar_token_microsoft(substr($auth, 7));
     }
 
     public function manejar_peticion_directa()
@@ -120,19 +153,13 @@ class EP_Bot_Mensajeria
             return new WP_REST_Response($validation_token, 200, array('Content-Type' => 'text/plain'));
         }
 
-        // Seguridad: si llega cabecera Authorization, el token DEBE ser válido.
-        // Si no llega, se continúa porque Apache/cPanel la eliminan sin 'CGIPassAuth On',
-        // pero entonces la única salida posible del bot son los dominios oficiales de
-        // Microsoft (ver validar_service_url), así que un payload falsificado no puede
-        // desviar la respuesta ni el token del bot hacia un servidor ajeno.
-        $auth_header = $request->get_header('authorization');
-        if (!empty($auth_header) && strpos((string)$auth_header, 'Bearer ') === 0) {
-            if (!$this->validar_token_microsoft(substr((string)$auth_header, 7))) {
-                ep_error_log('EP Bot SECURITY ALERT: Token Bearer inválido. Petición rechazada.', true);
-                return new WP_REST_Response(['error' => 'Unauthorized'], 401);
-            }
-        } else {
-            ep_error_log('EP Bot: Petición sin cabecera Authorization (probablemente eliminada por Apache).');
+        // Seguridad: toda actividad entrante debe venir firmada por Bot Framework.
+        // Antes se dejaba pasar sin cabecera "por si Apache la eliminaba"; el log
+        // de producción demuestra que llega siempre, así que se exige sin excepción.
+        // Sin esto, cualquiera que conociera la URL podía hacer hablar al bot.
+        if (!$this->peticion_autenticada($request)) {
+            ep_error_log('EP Bot SECURITY ALERT: Petición REST sin token Bearer válido. Rechazada.', true);
+            return new WP_REST_Response(['error' => 'Unauthorized'], 401);
         }
 
         $body_raw = $request->get_body();
@@ -290,8 +317,191 @@ class EP_Bot_Mensajeria
             }
         }
 
-        // 3. TODO LO DEMÁS -> RESOLVER CON IA (Arquitectura IA-First)
+        // 3. ATAJOS SIN IA: frases fijas y botones de las tarjetas se resuelven por
+        //    coincidencia directa. Ahorra la llamada a Gemini (latencia y cuota) en
+        //    las consultas más repetidas. Cualquier matiz cae en la IA como siempre.
+        $atajo = $this->atajo_directo($texto, $wp_user, $conversation_id);
+        if ($atajo !== null) {
+            return $atajo;
+        }
+
+        // 4. TODO LO DEMÁS -> RESOLVER CON IA
         return $this->resolver_con_ia($texto, $wp_user, $conversation_id);
+    }
+
+    /**
+     * Mapa de frases fijas → intención, sin pasar por la IA.
+     * Solo textos cortos (≤ 40 caracteres) y coincidencia exacta tras
+     * normalizar (minúsculas, sin tildes ni signos). "mis tareas de la semana
+     * que viene" no coincide y sigue yendo a Gemini.
+     */
+    private function atajo_directo(string $texto, $wp_user, string $conversation_id): ?array
+    {
+        if (mb_strlen($texto) > 40) return null;
+
+        $clave = $this->sin_tildes(mb_strtolower($texto));
+        $clave = preg_replace('/[^a-z0-9 ]/u', '', $clave);
+        $clave = trim(preg_replace('/\s+/', ' ', (string)$clave));
+        if ($clave === '') return null;
+
+        $atajos = [
+            'TASKS'          => ['mis tareas', 'tareas', 'ver tareas', 'tareas pendientes', 'mis tareas pendientes', 'lista de tareas', 'to do', 'todo'],
+            'NOTIFICATIONS'  => ['mis notificaciones', 'notificaciones', 'ver notificaciones', 'notificaciones pendientes'],
+            'DASHBOARD'      => ['resumen', 'mi resumen', 'resumen del dia', 'panel', 'mi panel', 'dashboard', 'mi dia'],
+            'SIGNATURE'      => ['firmas', 'mis firmas', 'firmas pendientes', 'pendientes de firma', 'documentos pendientes de firma', 'tengo algo que firmar', 'tengo algo por firmar'],
+            'TICKETS'        => ['tickets', 'mis tickets', 'incidencias', 'mis incidencias', 'estado de mis tickets', 'mis solicitudes'],
+            'INVENTORY'      => ['inventario', 'mi inventario', 'mi equipo', 'mi material', 'que equipo tengo'],
+            'AGENDA_HOY'     => ['agenda', 'mi agenda', 'agenda de hoy', 'mi agenda de hoy', 'reuniones de hoy', 'mis reuniones', 'mis reuniones de hoy', 'que tengo hoy', 'hoy'],
+            'AGENDA_MANANA'  => ['agenda de manana', 'mi agenda de manana', 'reuniones de manana', 'mis reuniones de manana', 'que tengo manana', 'manana'],
+            'AGENDA_PROXIMA' => ['proxima cita', 'proxima reunion', 'mi proxima cita', 'mi proxima reunion', 'cual es mi proxima cita', 'cual es mi proxima reunion', 'siguiente reunion', 'siguiente cita'],
+        ];
+
+        $intent = null;
+        foreach ($atajos as $candidato => $frases) {
+            if (in_array($clave, $frases, true)) {
+                $intent = $candidato;
+                break;
+            }
+        }
+        if ($intent === null) return null;
+
+        ep_error_log("EP Bot: Atajo directo '{$intent}' para \"{$texto}\" (sin IA).");
+
+        $user_id = $wp_user->ID;
+        $nombre  = $wp_user->display_name ?: $wp_user->user_login;
+
+        switch ($intent) {
+            case 'TASKS':
+                return $this->tarjeta_tareas($user_id, $nombre);
+            case 'NOTIFICATIONS':
+                if (!$this->puede_ver_app('avisos', $user_id)) return $this->tarjeta_sin_permiso();
+                return $this->tarjeta_notificaciones($user_id, $nombre);
+            case 'DASHBOARD':
+                return $this->tarjeta_resumen($user_id, $nombre);
+            case 'AGENDA_PROXIMA':
+                return $this->tarjeta_proxima_cita($user_id);
+            case 'AGENDA_HOY':
+                return $this->ejecutar_intent_app('AGENDA', 'calendar', [], $wp_user, 'hoy', $conversation_id);
+            case 'AGENDA_MANANA':
+                return $this->ejecutar_intent_app('AGENDA', 'calendar', [], $wp_user, 'mañana', $conversation_id);
+            case 'SIGNATURE':
+                return $this->ejecutar_intent_app('SIGNATURE', 'signature', [], $wp_user, $texto, $conversation_id);
+            case 'TICKETS':
+                return $this->ejecutar_intent_app('TICKETS', 'tickets', [], $wp_user, $texto, $conversation_id);
+            case 'INVENTORY':
+                return $this->ejecutar_intent_app('INVENTORY', 'inventory', [], $wp_user, $texto, $conversation_id);
+        }
+        return null;
+    }
+
+    /**
+     * Lanza el manejador que una app registró para un intent (mismo filtro que
+     * usa resolver_con_ia), comprobando antes el permiso. Devuelve null si la
+     * app no está cargada, para que el texto siga su camino hacia la IA.
+     */
+    private function ejecutar_intent_app(string $intent, string $app_id, array $params, $wp_user, string $texto, string $conversation_id): ?array
+    {
+        $user_id = $wp_user->ID;
+        if (!$this->puede_ver_app($app_id, $user_id)) {
+            return $this->tarjeta_sin_permiso();
+        }
+
+        $intent_data = ['intent' => $intent, 'params' => $params, 'confidence' => 1.0, 'suggested_reply' => ''];
+        $respuesta   = apply_filters('ep_bot_handle_intent_' . strtolower($intent), null, $intent_data, $user_id, $texto, $this);
+        if ($respuesta === null) return null;
+
+        if ($conversation_id) {
+            EP_Bot_Context::set_context($user_id, [
+                'intent'  => $intent,
+                'params'  => $params,
+                'results' => $respuesta['_meta_data'] ?? []
+            ]);
+        }
+        return $respuesta;
+    }
+
+    private function tarjeta_sin_permiso(): array
+    {
+        return $this->tarjeta_simple('🚫 Acceso Denegado', "Lo siento, no tienes permisos configurados para acceder a esta sección del portal.", '');
+    }
+
+    /**
+     * Próxima cita (14 días vista), con el día explícito para que nunca se
+     * confunda con la agenda de hoy.
+     */
+    private function tarjeta_proxima_cita(int $user_id): array
+    {
+        if (!$this->puede_ver_app('calendar', $user_id)) return $this->tarjeta_sin_permiso();
+
+        $url_agenda = home_url('/?view=calendar&teams=true');
+        $event = EP_Graph_Service::get_instance()->get_next_event($user_id);
+        if (is_wp_error($event)) {
+            return $this->tarjeta_simple('📅 Próxima cita', 'No he podido consultar tu calendario. Inicia sesión en el portal desde el navegador primero.', $url_agenda);
+        }
+        if (empty($event)) {
+            return $this->tarjeta_simple('📅 Próxima cita', 'No tienes ninguna reunión en los próximos 14 días. ☕', $url_agenda);
+        }
+
+        $tz     = new DateTimeZone('Europe/Madrid');
+        $inicio = (string)($event['start']['dateTime'] ?? '');
+        $fecha  = substr($inicio, 0, 10);
+        $hora   = substr($inicio, 11, 5);
+
+        $hoy    = (new DateTime('now', $tz))->format('Y-m-d');
+        $manana = (new DateTime('tomorrow', $tz))->format('Y-m-d');
+        if ($fecha === $hoy) {
+            $cuando = 'Hoy';
+        } elseif ($fecha === $manana) {
+            $cuando = 'Mañana';
+        } else {
+            $dias  = [1 => 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+            $meses = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+            $dt    = DateTime::createFromFormat('Y-m-d', $fecha, $tz);
+            $cuando = $dt ? $dias[(int)$dt->format('N')] . ' ' . $dt->format('j') . ' de ' . $meses[(int)$dt->format('n')] : $fecha;
+        }
+
+        $facts = [
+            ['title' => '🕒 Cuándo', 'value' => "{$cuando}, {$hora}"],
+            ['title' => '📌 Asunto', 'value' => mb_substr((string)($event['subject'] ?? 'Sin asunto'), 0, 60)],
+        ];
+        if (!empty($event['location']['displayName'])) {
+            $facts[] = ['title' => '📍 Dónde', 'value' => mb_substr((string)$event['location']['displayName'], 0, 60)];
+        }
+
+        return $this->adaptive_card([
+            ['type' => 'TextBlock', 'text' => '📅 Tu próxima cita', 'weight' => 'Bolder', 'size' => 'Medium', 'wrap' => true],
+            ['type' => 'FactSet', 'facts' => $facts],
+        ], [['type' => 'Action.OpenUrl', 'title' => '📅 Ver mi agenda completa', 'url' => $url_agenda]]);
+    }
+
+    /**
+     * Tarjeta del briefing matinal (la de bienvenida con su propia cabecera).
+     * La usa EP_Bot_Briefing desde el cron de las 8:00.
+     */
+    public function tarjeta_briefing(int $user_id): ?array
+    {
+        $wp_user = get_userdata($user_id);
+        if (!$wp_user) return null;
+        $nombre = $wp_user->display_name ?: $wp_user->user_login;
+        return $this->tarjeta_bienvenida($user_id, $nombre, '☀️ Tu briefing de las 8:00. Esto es lo que te espera hoy:');
+    }
+
+    /**
+     * Envía una tarjeta al chat 1:1 de un usuario con el bot, usando la
+     * referencia de conversación guardada la última vez que le escribió.
+     * Devuelve false si nunca ha hablado con el bot o si el envío falla.
+     */
+    public function enviar_tarjeta_a_usuario(int $user_id, array $tarjeta): bool
+    {
+        if (function_exists('ep_is_staging') && ep_is_staging()) return false;
+
+        $service_url = get_user_meta($user_id, 'ep_bot_service_url', true);
+        $conv_id     = get_user_meta($user_id, 'ep_bot_conversation_id', true);
+        if (!$service_url || !$conv_id) return false;
+
+        $tarjeta['channelId'] = 'teams';
+        $tarjeta['from_id']   = ep_get_option('ep_teams_bot_id');
+        return $this->enviar_respuesta($service_url, $conv_id, null, $tarjeta);
     }
 
     private function puede_ver_app(string $app_id, int $user_id): bool
@@ -755,10 +965,10 @@ class EP_Bot_Mensajeria
         return $claves;
     }
 
-    private function enviar_respuesta(string $service_url, string $conversation_id, ?string $reply_to_id, array $actividad)
+    private function enviar_respuesta(string $service_url, string $conversation_id, ?string $reply_to_id, array $actividad): bool
     {
         $token = $this->obtener_token_bot();
-        if (!$token) return;
+        if (!$token) return false;
 
         $channel_id = $actividad['channelId'] ?? 'teams';
         $from_id    = $actividad['from_id'] ?? ep_get_option('ep_teams_bot_id');
@@ -776,7 +986,7 @@ class EP_Bot_Mensajeria
         // el token del bot en la cabecera Authorization.
         if (!self::validar_service_url($service_url)) {
             ep_error_log('EP Bot SECURITY ALERT: serviceUrl no permitido, envío abortado: ' . $service_url, true);
-            return;
+            return false;
         }
 
         $url = rtrim($service_url, '/') . '/v3/conversations/' . rawurlencode($conversation_id) . '/activities';
@@ -790,12 +1000,14 @@ class EP_Bot_Mensajeria
 
         if (is_wp_error($res)) {
             ep_error_log('EP Bot Send Error: ' . $res->get_error_message(), true);
-        } else {
-            $code = wp_remote_retrieve_response_code($res);
-            $body = wp_remote_retrieve_body($res);
-            $force = ($code < 200 || $code >= 300);
-            ep_error_log("EP Bot Send Status [$code]: $body", $force);
+            return false;
         }
+
+        $code  = (int)wp_remote_retrieve_response_code($res);
+        $body  = wp_remote_retrieve_body($res);
+        $ok    = ($code >= 200 && $code < 300);
+        ep_error_log("EP Bot Send Status [$code]: $body", !$ok);
+        return $ok;
     }
 
     private function obtener_token_bot(): ?string
@@ -1036,9 +1248,11 @@ class EP_Bot_Mensajeria
     /**
      * Tarjeta de Bienvenida personalizada con resumen inteligente del día.
      */
-    private function tarjeta_bienvenida(int $user_id, string $nombre): array
+    private function tarjeta_bienvenida(int $user_id, string $nombre, string $subtitulo = 'Este es tu resumen inteligente para hoy:'): array
     {
-        $hora = (int)date('H');
+        // Hora de Madrid, no la del servidor (WordPress corre en UTC): sin esto
+        // el bot daba los "buenos días" hasta las 16:00.
+        $hora = (int)(new DateTime('now', new DateTimeZone('Europe/Madrid')))->format('G');
         $saludo = "Hola";
         if ($hora >= 6 && $hora < 14) $saludo = "Buenos días";
         elseif ($hora >= 14 && $hora < 21) $saludo = "Buenas tardes";
@@ -1046,7 +1260,7 @@ class EP_Bot_Mensajeria
 
         $cuerpo = [
             ['type' => 'TextBlock', 'text' => "{$saludo}, {$nombre} 👋", 'weight' => 'Bolder', 'size' => 'Large', 'wrap' => true],
-            ['type' => 'TextBlock', 'text' => 'Este es tu resumen inteligente para hoy:', 'isSubtle' => true, 'spacing' => 'None']
+            ['type' => 'TextBlock', 'text' => $subtitulo, 'isSubtle' => true, 'spacing' => 'None', 'wrap' => true]
         ];
 
         $facts = [];

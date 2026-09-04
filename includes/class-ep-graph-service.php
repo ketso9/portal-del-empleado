@@ -157,8 +157,8 @@ class EP_Graph_Service {
      * excluyendo los de día completo. Devuelve un array (puede estar vacío)
      * o WP_Error si no hay token. Se cachea 5 minutos.
      */
-    public function get_today_events($user_id) {
-        $cache_key = 'ep_events_today_' . $user_id;
+    public function get_today_events($user_id, $incluir_dia_completo = false) {
+        $cache_key = 'ep_events_today_' . $user_id . ($incluir_dia_completo ? '_all' : '');
         $cached = get_transient($cache_key);
         if ($cached !== false) return $cached;
 
@@ -187,7 +187,7 @@ class EP_Graph_Service {
         $result = [];
         if (!empty($body['value'])) {
             foreach ($body['value'] as $event) {
-                if (empty($event['isAllDay'])) {
+                if ($incluir_dia_completo || empty($event['isAllDay'])) {
                     $result[] = $event;
                 }
             }

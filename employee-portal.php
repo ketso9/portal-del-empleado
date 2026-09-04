@@ -3,7 +3,7 @@
  * Plugin Name: Portal del Empleado
  * Plugin URI:  https://camaracacere.com
  * Description: Plugin completo para gestión de empleados, roles, autenticación O365, comunicaciones y tickets.
- * Version:           2.1.1
+ * Version:           2.1.2
  * Author:      Jorge Polo - Cámara de Comercio de Cáceres
  * Author URI:  https://camaracaceres.com
  * License:     GPL-2.0+
@@ -21,7 +21,7 @@ if (defined('EP_PORTAL_RUNNING')) {
 }
 define('EP_PORTAL_RUNNING', true);
 
-define('EMPLOYEE_PORTAL_VERSION', '2.1.1');
+define('EMPLOYEE_PORTAL_VERSION', '2.1.2');
 define('EMPLOYEE_PORTAL_PATH', trailingslashit(dirname(__FILE__)));
 define('EMPLOYEE_PORTAL_URL', trailingslashit(plugins_url('', __FILE__)));
 

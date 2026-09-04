@@ -22,6 +22,9 @@ $notifications_teams = get_user_meta($current_user->ID, 'ep_notifications_teams'
 if ($notifications_teams === '')
     $notifications_teams = 1;
 
+// Briefing matinal del bot de Teams: opt-in, apagado hasta que el empleado lo active.
+$bot_briefing = (int) get_user_meta($current_user->ID, 'ep_bot_briefing', true);
+
 // El canal de Teams es un modulo contratable (plan PRO MAX). Si este portal no
 // lo tiene, no se ensena el interruptor: seria un ajuste que no hace nada y el
 // empleado creeria que sus avisos de Teams no funcionan. Los avisos siguen
@@ -94,6 +97,16 @@ if ($is_admin) {
                                     <small style="color: #666; font-weight: normal; font-size: 0.8em;">Canal prioritario del portal</small>
                                 </span>
                                 <input type="checkbox" name="notifications_teams" <?php checked($notifications_teams, 1); ?>>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="switch-label">
+                                <span style="display: flex; flex-direction: column;">
+                                    <span>Briefing matinal en Teams</span>
+                                    <small style="color: #666; font-weight: normal; font-size: 0.8em;">A las 8:00, de lunes a viernes: firmas, agenda del día, tareas y tickets. No se envía si estás de vacaciones o con respuestas automáticas activas. Escribe antes «hola» al bot en Teams.</small>
+                                </span>
+                                <input type="checkbox" name="bot_briefing" <?php checked($bot_briefing, 1); ?>>
                                 <span class="slider"></span>
                             </label>
                         </div>
