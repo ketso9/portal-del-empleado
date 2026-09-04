@@ -404,14 +404,8 @@ class EP_Bot_Mensajeria
             $facts[] = ['title' => '✍️ Firmas pendientes', 'value' => (string)$num_firmas];
         }
 
-        // 2. Próxima reunión
-        if ($this->puede_ver_app('calendar', $user_id)) {
-            $event = $graph->get_next_event($user_id);
-            if ($event && !is_wp_error($event)) {
-                $time = date('H:i', strtotime($event['start']['dateTime']));
-                $facts[] = ['title' => '📅 Próxima cita', 'value' => "{$time}: " . mb_substr($event['subject'], 0, 30)];
-            }
-        }
+        // 2. Agenda de HOY (no la próxima cita de cualquier día)
+        $this->anadir_fact_agenda_hoy($user_id, $facts);
 
         // 3. Tareas To-Do
         $tasks = $graph->get_my_tasks($user_id);
@@ -445,9 +439,37 @@ class EP_Bot_Mensajeria
 
         return $this->adaptive_card($cuerpo, [
             ['type' => 'Action.OpenUrl', 'title' => '🌐 Ir al Portal', 'url' => home_url('/?teams=true')],
+            ['type' => 'Action.Submit', 'title' => '📅 Próxima cita', 'data' => ['m' => 'cuál es mi próxima reunión']],
             ['type' => 'Action.Submit', 'title' => '✅ Ver Tareas', 'data' => ['m' => 'mis tareas']],
             ['type' => 'Action.Submit', 'title' => '🔔 Ver Notificaciones', 'data' => ['m' => 'mis notificaciones']],
         ]);
+    }
+
+    /**
+     * Añade al FactSet la agenda que queda HOY: cuántas reuniones y la primera.
+     * Si no queda ninguna lo dice explícitamente, para que el resumen no se
+     * rellene con una cita de otro día (eso se pide con "próxima cita").
+     */
+    private function anadir_fact_agenda_hoy(int $user_id, array &$facts): void
+    {
+        if (!$this->puede_ver_app('calendar', $user_id)) return;
+
+        $eventos = EP_Graph_Service::get_instance()->get_today_events($user_id);
+        if (is_wp_error($eventos)) return;
+
+        if (empty($eventos)) {
+            $facts[] = ['title' => '📅 Hoy', 'value' => 'Sin más reuniones'];
+            return;
+        }
+
+        $n       = count($eventos);
+        $primero = $eventos[0];
+        // Graph devuelve la hora ya en Europe/Madrid (cabecera Prefer): "2026-09-04T10:00:00.0000000"
+        $hora  = substr((string)($primero['start']['dateTime'] ?? ''), 11, 5);
+        $texto = "{$hora} " . mb_substr((string)($primero['subject'] ?? 'Sin asunto'), 0, 30);
+        if ($n > 1) $texto .= ' (+' . ($n - 1) . ' más)';
+
+        $facts[] = ['title' => "📅 Hoy ({$n})", 'value' => $texto];
     }
 
 
@@ -1038,14 +1060,8 @@ class EP_Bot_Mensajeria
             $facts[] = ['title' => '✍️ Firmas pendientes', 'value' => (string)$num_firmas];
         }
 
-        // 2. Próxima Reunión (Calendario con Caché)
-        if ($this->puede_ver_app('calendar', $user_id)) {
-            $event = $graph->get_next_event($user_id);
-            if ($event && !is_wp_error($event)) {
-                $time = date('H:i', strtotime($event['start']['dateTime']));
-                $facts[] = ['title' => "📅 Próxima cita", 'value' => "{$time}: " . mb_substr($event['subject'], 0, 30)];
-            }
-        }
+        // 2. Agenda de HOY (la próxima cita de otro día se pide con el botón)
+        $this->anadir_fact_agenda_hoy($user_id, $facts);
 
         // 3. Tareas Pendientes (To-Do)
         $tasks = $graph->get_my_tasks($user_id);
@@ -1067,6 +1083,7 @@ class EP_Bot_Mensajeria
 
         $btns = [
              ['type' => 'Action.OpenUrl', 'title' => '🌐 Ir al Portal', 'url' => home_url('/?teams=true')],
+             ['type' => 'Action.Submit', 'title' => '📅 Próxima cita', 'data' => ['m' => 'cuál es mi próxima reunión']],
              ['type' => 'Action.Submit', 'title' => '❓ Ver Ayuda', 'data' => ['m' => 'ayuda']],
              ['type' => 'Action.Submit', 'title' => '🔍 Buscar Personas', 'data' => ['m' => 'directorio']]
         ];

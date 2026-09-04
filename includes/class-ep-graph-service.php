@@ -153,6 +153,51 @@ class EP_Graph_Service {
     }
 
     /**
+     * Eventos que quedan HOY (desde ahora hasta las 23:59, hora de Madrid),
+     * excluyendo los de día completo. Devuelve un array (puede estar vacío)
+     * o WP_Error si no hay token. Se cachea 5 minutos.
+     */
+    public function get_today_events($user_id) {
+        $cache_key = 'ep_events_today_' . $user_id;
+        $cached = get_transient($cache_key);
+        if ($cached !== false) return $cached;
+
+        $token = $this->get_valid_token($user_id);
+        if (is_wp_error($token)) return $token;
+
+        $madrid = new DateTimeZone('Europe/Madrid');
+        $utc    = new DateTimeZone('UTC');
+        $ahora  = new DateTime('now', $madrid);
+        $fin    = (clone $ahora)->setTime(23, 59, 59);
+        $start  = $ahora->setTimezone($utc)->format('Y-m-d\TH:i:s\Z');
+        $end    = $fin->setTimezone($utc)->format('Y-m-d\TH:i:s\Z');
+
+        $url = "https://graph.microsoft.com/v1.0/me/calendarview?startdatetime={$start}&enddatetime={$end}&\$orderby=start/dateTime&\$top=20";
+        $response = wp_remote_get($url, [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $token,
+                'Prefer'        => 'outlook.timezone="Europe/Madrid"'
+            ],
+            'timeout' => 30
+        ]);
+
+        if (is_wp_error($response)) return $response;
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        $result = [];
+        if (!empty($body['value'])) {
+            foreach ($body['value'] as $event) {
+                if (empty($event['isAllDay'])) {
+                    $result[] = $event;
+                }
+            }
+        }
+
+        set_transient($cache_key, $result, 300);
+        return $result;
+    }
+
+    /**
      * Get next upcoming calendar event.
      */
     public function get_next_event($user_id) {

@@ -28,7 +28,11 @@ fds_fix_libs.zip
 teams-portal-empleado.zip
 
 # Directorios de entorno y herramientas
-.agent/
+# .agent/ se ignora entero SALVO las reglas de agente, que si deben viajar
+# con el repositorio (protocolo compartido con el vault de Obsidian).
+.agent/*
+!.agent/rules/
+plugins/ep-signature/libs/.agent/
 .vscode/
 scratch/
 load-tests/
