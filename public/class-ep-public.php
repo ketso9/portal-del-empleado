@@ -297,45 +297,73 @@ class EP_Public
         }
 
         // 4. Inventario (Alertas)
+        //
+        // Antes se consultaba la tabla legada {prefix}imjc_inventory_items pidiendo
+        // return_date / warranty_date / is_itinerant, columnas que esa tabla nunca
+        // ha tenido: cada carga del dashboard dejaba tres "Unknown column" en el
+        // error_log y ninguna alerta llegaba nunca. El inventario del portal guarda
+        // estos datos como post meta de 'ep_inventory_item'.
         if (class_exists('EP_Inventory')) {
-            $inventory_table = $wpdb->prefix . 'imjc_inventory_items';
-            if ($wpdb->get_var("SHOW TABLES LIKE '$inventory_table'") == $inventory_table) {
-                // Devoluciones próximas o pasadas (equipos itinerantes)
-                $near_returns = $wpdb->get_results($wpdb->prepare(
-                    "SELECT post_id, return_date FROM $inventory_table 
-                     WHERE assigned_to_user_id = %d AND is_itinerant = 1 
-                     AND return_date IS NOT NULL AND return_date <= DATE_ADD(NOW(), INTERVAL 2 DAY)",
-                    $user_id
-                ));
+            $today = current_time('Y-m-d');
 
-                foreach ($near_returns as $item) {
-                    $unified_tasks[] = array(
-                        'id' => 'inv_ret_' . $item->post_id,
-                        'source' => 'portal',
-                        'title' => '📦 Devolver equipo: ' . get_the_title($item->post_id),
-                        'type' => 'inventory',
-                        'link' => '?view=inventory'
-                    );
-                }
+            // Devoluciones próximas o pasadas (equipos itinerantes en préstamo).
+            // El prestatario se guarda en _ep_item_loaned_to, no en _ep_item_assigned_to.
+            $near_returns = get_posts(array(
+                'post_type'      => 'ep_inventory_item',
+                'post_status'    => 'publish',
+                'posts_per_page' => 5,
+                'fields'         => 'ids',
+                'meta_query'     => array(
+                    'relation' => 'AND',
+                    array('key' => '_ep_item_loaned_to', 'value' => $user_id),
+                    array('key' => '_ep_item_itinerant_status', 'value' => 'loaned'),
+                    array('key' => '_ep_item_estimated_return', 'value' => '', 'compare' => '!='),
+                    array(
+                        'key'     => '_ep_item_estimated_return',
+                        'value'   => date('Y-m-d', strtotime($today . ' +2 days')),
+                        'compare' => '<=',
+                        'type'    => 'DATE'
+                    ),
+                )
+            ));
 
-                // Garantías próximas a caducar (< 30 días)
-                $near_warranty = $wpdb->get_results($wpdb->prepare(
-                    "SELECT post_id, warranty_date FROM $inventory_table 
-                     WHERE assigned_to_user_id = %d 
-                     AND warranty_date IS NOT NULL 
-                     AND warranty_date BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 30 DAY)",
-                    $user_id
-                ));
+            foreach ($near_returns as $item_id) {
+                $unified_tasks[] = array(
+                    'id' => 'inv_ret_' . $item_id,
+                    'source' => 'portal',
+                    'title' => '📦 Devolver equipo: ' . get_the_title($item_id),
+                    'type' => 'inventory',
+                    'link' => '?view=inventory'
+                );
+            }
 
-                foreach ($near_warranty as $item) {
-                    $unified_tasks[] = array(
-                        'id' => 'inv_war_' . $item->post_id,
-                        'source' => 'portal',
-                        'title' => '🛡️ Garantía por caducar: ' . get_the_title($item->post_id),
-                        'type' => 'inventory',
-                        'link' => '?view=inventory'
-                    );
-                }
+            // Garantías próximas a caducar (< 30 días) del material asignado
+            $near_warranty = get_posts(array(
+                'post_type'      => 'ep_inventory_item',
+                'post_status'    => 'publish',
+                'posts_per_page' => 5,
+                'fields'         => 'ids',
+                'meta_query'     => array(
+                    'relation' => 'AND',
+                    array('key' => '_ep_item_assigned_to', 'value' => $user_id),
+                    array('key' => '_ep_item_warranty_date', 'value' => '', 'compare' => '!='),
+                    array(
+                        'key'     => '_ep_item_warranty_date',
+                        'value'   => array($today, date('Y-m-d', strtotime($today . ' +30 days'))),
+                        'compare' => 'BETWEEN',
+                        'type'    => 'DATE'
+                    ),
+                )
+            ));
+
+            foreach ($near_warranty as $item_id) {
+                $unified_tasks[] = array(
+                    'id' => 'inv_war_' . $item_id,
+                    'source' => 'portal',
+                    'title' => '🛡️ Garantía por caducar: ' . get_the_title($item_id),
+                    'type' => 'inventory',
+                    'link' => '?view=inventory'
+                );
             }
         }
 

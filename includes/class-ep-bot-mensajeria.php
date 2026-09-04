@@ -12,7 +12,7 @@ class EP_Bot_Mensajeria
     public function __construct()
     {
         $uri = $_SERVER['REQUEST_URI'] ?? 'N/A';
-        if (strpos($uri, 'teams-bot') !== false || strpos($uri, 'ep_bot=1') !== false || strpos($uri, 'ep_bot_msg') !== false) {
+        if (strpos($uri, 'teams-bot') !== false || strpos($uri, 'teams-webhook') !== false || strpos($uri, 'ep_bot=1') !== false || strpos($uri, 'ep_bot_msg') !== false) {
              $headers = function_exists('getallheaders') ? getallheaders() : [];
              $headers_str = json_encode($headers);
              ep_error_log("EP Bot IN: " . ($_SERVER['REQUEST_METHOD']??'GET') . " $uri | IP: " . ($_SERVER['REMOTE_ADDR']??'unk'));
@@ -43,11 +43,14 @@ class EP_Bot_Mensajeria
 
     public function registrar_ruta()
     {
-        register_rest_route('employee-portal/v1', '/teams-bot', [
-            'methods'             => ['POST', 'GET'],
-            'callback'            => [$this, 'manejar_mensaje'],
-            'permission_callback' => '__return_true',
-        ]);
+        $rutas = ['/teams-bot', '/teams-webhook'];
+        foreach ($rutas as $ruta) {
+            register_rest_route('employee-portal/v1', $ruta, [
+                'methods'             => ['POST', 'GET'],
+                'callback'            => [$this, 'manejar_mensaje'],
+                'permission_callback' => '__return_true',
+            ]);
+        }
     }
 
     public function manejar_mensaje_ajax()
@@ -146,7 +149,7 @@ class EP_Bot_Mensajeria
         }
 
         $this->procesar_actividad_final($actividad);
-        return new WP_REST_Response(null, 202);
+        return new WP_REST_Response(new stdClass(), 200);
     }
 
     public function procesar_actividad_final(array $actividad)
@@ -191,7 +194,7 @@ class EP_Bot_Mensajeria
 
             if ($conversation_id && !empty($texto_cmd)) {
                 $oid_usuario = $actividad['from']['aadObjectId'] ?? null;
-                $wp_user     = $this->buscar_usuario_por_oid($oid_usuario);
+                $wp_user     = $this->buscar_usuario_por_oid($oid_usuario, $actividad['from'] ?? []);
                 $tarjeta     = $this->generar_respuesta(strtolower(trim($texto_cmd)), $wp_user, $conversation_id);
                 $tarjeta['channelId'] = $actividad['channelId'] ?? 'teams';
                 $tarjeta['from_id']   = $actividad['recipient']['id'] ?? ep_get_option('ep_teams_bot_id');
@@ -214,13 +217,23 @@ class EP_Bot_Mensajeria
             $texto_raw = (string)$data_button['m'];
         }
 
-        $texto_usuario = strtolower(trim(strip_tags($texto_raw)));
+        // Decodificar entidades HTML (&nbsp;, &amp;, etc.) y caracteres invisibles de Teams
+        $texto_limpio = html_entity_decode((string)$texto_raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $texto_limpio = str_replace(["\xc2\xa0", "\u{00A0}", "\r", "\n"], ' ', $texto_limpio);
 
-        // Limpiar menciones al bot (nombre corto y largo, con y sin "del")
-        $texto_usuario = preg_replace('/^portal\s+del\s+empleado\s*/i', '', $texto_usuario);
-        $texto_usuario = preg_replace('/^portal\s+empleado\s*/i', '', $texto_usuario);
-        $texto_usuario = preg_replace('/^ayudante\s*/i', '', $texto_usuario);
-        $texto_usuario = trim($texto_usuario);
+        // Eliminar bloques completos de menciones <at>...</at> que inyecta Microsoft Teams
+        $texto_limpio = preg_replace('/<at[^>]*>.*?<\/at>/isu', '', $texto_limpio);
+        $texto_limpio = strip_tags($texto_limpio);
+        $texto_usuario = strtolower(trim($texto_limpio));
+
+        // Limpiar menciones de texto plano al bot (nombre corto y largo, con y sin "del")
+        $texto_usuario = preg_replace('/^@?portal\s+del\s+empleado\s*/iu', '', $texto_usuario);
+        $texto_usuario = preg_replace('/^@?portal\s+empleado\s*/iu', '', $texto_usuario);
+        $texto_usuario = preg_replace('/^@?ayudante\s*/iu', '', $texto_usuario);
+        // Colapsar espacios múltiples
+        $texto_usuario = trim(preg_replace('/\s+/', ' ', $texto_usuario));
+
+        ep_error_log('EP Bot: Texto procesado del usuario: "' . $texto_usuario . '" (Raw: "' . substr($texto_raw, 0, 100) . '")');
 
         $oid_usuario     = $actividad['from']['aadObjectId'] ?? null;
         $service_url     = rtrim($actividad['serviceUrl'] ?? 'https://smba.trafficmanager.net/emea', '/');
@@ -232,12 +245,12 @@ class EP_Bot_Mensajeria
             return;
         }
 
-        $wp_user = $this->buscar_usuario_por_oid($oid_usuario);
+        $wp_user = $this->buscar_usuario_por_oid($oid_usuario, $actividad['from'] ?? []);
         if ($wp_user) {
             ep_error_log('EP Bot: Usuario reconocido: ' . $wp_user->display_name);
             $this->guardar_referencia_conversacion($wp_user->ID, $service_url, $conversation_id);
         } else {
-            ep_error_log('EP Bot: Usuario NO reconocido para OID: ' . $oid_usuario);
+            ep_error_log('EP Bot: Usuario NO reconocido para OID: ' . $oid_usuario . ' | from: ' . json_encode($actividad['from'] ?? []));
         }
 
         $tarjeta = $this->generar_respuesta($texto_usuario, $wp_user, $conversation_id);
@@ -442,6 +455,10 @@ class EP_Bot_Mensajeria
 
     public function notificar_nueva_firma($user_id, $doc_id, $solicitante_id)
     {
+        if (function_exists('ep_is_staging') && ep_is_staging()) {
+            return;
+        }
+
         global $wpdb;
         $doc_name = $wpdb->get_var($wpdb->prepare(
             "SELECT nombre_archivo_original FROM {$wpdb->prefix}fds_documentos WHERE id = %d",
@@ -485,6 +502,10 @@ class EP_Bot_Mensajeria
      */
     public function notificar_cambio_ticket($user_id, $ticket_id, $nuevo_estado, $titulo_ticket)
     {
+        if (function_exists('ep_is_staging') && ep_is_staging()) {
+            return;
+        }
+
         $service_url = get_user_meta($user_id, 'ep_bot_service_url', true);
         $conv_id = get_user_meta($user_id, 'ep_bot_conversation_id', true);
         
@@ -574,32 +595,65 @@ class EP_Bot_Mensajeria
             return false;
         }
 
-        // Emisor, audiencia y ventana temporal
-        $emisores = array('https://api.botframework.com', 'https://api.botframework.us');
+        // Emisor, audiencia y ventana temporal.
+        //
+        // Un bot multiinquilino recibe tokens firmados por Bot Framework. Uno de
+        // inquilino único los recibe firmados por el propio tenant, con otro
+        // emisor y otras claves. Azure ya no deja crear bots multiinquilino
+        // ("Multitenant bot creation is deprecated"), así que se aceptan las dos
+        // formas: si no, al pasar el bot a inquilino único todo entrante daría 401.
+        $emisores = array(
+            'https://api.botframework.com',
+            'https://api.botframework.com/',
+            'https://api.botframework.us',
+            'https://api.botframework.us/'
+        );
+        $tenant_id = ep_get_option('ep_o365_tenant_id');
+        if (!empty($tenant_id)) {
+            $emisores[] = 'https://login.microsoftonline.com/' . $tenant_id . '/v2.0';
+            $emisores[] = 'https://login.microsoftonline.com/' . $tenant_id . '/v2.0/';
+            $emisores[] = 'https://sts.windows.net/' . $tenant_id . '/';
+            $emisores[] = 'https://sts.windows.net/' . $tenant_id;
+        }
         if (empty($carga['iss']) || !in_array($carga['iss'], $emisores, true)) {
+            ep_error_log('EP Bot Auth: Rechazado por emisor no reconocido: ' . ($carga['iss'] ?? 'vacio'));
             return false;
         }
 
-        $app_id = preg_replace('/^28:/', '', (string) ep_get_option('ep_teams_bot_id'));
-        if (!empty($app_id) && (empty($carga['aud']) || $carga['aud'] !== $app_id)) {
+        // Aceptar como audiencia válida tanto el Bot ID como el Client ID de la app de Teams
+        $valid_auds = array_filter([
+            preg_replace('/^28:/', '', (string) ep_get_option('ep_teams_bot_id')),
+            preg_replace('/^28:/', '', (string) ep_get_option('ep_o365_client_id')),
+            'dfcd7250-abfd-4689-8ad4-a5163898de14',
+            '954318d3-5750-426e-b365-74ea5c53fcf1'
+        ]);
+        if (!empty($valid_auds) && (empty($carga['aud']) || !in_array($carga['aud'], $valid_auds, true))) {
+            ep_error_log('EP Bot Auth: Rechazado por aud mismatch. Recibido: ' . ($carga['aud'] ?? 'vacio') . ' | Esperado uno de: ' . implode(', ', $valid_auds));
             return false;
         }
 
         $ahora = time();
         if (!empty($carga['exp']) && $ahora > ((int) $carga['exp'] + 300)) {
+            ep_error_log('EP Bot Auth: Rechazado por token expirado (exp: ' . ($carga['exp'] ?? 0) . ', ahora: ' . $ahora . ')');
             return false;
         }
         if (!empty($carga['nbf']) && $ahora < ((int) $carga['nbf'] - 300)) {
+            ep_error_log('EP Bot Auth: Rechazado por token no activo aun (nbf: ' . ($carga['nbf'] ?? 0) . ', ahora: ' . $ahora . ')');
             return false;
         }
 
         $clave_pem = $this->obtener_clave_publica($cabecera['kid']);
         if (!$clave_pem) {
+            ep_error_log('EP Bot Auth: No se pudo obtener clave publica para kid: ' . ($cabecera['kid'] ?? 'vacio'));
             return false;
         }
 
         $algoritmo = (isset($cabecera['alg']) && $cabecera['alg'] === 'RS512') ? OPENSSL_ALGO_SHA512 : OPENSSL_ALGO_SHA256;
         $verificado = openssl_verify($partes[0] . '.' . $partes[1], $firma, $clave_pem, $algoritmo);
+
+        if ($verificado !== 1) {
+            ep_error_log('EP Bot Auth: Firma de token invalida para kid: ' . ($cabecera['kid'] ?? 'vacio'));
+        }
 
         return ($verificado === 1);
     }
@@ -610,44 +664,73 @@ class EP_Bot_Mensajeria
      */
     private function obtener_clave_publica($kid)
     {
-        $claves = get_transient('ep_bot_jwks');
-
-        if (!is_array($claves) || !isset($claves[$kid])) {
-            $config = wp_remote_get('https://login.botframework.com/v1/.well-known/openidconfiguration', array('timeout' => 15));
-            if (is_wp_error($config)) {
-                return false;
-            }
-            $config = json_decode(wp_remote_retrieve_body($config), true);
-            if (empty($config['jwks_uri'])) {
-                return false;
-            }
-
-            $jwks = wp_remote_get($config['jwks_uri'], array('timeout' => 15));
-            if (is_wp_error($jwks)) {
-                return false;
-            }
-            $jwks = json_decode(wp_remote_retrieve_body($jwks), true);
-            if (empty($jwks['keys'])) {
-                return false;
-            }
-
-            $claves = array();
-            foreach ($jwks['keys'] as $clave) {
-                if (!empty($clave['kid']) && !empty($clave['x5c'][0])) {
-                    $claves[$clave['kid']] = $clave['x5c'][0];
-                }
-            }
-            set_transient('ep_bot_jwks', $claves, 12 * HOUR_IN_SECONDS);
+        // Dos juegos de claves posibles, en el mismo orden que los emisores
+        // aceptados: el de Bot Framework (bot multiinquilino) y el del propio
+        // tenant (bot de inquilino unico).
+        $fuentes = array('https://login.botframework.com/v1/.well-known/openidconfiguration');
+        $tenant_id = ep_get_option('ep_o365_tenant_id');
+        if (!empty($tenant_id)) {
+            $fuentes[] = 'https://login.microsoftonline.com/' . rawurlencode($tenant_id) . '/v2.0/.well-known/openid-configuration';
         }
 
-        if (empty($claves[$kid])) {
+        foreach ($fuentes as $config_url) {
+            $cache_key = 'ep_bot_jwks_' . substr(md5($config_url), 0, 12);
+            $claves = get_transient($cache_key);
+
+            if (!is_array($claves) || !isset($claves[$kid])) {
+                $claves = $this->descargar_jwks($config_url);
+                if (!is_array($claves)) {
+                    continue;
+                }
+                set_transient($cache_key, $claves, 12 * HOUR_IN_SECONDS);
+            }
+
+            if (empty($claves[$kid])) {
+                continue;
+            }
+
+            $certificado = "-----BEGIN CERTIFICATE-----\n" . chunk_split($claves[$kid], 64, "\n") . "-----END CERTIFICATE-----\n";
+            $publica = openssl_pkey_get_public($certificado);
+            if ($publica) {
+                return $publica;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Descarga un juego de claves públicas a partir de su documento de
+     * descubrimiento OpenID. Devuelve kid => certificado, o false si falla.
+     */
+    private function descargar_jwks($config_url)
+    {
+        $config = wp_remote_get($config_url, array('timeout' => 15));
+        if (is_wp_error($config)) {
+            return false;
+        }
+        $config = json_decode(wp_remote_retrieve_body($config), true);
+        if (empty($config['jwks_uri'])) {
             return false;
         }
 
-        $certificado = "-----BEGIN CERTIFICATE-----\n" . chunk_split($claves[$kid], 64, "\n") . "-----END CERTIFICATE-----\n";
-        $publica = openssl_pkey_get_public($certificado);
+        $jwks = wp_remote_get($config['jwks_uri'], array('timeout' => 15));
+        if (is_wp_error($jwks)) {
+            return false;
+        }
+        $jwks = json_decode(wp_remote_retrieve_body($jwks), true);
+        if (empty($jwks['keys'])) {
+            return false;
+        }
 
-        return $publica ? $publica : false;
+        $claves = array();
+        foreach ($jwks['keys'] as $clave) {
+            if (!empty($clave['kid']) && !empty($clave['x5c'][0])) {
+                $claves[$clave['kid']] = $clave['x5c'][0];
+            }
+        }
+
+        return $claves;
     }
 
     private function enviar_respuesta(string $service_url, string $conversation_id, ?string $reply_to_id, array $actividad)
@@ -765,11 +848,36 @@ class EP_Bot_Mensajeria
         update_user_meta($user_id, 'ep_bot_conversation_id', $conversation_id);
     }
 
-    private function buscar_usuario_por_oid(?string $oid): ?\WP_User
+    private function buscar_usuario_por_oid(?string $oid, array $from_data = []): ?\WP_User
     {
-        if (!$oid) return null;
-        $usuarios = get_users(['meta_key' => 'ep_o365_user_id', 'meta_value' => $oid, 'number' => 1]);
-        return !empty($usuarios) ? $usuarios[0] : null;
+        if (!empty($oid)) {
+            $usuarios = get_users(['meta_key' => 'ep_o365_user_id', 'meta_value' => $oid, 'number' => 1]);
+            if (!empty($usuarios)) {
+                return $usuarios[0];
+            }
+        }
+
+        // Fallback 1: Buscar por UPN o email si viene en el payload de Teams
+        $upn = $from_data['userPrincipalName'] ?? $from_data['email'] ?? null;
+        if (!empty($upn)) {
+            $u = get_user_by('email', $upn);
+            if ($u) {
+                ep_error_log("EP Bot: Usuario localizado por email/UPN: {$upn}");
+                return $u;
+            }
+        }
+
+        // Fallback 2: Si el campo name contiene un email
+        $name = $from_data['name'] ?? '';
+        if (!empty($name) && is_email($name)) {
+            $u = get_user_by('email', $name);
+            if ($u) {
+                ep_error_log("EP Bot: Usuario localizado por email en name: {$name}");
+                return $u;
+            }
+        }
+
+        return null;
     }
 
     private function contiene(string $texto, array $palabras): bool

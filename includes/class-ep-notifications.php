@@ -106,6 +106,9 @@ class EP_Notifications
         // cada empleado. La notificacion ya esta guardada en el portal y el
         // correo se envia igual, justo debajo.
         $teams_channel = !function_exists('ep_teams_channel_enabled') || ep_teams_channel_enabled();
+        if (function_exists('ep_is_staging') && ep_is_staging()) {
+            $teams_channel = false;
+        }
 
         $teams_enabled = get_user_meta($user_id, 'ep_notifications_teams', true);
         $ms_user_id = get_user_meta($user_id, 'ep_o365_user_id', true);

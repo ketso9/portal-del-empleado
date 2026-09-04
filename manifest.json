@@ -1,0 +1,68 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.4.4",
+  "id": "954318d3-5750-426e-b365-74ea5c53fcf1",
+  "developer": {
+    "name": "Cámara de Comercio de Cáceres",
+    "websiteUrl": "https://camaracaceres.com",
+    "privacyUrl": "https://camaracaceres.com/privacidad",
+    "termsOfUseUrl": "https://camaracaceres.com/aviso-legal"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "Portal Empleado",
+    "full": "Portal Empleado"
+  },
+  "description": {
+    "short": "Acceso al portal del empleado.",
+    "full": "Acceso centralizado a utilidades, comunicación interna y gestión personal del empleado."
+  },
+  "accentColor": "#A61B32",
+  "bots": [
+    {
+      "botId": "dfcd7250-abfd-4689-8ad4-a5163898de14",
+      "scopes": [
+        "personal"
+      ],
+      "isNotificationOnly": false,
+      "supportsFiles": false,
+      "commandLists": [
+        {
+          "scopes": [
+            "personal"
+          ],
+          "commands": [
+            {
+              "title": "hola",
+              "description": "Ver mi resumen del día"
+            },
+            {
+              "title": "ayuda",
+              "description": "Ver todo lo que puedo hacer"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "activities": {
+    "activityTypes": [
+      {
+        "type": "portalNotification",
+        "description": "Aviso del Portal del Empleado",
+        "templateText": "{messageContent}"
+      }
+    ]
+  },
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "portal.camaracaceres.com"
+  ]
+}

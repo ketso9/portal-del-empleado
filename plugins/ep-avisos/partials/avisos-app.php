@@ -733,7 +733,7 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
 </style>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    function initAvisosApp() {
         const avisosList = document.getElementById('avisos-list');
         const avisoModal = document.getElementById('aviso-modal');
         const createModal = document.getElementById('create-aviso-modal');
@@ -914,14 +914,41 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
 
         // Load Avisos
         function loadAvisos(type = 'active') {
-            avisosList.innerHTML = '<div class="loading-spinner">Cargando avisos...</div>';
+            avisosList.innerHTML = '<div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Cargando avisos...</div>';
             fetch(`<?php echo admin_url('admin-ajax.php'); ?>?action=ep_get_avisos&security=<?php echo $nonce; ?>&type=${type}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error(`Error en la solicitud al servidor (${res.status})`);
+                    }
+                    return res.text();
+                })
+                .then(text => {
+                    let data;
+                    try {
+                        data = JSON.parse(text.trim());
+                    } catch (e) {
+                        throw new Error('Respuesta inválida del servidor');
+                    }
+                    if (data && data.success) {
                         currentLoadedAvisos = data.data || [];
                         renderAvisos(currentLoadedAvisos);
+                    } else {
+                        const errMsg = (data && data.data) ? data.data : 'Error desconocido al cargar avisos.';
+                        avisosList.innerHTML = `<div class="no-data" style="color:#ef4444; padding:24px; text-align:center;"><i class="fa-solid fa-triangle-exclamation" style="font-size:1.5rem; margin-bottom:8px; display:block;"></i> ${errMsg}</div>`;
                     }
+                })
+                .catch(err => {
+                    console.error('[EP_Avisos] Error cargando avisos:', err);
+                    avisosList.innerHTML = `
+                        <div class="no-data" style="color:#ef4444; padding:24px; text-align:center;">
+                            <i class="fa-solid fa-circle-exclamation" style="font-size:1.8rem; margin-bottom:8px; display:block;"></i>
+                            <strong>No se pudieron cargar los avisos.</strong><br>
+                            <span style="font-size:13px; color:#64748b;">Comprueba tu conexión o vuelve a intentarlo.</span><br>
+                            <button type="button" class="ep-btn ep-btn-secondary ep-btn-sm" style="margin-top:12px; cursor:pointer;" onclick="location.reload();">
+                                <i class="fa-solid fa-rotate-right"></i> Recargar página
+                            </button>
+                        </div>
+                    `;
                 });
         }
 
@@ -979,7 +1006,8 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: new URLSearchParams({
                         action: 'ep_avisos_mark_read',
-                        aviso_id: aviso.id
+                        aviso_id: aviso.id,
+                        nonce: window.ep_avisos_vars.nonce
                     })
                 }).catch(e => console.error('[EP_Avisos] Error marcando lectura:', e));
             }
@@ -1134,7 +1162,23 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
                     method: 'POST',
                     body: formData
                 })
-                    .then(res => res.json())
+                    .then(res => res.text().then(text => {
+                        // WordPress responde "-1"/"0" en texto plano cuando el nonce ha
+                        // caducado o cuando PHP descarta el POST por superar post_max_size
+                        // (adjuntos demasiado grandes). Sin esto el fallo era silencioso.
+                        const trimmed = text.trim();
+                        if (trimmed === '-1' || trimmed === '0' || trimmed === '') {
+                            throw new Error('SESSION_OR_SIZE');
+                        }
+                        if (!res.ok && trimmed.length === 0) {
+                            throw new Error('SESSION_OR_SIZE');
+                        }
+                        try {
+                            return JSON.parse(trimmed);
+                        } catch (e) {
+                            throw new Error('BAD_RESPONSE');
+                        }
+                    }))
                     .then(data => {
                         if (data.success) {
                             alert(data.data);
@@ -1143,6 +1187,14 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
                             loadAvisos();
                         } else {
                             alert('Error: ' + data.data);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('[EP_Avisos] Error publicando aviso:', err);
+                        if (err && err.message === 'SESSION_OR_SIZE') {
+                            alert('No se ha podido publicar el aviso.\n\nPosibles causas:\n· Tu sesión ha caducado: recarga la página (F5) y vuelve a intentarlo.\n· Los archivos adjuntos superan el tamaño máximo permitido por el servidor: prueba a publicar el aviso sin adjuntos o con ficheros más pequeños.');
+                        } else {
+                            alert('No se ha podido publicar el aviso. El servidor ha devuelto una respuesta inesperada. Recarga la página e inténtalo de nuevo; si persiste, avisa a Sistemas.');
                         }
                     })
                     .finally(() => {
@@ -1154,7 +1206,13 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
 
         // Initial Load
         loadAvisos();
-    });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAvisosApp);
+    } else {
+        initAvisosApp();
+    }
 
     function epShowAvisoReads(avisoId) {
         if (!avisoId) {
@@ -1168,7 +1226,8 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
                 action: 'ep_avisos_mark_read',
-                aviso_id: avisoId
+                aviso_id: avisoId,
+                nonce: window.ep_avisos_vars.nonce
             })
         }).catch(e => console.error('[EP_Avisos] Error marcando lectura:', e));
 
@@ -1189,7 +1248,8 @@ window.ep_avisos_users = <?php echo json_encode($users_data); ?>;
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: new URLSearchParams({
                             action: 'ep_avisos_get_reads',
-                            aviso_id: avisoId
+                            aviso_id: avisoId,
+                            nonce: window.ep_avisos_vars.nonce
                         })
                     })
                     .then(r => r.json())

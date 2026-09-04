@@ -70,7 +70,7 @@ class EP_Inventory_PDF
 
         // Content
         $html = '<h1 style="text-align:center;">Compromiso de Cesión de Material</h1>';
-        $html .= '<p>Yo, <strong>' . $user->display_name . '</strong>, con email <strong>' . $user->user_email . '</strong>, reconozco haber recibido de la empresa el siguiente material para el desempeño de mis funciones:</p>';
+        $html .= '<p>Yo, <strong>' . esc_html($user->display_name) . '</strong>, con email <strong>' . esc_html($user->user_email) . '</strong>, reconozco haber recibido de la empresa el siguiente material para el desempeño de mis funciones:</p>';
 
         $html .= '<table border="1" cellpadding="5">
                     <tr style="background-color:#f2f2f2;">

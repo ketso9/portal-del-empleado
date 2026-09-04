@@ -230,7 +230,22 @@ class EP_Avisos
         if (!$user)
             return false;
 
-        $allowed_roles = array('ep_hr', 'ep_direction', 'ep_maintenance', 'ep_communication', 'administrator');
+        // Los administradores técnicos siempre pueden gestionar avisos.
+        if (in_array('administrator', (array) $user->roles) || in_array('ep_super_admin', (array) $user->roles)) {
+            return true;
+        }
+
+        // La matriz de permisos del portal manda: 'write' concede, 'none' deniega.
+        // Si no hay configuración explícita, se cae a los roles históricos.
+        if (class_exists('EP_App_Manager')) {
+            $permission = EP_App_Manager::get_permission('avisos', $user_id);
+            if ($permission === 'write')
+                return true;
+            if ($permission === 'none')
+                return false;
+        }
+
+        $allowed_roles = array('ep_hr', 'ep_direction', 'ep_maintenance', 'ep_communication');
         foreach ($user->roles as $role) {
             if (in_array($role, $allowed_roles))
                 return true;
@@ -247,9 +262,9 @@ class EP_Avisos
         }
 
         $aviso_id    = !empty($_POST['aviso_id']) ? intval($_POST['aviso_id']) : 0;
-        $title       = sanitize_text_field($_POST['title']);
-        $content     = wp_kses_post($_POST['content']);
-        $expiry_date = sanitize_text_field($_POST['expiry_date']);
+        $title       = isset($_POST['title']) ? sanitize_text_field($_POST['title']) : '';
+        $content     = isset($_POST['content']) ? wp_kses_post($_POST['content']) : '';
+        $expiry_date = isset($_POST['expiry_date']) ? sanitize_text_field($_POST['expiry_date']) : '';
 
         if (empty($title) || empty($content) || empty($expiry_date)) {
             wp_send_json_error('Todos los campos son obligatorios, incluyendo la fecha de caducidad.');
@@ -326,6 +341,16 @@ class EP_Avisos
             $count = min(count($files['name']), 3);
             $attachment_ids = get_post_meta($post_id, '_ep_aviso_attachments', true) ?: array();
 
+            // Los roles del portal (ep_hr, ep_direction, ep_maintenance, ep_communication)
+            // no tienen la capability 'upload_files', por lo que media_handle_upload fallaba
+            // en silencio y los adjuntos se perdían. Se concede solo durante esta subida,
+            // y únicamente a quien ya ha superado can_manage_avisos().
+            $grant_upload_cap = function ($allcaps) {
+                $allcaps['upload_files'] = true;
+                return $allcaps;
+            };
+            add_filter('user_has_cap', $grant_upload_cap);
+
             for ($i = 0; $i < $count; $i++) {
                 if ($files['error'][$i] === UPLOAD_ERR_OK) {
                     $_FILES['single_file'] = array(
@@ -341,6 +366,8 @@ class EP_Avisos
                     }
                 }
             }
+            remove_filter('user_has_cap', $grant_upload_cap);
+
             $attachment_ids = array_slice($attachment_ids, 0, 3);
             update_post_meta($post_id, '_ep_aviso_attachments', $attachment_ids);
         }
@@ -434,20 +461,31 @@ class EP_Avisos
         $is_manager = self::can_manage_avisos();
 
         $args = array(
-            'post_type' => 'ep_aviso',
+            'post_type'      => 'ep_aviso',
+            'post_status'    => 'publish',
             'posts_per_page' => -1,
-            'orderby' => 'date',
-            'order' => 'DESC',
+            'orderby'        => 'date',
+            'order'          => 'DESC',
         );
 
         if ($type === 'active') {
             $today = date('Y-m-d');
             $args['meta_query'] = array(
+                'relation' => 'OR',
                 array(
-                    'key' => '_ep_aviso_expiry_date',
-                    'value' => $today,
+                    'key'     => '_ep_aviso_expiry_date',
+                    'value'   => $today,
                     'compare' => '>=',
-                    'type' => 'DATE'
+                    'type'    => 'DATE'
+                ),
+                array(
+                    'key'     => '_ep_aviso_expiry_date',
+                    'compare' => 'NOT EXISTS'
+                ),
+                array(
+                    'key'     => '_ep_aviso_expiry_date',
+                    'value'   => '',
+                    'compare' => '='
                 )
             );
         } elseif ($type === 'history' && !$is_manager) {
@@ -524,6 +562,8 @@ class EP_Avisos
 
     public function ajax_mark_read()
     {
+        check_ajax_referer('ep_avisos_nonce', 'nonce');
+
         $aviso_id = isset($_POST['aviso_id']) ? sanitize_text_field($_POST['aviso_id']) : '';
         $user_id = get_current_user_id();
 
@@ -539,6 +579,8 @@ class EP_Avisos
 
     public function ajax_get_reads()
     {
+        check_ajax_referer('ep_avisos_nonce', 'nonce');
+
         $aviso_id = isset($_POST['aviso_id']) ? sanitize_text_field($_POST['aviso_id']) : '';
 
         $user = wp_get_current_user();

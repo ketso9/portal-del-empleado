@@ -22,6 +22,12 @@ class EP_Teams_Bot
 
     private static function get_catalog_app_id($token = null)
     {
+        // El administrador puede escribirlo a mano en Portal → IA & Bot ("Teams
+        // Internal App ID"). Manda sobre el descubierto por Graph: si alguien se
+        // ha molestado en teclearlo, es porque el automatico no vale.
+        $manual = ep_get_option('ep_teams_internal_app_id');
+        if (!empty($manual)) return $manual;
+
         $id = ep_get_option('ep_teams_catalog_app_id');
         if (!empty($id)) return $id;
         if (!$token) return null;
@@ -45,6 +51,11 @@ class EP_Teams_Bot
 
     public static function send_proactive_message($user_id, $title, $message, $action_link = '')
     {
+        if (function_exists('ep_is_staging') && ep_is_staging()) {
+            ep_error_log("EP Teams Bot: Envío proactivo cancelado para usuario $user_id (bloqueado en entorno de pruebas/staging).");
+            return false;
+        }
+
         // Canal de Teams no contratado: el aviso ya se ha publicado en el portal
         // y ha salido por correo, aqui solo se omite el envio a Teams.
         if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {

@@ -1858,6 +1858,10 @@ if (!wp_next_scheduled('ep_signature_pending_reminders_cron')) {
 }
 
 function ep_signature_send_pending_reminders() {
+    if (function_exists('ep_is_staging') && ep_is_staging()) {
+        return;
+    }
+
     global $wpdb;
     $table = $wpdb->prefix . 'fds_documentos';
     if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
@@ -1866,19 +1870,40 @@ function ep_signature_send_pending_reminders() {
 
     $two_days_ago = date('Y-m-d H:i:s', strtotime('-48 hours'));
 
-    // Find pending docs created over 48h ago
+    // La tabla no tiene columna de creacion: en las filas 'pendiente' fecha_firma
+    // se rellena con current_time() al dar de alta la solicitud y solo se pisa al
+    // firmar, asi que es la fecha de creacion efectiva. Es el mismo criterio que
+    // ya usa el listado de firmas pendientes.
     $pending_docs = $wpdb->get_results($wpdb->prepare(
-        "SELECT * FROM $table WHERE estado = 'pendiente' AND fecha_creacion <= %s",
+        "SELECT id, usuario_id, nombre_archivo_original FROM $table
+         WHERE estado = 'pendiente' AND fecha_firma <= %s",
         $two_days_ago
     ));
 
     if (empty($pending_docs)) {
+        update_option('ep_signature_reminders_sent', array(), false);
         return;
     }
 
+    // El cron es diario: sin memoria de lo ya avisado, cada documento pendiente
+    // generaria una notificacion nueva todos los dias hasta que se firme.
+    $already_sent = get_option('ep_signature_reminders_sent', array());
+    if (!is_array($already_sent)) {
+        $already_sent = array();
+    }
+
+    $still_pending = array();
+
     foreach ($pending_docs as $doc) {
-        $user_id = $doc->user_id;
-        $title = $doc->nombre_archivo ?: 'Documento';
+        $doc_id  = intval($doc->id);
+        $user_id = intval($doc->usuario_id);
+        $title   = $doc->nombre_archivo_original ?: 'Documento';
+
+        $still_pending[] = $doc_id;
+
+        if (in_array($doc_id, $already_sent)) {
+            continue;
+        }
 
         if ($user_id && class_exists('EP_Notifications')) {
             EP_Notifications::add_notification($user_id, array(
@@ -1889,5 +1914,9 @@ function ep_signature_send_pending_reminders() {
             ));
         }
     }
+
+    // Se guardan solo los que siguen pendientes: si un documento se firma y mas
+    // tarde vuelve a haber otro con el mismo id, no arrastra el marcador.
+    update_option('ep_signature_reminders_sent', $still_pending, false);
 }
 

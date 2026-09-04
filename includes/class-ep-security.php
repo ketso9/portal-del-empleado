@@ -40,11 +40,29 @@ class EP_Security
             return $data;
         }
 
-        $parts = explode('::', $decoded, 2);
-        if (count($parts) !== 2) return $data;
+        $iv_length = openssl_cipher_iv_length('aes-256-cbc');
 
-        $iv = $parts[0];
-        $encrypted_data = $parts[1];
+        // El IV son bytes aleatorios y puede contener ':'. Partiendo por el
+        // separador, un IV cuyo ultimo byte es ':' se trunca a 15 bytes (pasa en
+        // 1 de cada 256 cifrados) y ese dato queda ilegible para siempre. Como el
+        // IV tiene longitud fija, se corta por posicion; explode() queda solo
+        // como respaldo defensivo.
+        if (substr($decoded, $iv_length, 2) === '::') {
+            $iv             = substr($decoded, 0, $iv_length);
+            $encrypted_data = substr($decoded, $iv_length + 2);
+        } else {
+            $parts = explode('::', $decoded, 2);
+            if (count($parts) !== 2) return $data;
+            $iv             = $parts[0];
+            $encrypted_data = $parts[1];
+        }
+
+        // Sin esto, un IV de longitud incorrecta genera un PHP Warning en cada
+        // llamada y openssl rellena con bytes nulos devolviendo basura.
+        if (strlen($iv) !== $iv_length) {
+            return $data;
+        }
+
         $key = self::get_encryption_key();
 
         $decrypted = openssl_decrypt($encrypted_data, 'aes-256-cbc', $key, 0, $iv);

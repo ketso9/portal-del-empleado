@@ -61,6 +61,9 @@ class EP_Inventory
 
         // Schedule daily warranty check
         add_action('ep_inventory_daily_warranty_check', array($this, 'check_warranty_expirations'));
+        // El hook estaba registrado pero nadie programaba el evento, asi que el aviso
+        // de garantia no se ha enviado nunca.
+        add_action('init', array($this, 'maybe_schedule_warranty_check'));
 
         // Itinerant Actions
         add_action('wp_ajax_ep_inventory_itinerant_action', array($this, 'ajax_itinerant_action'));
@@ -168,6 +171,29 @@ class EP_Inventory
     }
 
 
+    /**
+     * Shortcode [ep_inventory_dashboard]. Estaba registrado en el constructor pero el
+     * metodo no existia: cualquier pagina que lo usara reventaba con un error fatal.
+     */
+    public function render_shortcode($atts = array())
+    {
+        if (!is_user_logged_in()) {
+            return '<p>Debes iniciar sesión para ver el inventario.</p>';
+        }
+
+        global $ep_app_manager;
+        if (!$ep_app_manager || $ep_app_manager->get_user_permission('inventory') === 'none') {
+            return '<p>No tienes acceso al inventario.</p>';
+        }
+
+        require_once EP_INVENTORY_PATH . 'class-ep-app-inventory.php';
+        $app = new EP_App_Inventory();
+
+        ob_start();
+        $app->render_full_view();
+        return ob_get_clean();
+    }
+
     public function ajax_save_item()
     {
         check_ajax_referer('ep_inventory_nonce', 'security');
@@ -193,6 +219,13 @@ class EP_Inventory
         );
 
         if ($id > 0) {
+            // Mismo motivo que en el borrado: sin validar el tipo, un ID cualquiera
+            // convierte otro contenido del portal en item de inventario.
+            $existing = get_post($id);
+            if (!$existing || $existing->post_type !== 'ep_inventory_item') {
+                wp_send_json_error('Item no encontrado.');
+            }
+
             $post_data['ID'] = $id;
             $post_id = wp_update_post($post_data);
         } else {
@@ -207,7 +240,11 @@ class EP_Inventory
         update_post_meta($post_id, '_ep_item_serial', $serial);
         update_post_meta($post_id, '_ep_item_provider', $provider);
         update_post_meta($post_id, '_ep_item_purchase_date', $purchase_date);
+        $old_warranty = get_post_meta($post_id, '_ep_item_warranty_date', true);
         update_post_meta($post_id, '_ep_item_warranty_date', $warranty_date);
+        if ($old_warranty !== $warranty_date) {
+            delete_post_meta($post_id, '_ep_item_warranty_notified'); // Nueva fecha, nuevo aviso
+        }
         $old_assigned_to = get_post_meta($post_id, '_ep_item_assigned_to', true);
         update_post_meta($post_id, '_ep_item_assigned_to', $assigned_to);
 
@@ -295,6 +332,15 @@ class EP_Inventory
         }
 
         $id = intval($_POST['id']);
+
+        // Sin esta comprobacion, el permiso de inventario borra CUALQUIER contenido
+        // del portal por ID (paginas, documentos firmados, gastos...) y ademas de
+        // forma permanente, sin pasar por la papelera.
+        $post = get_post($id);
+        if (!$post || $post->post_type !== 'ep_inventory_item') {
+            wp_send_json_error('Item no encontrado.');
+        }
+
         wp_delete_post($id, true);
         wp_send_json_success('Item eliminado.');
     }
@@ -327,6 +373,12 @@ class EP_Inventory
 
         $meta_key = '_ep_item_' . $field; // _ep_item_location | _ep_item_notes
         update_post_meta($id, $meta_key, $value);
+
+        // Si el item esta prestado, la ubicacion del chip manda tambien sobre la del
+        // prestamo: es la que leen el justificante PDF y la exportacion CSV.
+        if ($field === 'location' && get_post_meta($id, '_ep_item_itinerant_status', true) === 'loaned') {
+            update_post_meta($id, '_ep_item_loan_location', $value);
+        }
 
         wp_send_json_success(['field' => $field, 'value' => $value]);
     }
@@ -485,6 +537,10 @@ class EP_Inventory
         }
 
         $ids_raw = $_REQUEST['item_id'] ?? '';
+        if (is_array($ids_raw)) {
+            wp_die('ID de material no válido.'); // explode() sobre un array es fatal en PHP 8
+        }
+        $ids_raw = (string) $ids_raw;
         $ids = array_filter(array_map('intval', explode(',', $ids_raw)));
 
         if (empty($ids)) {
@@ -785,7 +841,7 @@ class EP_Inventory
 
             if ($is_itinerant) {
                 update_post_meta($post_id, '_ep_request_is_itinerant', '1');
-                update_post_meta($post_id, '_ep_request_item_ids', $_POST['item_ids']);
+                update_post_meta($post_id, '_ep_request_item_ids', implode(',', $item_ids)); // Saneado, no el POST crudo
                 update_post_meta($post_id, '_ep_request_start_date', $start_date);
                 update_post_meta($post_id, '_ep_request_end_date', $end_date);
             }
@@ -893,7 +949,10 @@ class EP_Inventory
                     foreach ($item_ids as $item_id) {
                         $item_id = intval($item_id);
                         update_post_meta($item_id, '_ep_item_itinerant_status', 'loaned');
-                        update_post_meta($item_id, '_ep_item_assigned_to', $user_id);
+                        // El solicitante es el PRESTATARIO, no el responsable del equipo:
+                        // escribir en _ep_item_assigned_to borraba al responsable interno
+                        // y dejaba el prestatario vacio en los reportes.
+                        update_post_meta($item_id, '_ep_item_loaned_to', $user_id);
                         update_post_meta($item_id, '_ep_item_loan_date', $start_date);
                         update_post_meta($item_id, '_ep_item_estimated_return', $end_date);
                         update_post_meta($item_id, '_ep_item_last_checkout_by', get_current_user_id());
@@ -1080,8 +1139,11 @@ class EP_Inventory
             if ($is_itinerant === '1') {
                 if ($user_id > 0) {
                     update_post_meta($item_id, '_ep_item_itinerant_status', 'loaned');
+                    // Marcar 'loaned' sin prestatario dejaba la columna vacia en el CSV.
+                    update_post_meta($item_id, '_ep_item_loaned_to', $user_id);
                 } else {
                     update_post_meta($item_id, '_ep_item_itinerant_status', 'available');
+                    update_post_meta($item_id, '_ep_item_loaned_to', 0);
                     update_post_meta($item_id, '_ep_item_loan_date', '');
                     update_post_meta($item_id, '_ep_item_estimated_return', '');
                 }
@@ -1177,7 +1239,10 @@ class EP_Inventory
                 $loaned_to_id = get_post_meta($id, '_ep_item_loaned_to', true);
                 $external_borrower = get_post_meta($id, '_ep_item_external_borrower', true);
                 $it_status = get_post_meta($id, '_ep_item_itinerant_status', true) ?: 'available';
-                $location = get_post_meta($id, '_ep_item_loan_location', true);
+                // Unica fuente de verdad: el chip de la tabla, lo mismo que se ve en el
+                // panel. Al dar entrada se vacia (el equipo vuelve al almacen), asi que
+                // aqui tampoco debe salir la ubicacion del prestamo ya cerrado.
+                $location = get_post_meta($id, '_ep_item_location', true);
 
                 $borrower_name = '';
                 if ($loaned_to_id) {
@@ -1196,6 +1261,7 @@ class EP_Inventory
                 $serial = html_entity_decode($serial, ENT_QUOTES, 'UTF-8');
                 $assigned_name = html_entity_decode($assigned_name, ENT_QUOTES, 'UTF-8');
                 $borrower_name = html_entity_decode($borrower_name, ENT_QUOTES, 'UTF-8');
+                $location = html_entity_decode($location, ENT_QUOTES, 'UTF-8');
 
                 fputcsv($output, array(
                     $id,
@@ -1218,20 +1284,40 @@ class EP_Inventory
     }
 
     /**
+     * Programa el chequeo diario de garantias si aun no esta en el cron.
+     */
+    public function maybe_schedule_warranty_check()
+    {
+        if (!wp_next_scheduled('ep_inventory_daily_warranty_check')) {
+            wp_schedule_event(strtotime('tomorrow 07:00:00'), 'daily', 'ep_inventory_daily_warranty_check');
+        }
+    }
+
+    /**
      * Check for items with warranty expiring in 30 days and notify admins.
      */
     public function check_warranty_expirations()
     {
+        $today = date('Y-m-d');
         $target_date = date('Y-m-d', strtotime('+30 days'));
 
+        // Ventana completa en vez de la fecha exacta de hoy+30: buscando solo ese dia,
+        // un cron que se salte una ejecucion pierde el aviso de ese equipo para
+        // siempre. La marca _ep_item_warranty_notified evita repetirlo cada mañana.
         $args = array(
             'post_type' => 'ep_inventory_item',
             'posts_per_page' => -1,
             'meta_query' => array(
+                'relation' => 'AND',
                 array(
                     'key' => '_ep_item_warranty_date',
-                    'value' => $target_date,
-                    'compare' => '='
+                    'value' => array($today, $target_date),
+                    'compare' => 'BETWEEN',
+                    'type' => 'DATE'
+                ),
+                array(
+                    'key' => '_ep_item_warranty_notified',
+                    'compare' => 'NOT EXISTS'
                 )
             )
         );
@@ -1241,18 +1327,26 @@ class EP_Inventory
         if ($query->have_posts()) {
             $admin_email = get_option('admin_email');
             $subject = 'Aviso: Equipos con Garantía próxima a vencer (30 días)';
-            $message = "Los siguientes equipos tienen la fecha de fin de garantía para el día $target_date:\n\n";
+            $message = "Los siguientes equipos tienen la garantía a punto de vencer (hasta el $target_date):\n\n";
+            $notified = array();
 
             while ($query->have_posts()) {
                 $query->the_post();
                 $id = get_the_ID();
                 $serial = get_post_meta($id, '_ep_item_serial', true);
-                $message .= "- " . get_the_title() . " (Serie: $serial) - ID: $id\n";
+                $w_date = get_post_meta($id, '_ep_item_warranty_date', true);
+                $message .= "- " . get_the_title() . " (Serie: $serial) - Vence: $w_date - ID: $id\n";
+                $notified[] = $id;
             }
 
             $message .= "\nPor favor, revísalos en el portal del empleado.";
 
-            wp_mail($admin_email, $subject, $message);
+            if (wp_mail($admin_email, $subject, $message)) {
+                // Solo se marcan si el correo ha salido: si falla, se reintenta mañana.
+                foreach ($notified as $id) {
+                    update_post_meta($id, '_ep_item_warranty_notified', '1');
+                }
+            }
         }
 
         wp_reset_postdata();
@@ -1353,6 +1447,10 @@ class EP_Inventory
                 update_post_meta($id, '_ep_item_external_borrower', '');
                 update_post_meta($id, '_ep_item_borrower_nif', '');
                 update_post_meta($id, '_ep_item_location', ''); // Limpia el chip al devolver
+                update_post_meta($id, '_ep_item_loan_location', ''); // Y la ubicacion del prestamo, para que no la arrastren los reportes
+                update_post_meta($id, '_ep_item_loan_date', ''); // Un equipo en almacen no tiene fechas de prestamo vivas
+                update_post_meta($id, '_ep_item_estimated_return', '');
+                update_post_meta($id, '_ep_item_borrower_cargo', '');
                 delete_post_meta($id, '_ep_item_signed_loan_doc_id'); // Limpiar documento al devolver
 
                 // Log stats
@@ -1380,7 +1478,6 @@ class EP_Inventory
 
     public function handle_user_deletion($user_id)
     {
-        global $wpdb;
         // Find all items assigned to this user OR loaned to them
         $items = get_posts(array(
             'post_type' => 'ep_inventory_item',
@@ -1412,6 +1509,15 @@ class EP_Inventory
     public function ajax_get_available_items()
     {
         check_ajax_referer('ep_inventory_nonce', 'security');
+
+        // El nonce lo tiene cualquier usuario logueado (enqueue_assets lo publica en
+        // todas las paginas), asi que sin esta comprobacion cualquier empleado podia
+        // listar todo el material libre con sus numeros de serie. Se exige el mismo
+        // permiso que para asignarlo, que es lo unico para lo que sirve esta lista.
+        global $ep_app_manager;
+        if ($ep_app_manager->get_user_permission('inventory') !== 'write') {
+            wp_send_json_error('Permisos insuficientes.');
+        }
 
         $args = array(
             'post_type' => 'ep_inventory_item',

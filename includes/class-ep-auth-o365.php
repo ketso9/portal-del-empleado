@@ -1131,6 +1131,10 @@ class EP_Auth_O365
      */
     public static function send_teams_message($user_id, $title, $message, $link = '')
     {
+        if (function_exists('ep_is_staging') && ep_is_staging()) {
+            return new WP_Error('staging_blocked', 'Envío a Microsoft Teams deshabilitado en entorno de pruebas/staging.');
+        }
+
         // Redirigimos la llamada al nuevo sistema de Bot Framework para que los mensajes
         // lleguen a nombre de la app (Bot) y no a nombre del administrador.
         if (function_exists('ep_teams_channel_enabled') && !ep_teams_channel_enabled()) {

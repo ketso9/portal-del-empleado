@@ -1999,7 +1999,8 @@ class EP_Admin
         update_option('ep_o365_tenant_id',        sanitize_text_field(wp_unslash($_POST['ep_o365_tenant_id'] ?? '')));
         update_option('ep_teams_bot_id',          sanitize_text_field(wp_unslash($_POST['ep_teams_bot_id'] ?? '')));
         update_option('ep_teams_bot_secret',      sanitize_text_field(wp_unslash($_POST['ep_teams_bot_secret'] ?? '')));
-        update_option('ep_teams_internal_app_id', sanitize_text_field(wp_unslash($_POST['ep_teams_internal_app_id'] ?? '')));
+        $internal_app_id = sanitize_text_field(wp_unslash($_POST['ep_teams_internal_app_id'] ?? ''));
+        update_option('ep_teams_internal_app_id', $internal_app_id);
         update_option('ep_onedrive_sync_principal', sanitize_text_field(wp_unslash($_POST['ep_onedrive_sync_principal'] ?? '')));
 
         // Limpiar cachés de tokens para que los nuevos valores se usen inmediatamente
@@ -2008,7 +2009,15 @@ class EP_Admin
             delete_transient('ep_bt_token_' . md5($bot_id));
             delete_transient('ep_bt_token_v3_' . md5($bot_id));
         }
-        delete_transient('ep_teams_catalog_app_id');
+        // El id de catalogo que EP_Teams_Bot descubre por Graph se guarda como
+        // opcion, no como transitorio (aqui se borraba un transitorio que no
+        // existe). Solo se descarta si el administrador ha escrito uno a mano:
+        // si el campo esta vacio hay que conservarlo, porque volver a pedirlo a
+        // Graph exige el permiso AppCatalog.Read.All y sin el se caeria en un
+        // valor de reserva que no es el id de catalogo.
+        if (!empty($internal_app_id)) {
+            delete_option('ep_teams_catalog_app_id');
+        }
 
         wp_send_json_success('✅ Configuración de Teams/SSO guardada correctamente.');
     }

@@ -390,10 +390,76 @@ function ep_always_on_modules(): array
  * Cuando devuelve false, el portal sigue notificando por pantalla y por correo:
  * lo único que se apaga es la salida hacia Teams y el asistente con IA del bot.
  */
+/**
+ * Detecta si el entorno actual es de pruebas / staging.
+ */
+function ep_is_staging(): bool
+{
+	$home = home_url();
+	if (stripos($home, 'devpruebas') !== false || stripos($home, 'staging') !== false || stripos($home, 'test') !== false) {
+		return true;
+	}
+	if (defined('EP_IS_STAGING') && EP_IS_STAGING) {
+		return true;
+	}
+	if (function_exists('wp_get_environment_type') && in_array(wp_get_environment_type(), ['staging', 'development', 'local'], true)) {
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Redirige a producción cualquier acceso a staging generado por Teams o enlaces de usuario.
+ * Los administradores pueden navegar normalmente en staging.
+ */
+add_action('template_redirect', 'ep_staging_redirect_teams_to_production', 1);
+function ep_staging_redirect_teams_to_production()
+{
+	if (!ep_is_staging()) {
+		return;
+	}
+
+	// Permitir a administradores trabajar en staging
+	if (is_user_logged_in() && current_user_can('manage_options')) {
+		return;
+	}
+
+	// No interferir con llamadas al API REST, AJAX o panel de administración
+	if (defined('REST_REQUEST') || wp_doing_ajax() || is_admin()) {
+		return;
+	}
+
+	$pagenow = $GLOBALS['pagenow'] ?? '';
+	if (in_array($pagenow, ['wp-login.php', 'wp-register.php'], true)) {
+		return;
+	}
+
+	$is_teams_query = isset($_GET['teams']);
+	$user_agent     = $_SERVER['HTTP_USER_AGENT'] ?? '';
+	$is_teams_ua    = (stripos($user_agent, 'Teams') !== false || stripos($user_agent, 'SkypeSpaces') !== false);
+	$has_view_param = isset($_GET['view']);
+	$is_non_admin   = is_user_logged_in() && !current_user_can('manage_options');
+
+	if ($is_teams_query || $is_teams_ua || $has_view_param || $is_non_admin) {
+		$req_uri = $_SERVER['REQUEST_URI'] ?? '/';
+		$target_path = preg_replace('#^/devpruebas#i', '', $req_uri);
+		if (empty($target_path)) {
+			$target_path = '/';
+		}
+		$prod_url = 'https://portal.camaracaceres.com' . $target_path;
+		wp_redirect($prod_url, 302);
+		exit;
+	}
+}
+
 function ep_teams_channel_enabled(): bool
 {
+	if (ep_is_staging()) {
+		return false;
+	}
 	return (bool) apply_filters('ep_teams_channel_enabled', defined('EP_TEAMS_CHANNEL_LICENSED'));
 }
+
 
 /**
  * Loads local modules from the 'plugins' directory.
