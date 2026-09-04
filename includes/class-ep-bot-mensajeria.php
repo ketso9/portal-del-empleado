@@ -215,14 +215,19 @@ class EP_Bot_Mensajeria
             $conversation_id = $actividad['conversation']['id'] ?? null;
             $actividad_id    = $actividad['id'] ?? null;
 
-            // Extraer el comando del payload del botón
+            // Extraer el comando del payload del botón: 'm' = texto a interpretar,
+            // 'a' = acción directa (marcar tarea, cerrar ticket...) sin pasar por texto
             $data_button = $actividad['value']['action']['data'] ?? $actividad['value'] ?? [];
+            $data_button = is_array($data_button) ? $data_button : [];
             $texto_cmd   = $data_button['m'] ?? $data_button['action'] ?? '';
+            $accion      = (string)($data_button['a'] ?? '');
 
-            if ($conversation_id && !empty($texto_cmd)) {
+            if ($conversation_id && ($accion !== '' || !empty($texto_cmd))) {
                 $oid_usuario = $actividad['from']['aadObjectId'] ?? null;
                 $wp_user     = $this->buscar_usuario_por_oid($oid_usuario, $actividad['from'] ?? []);
-                $tarjeta     = $this->generar_respuesta(strtolower(trim($texto_cmd)), $wp_user, $conversation_id);
+                $tarjeta     = ($accion !== '')
+                    ? $this->procesar_accion_boton($data_button, $wp_user, $conversation_id)
+                    : $this->generar_respuesta(strtolower(trim($texto_cmd)), $wp_user, $conversation_id);
                 $tarjeta['channelId'] = $actividad['channelId'] ?? 'teams';
                 $tarjeta['from_id']   = $actividad['recipient']['id'] ?? ep_get_option('ep_teams_bot_id');
                 $this->enviar_respuesta($service_url, $conversation_id, $actividad_id, $tarjeta);
@@ -240,8 +245,25 @@ class EP_Bot_Mensajeria
         
         // Soporte para botones Action.Submit (data payload en 'value')
         $data_button = $actividad['value'] ?? [];
+        $data_button = is_array($data_button) ? $data_button : [];
         if (empty($texto_raw) && !empty($data_button['m'])) {
             $texto_raw = (string)$data_button['m'];
+        }
+
+        // Botones con acción real (data.a): ni texto ni IA, se ejecutan directamente
+        if (empty($texto_raw) && !empty($data_button['a'])) {
+            $service_url     = rtrim($actividad['serviceUrl'] ?? 'https://smba.trafficmanager.net/emea', '/');
+            $conversation_id = $actividad['conversation']['id'] ?? null;
+            if (!$conversation_id) return;
+
+            $wp_user = $this->buscar_usuario_por_oid($actividad['from']['aadObjectId'] ?? null, $actividad['from'] ?? []);
+            if ($wp_user) $this->guardar_referencia_conversacion($wp_user->ID, $service_url, $conversation_id);
+
+            $tarjeta = $this->procesar_accion_boton($data_button, $wp_user, $conversation_id);
+            $tarjeta['channelId'] = $actividad['channelId'] ?? 'teams';
+            $tarjeta['from_id']   = $actividad['recipient']['id'] ?? ep_get_option('ep_teams_bot_id');
+            $this->enviar_respuesta($service_url, $conversation_id, $actividad['id'] ?? null, $tarjeta);
+            return;
         }
 
         // Decodificar entidades HTML (&nbsp;, &amp;, etc.) y caracteres invisibles de Teams
@@ -344,6 +366,17 @@ class EP_Bot_Mensajeria
         $clave = trim(preg_replace('/\s+/', ' ', (string)$clave));
         if ($clave === '') return null;
 
+        // Seguimiento de agenda: "¿y mañana?", "y el viernes", "y la semana que viene"
+        // justo después de una consulta de agenda, sin volver a pasar por la IA.
+        if (preg_match('/^y (?:el |la |para |de )?(.+)$/u', $clave, $m)) {
+            $ctx = EP_Bot_Context::get_context((string)$wp_user->ID);
+            if (($ctx['last_intent'] ?? '') === 'AGENDA') {
+                ep_error_log("EP Bot: Seguimiento de agenda \"{$texto}\" → '{$m[1]}' (sin IA).");
+                $seguimiento = $this->ejecutar_intent_app('AGENDA', 'calendar', [], $wp_user, $m[1], $conversation_id);
+                if ($seguimiento !== null) return $seguimiento;
+            }
+        }
+
         $atajos = [
             'TASKS'          => ['mis tareas', 'tareas', 'ver tareas', 'tareas pendientes', 'mis tareas pendientes', 'lista de tareas', 'to do', 'todo'],
             'NOTIFICATIONS'  => ['mis notificaciones', 'notificaciones', 'ver notificaciones', 'notificaciones pendientes'],
@@ -418,6 +451,52 @@ class EP_Bot_Mensajeria
             ]);
         }
         return $respuesta;
+    }
+
+    /**
+     * Botones que ACTÚAN (data: {a: 'task_done', id: ...}). Las acciones propias
+     * del núcleo se resuelven aquí; las de cada app, con el filtro
+     * ep_bot_action_{a}, que recibe (null, $data, $user_id, $bot) y devuelve
+     * la tarjeta de respuesta.
+     */
+    private function procesar_accion_boton(array $data, $wp_user, string $conversation_id): array
+    {
+        if (!$wp_user) {
+            return $this->tarjeta_simple('👤 No te reconozco', "No he podido asociar tu cuenta de Teams. Inicia sesión en el portal.", home_url('/?teams=true'));
+        }
+
+        $accion = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($data['a'] ?? '')));
+        ep_error_log("EP Bot: Acción de botón '{$accion}' de {$wp_user->display_name} (sin IA).");
+
+        if ($accion === 'task_done') {
+            return $this->accion_tarea_hecha($data, $wp_user);
+        }
+
+        $respuesta = apply_filters('ep_bot_action_' . $accion, null, $data, $wp_user->ID, $this);
+        if (is_array($respuesta)) {
+            return $respuesta;
+        }
+
+        return $this->tarjeta_simple('❓ Acción no disponible', 'Ese botón ya no está operativo. Escribe **ayuda** para ver lo que puedo hacer.', '');
+    }
+
+    /** Botón "✔ Hecha" de la tarjeta de tareas: completa la tarea en To-Do y reenvía la lista. */
+    private function accion_tarea_hecha(array $data, $wp_user): array
+    {
+        $nombre  = $wp_user->display_name ?: $wp_user->user_login;
+        $task_id = sanitize_text_field((string)($data['id'] ?? ''));
+        if ($task_id === '') {
+            return $this->tarjeta_tareas($wp_user->ID, $nombre, '⚠️ No sé qué tarea marcar.');
+        }
+
+        $res = EP_Graph_Service::get_instance()->complete_task($wp_user->ID, $task_id);
+        if (is_wp_error($res)) {
+            ep_error_log('EP Bot: Error al completar tarea To-Do: ' . $res->get_error_message());
+            return $this->tarjeta_tareas($wp_user->ID, $nombre, '⚠️ No he podido marcar la tarea en To-Do. Inténtalo desde la app.');
+        }
+
+        $titulo = mb_substr(sanitize_text_field((string)($data['t'] ?? 'la tarea')), 0, 40);
+        return $this->tarjeta_tareas($wp_user->ID, $nombre, "✅ Hecha: {$titulo}");
     }
 
     private function tarjeta_sin_permiso(): array
@@ -1308,7 +1387,7 @@ class EP_Bot_Mensajeria
     /**
      * Tarjeta para visualizar tareas de Microsoft To Do.
      */
-    private function tarjeta_tareas(int $user_id, string $nombre): array
+    private function tarjeta_tareas(int $user_id, string $nombre, string $aviso = ''): array
     {
         $graph = EP_Graph_Service::get_instance();
         $tasks = $graph->get_my_tasks($user_id);
@@ -1318,20 +1397,37 @@ class EP_Bot_Mensajeria
         }
 
         if (empty($tasks)) {
-            return $this->tarjeta_simple("✅ Tus Tareas", "¡Enhorabuena, {$nombre}! No tienes tareas pendientes en tu lista principal.", "https://to-do.microsoft.com/");
+            $texto = ($aviso !== '' ? $aviso . "\n\n" : '') . "¡Enhorabuena, {$nombre}! No tienes tareas pendientes en tu lista principal.";
+            return $this->tarjeta_simple("✅ Tus Tareas", $texto, "https://to-do.microsoft.com/");
         }
 
-        $facts = [];
-        $count = 0;
+        $cuerpo = [
+            ['type' => 'TextBlock', 'text' => "✅ Tus tareas pendientes", 'weight' => 'Bolder', 'size' => 'Medium', 'color' => 'Accent'],
+        ];
+        if ($aviso !== '') {
+            $cuerpo[] = ['type' => 'TextBlock', 'text' => $aviso, 'wrap' => true, 'color' => 'Good'];
+        }
+
+        $facts   = [];
+        $botones = [];
+        $count   = 0;
         foreach ($tasks as $task) {
-            $facts[] = ['title' => "🔘", 'value' => mb_substr($task['title'], 0, 50)];
+            $titulo  = mb_substr((string)($task['title'] ?? 'Sin título'), 0, 50);
+            $facts[] = ['title' => "🔘", 'value' => $titulo];
+            // Botón "✔ Hecha" para las 3 primeras (Teams enseña bien hasta 6 acciones)
+            if (count($botones) < 3 && !empty($task['id'])) {
+                $botones[] = [
+                    'type'  => 'Action.Submit',
+                    'title' => '✔ ' . mb_substr($titulo, 0, 22),
+                    'data'  => ['a' => 'task_done', 'id' => (string)$task['id'], 't' => mb_substr($titulo, 0, 40)],
+                ];
+            }
             if (++$count >= 10) break;
         }
+        $cuerpo[] = ['type' => 'FactSet', 'facts' => $facts];
+        $botones[] = ['type' => 'Action.OpenUrl', 'title' => '📝 Abrir Microsoft To-Do', 'url' => 'https://to-do.microsoft.com/'];
 
-        return $this->adaptive_card([
-            ['type' => 'TextBlock', 'text' => "✅ Tus tareas pendientes", 'weight' => 'Bolder', 'size' => 'Medium', 'color' => 'Accent'],
-            ['type' => 'FactSet', 'facts' => $facts]
-        ], [['type' => 'Action.OpenUrl', 'title' => '📝 Abrir Microsoft To-Do', 'url' => 'https://to-do.microsoft.com/']]);
+        return $this->adaptive_card($cuerpo, $botones);
     }
 
     /**

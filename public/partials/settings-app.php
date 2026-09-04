@@ -104,7 +104,7 @@ if ($is_admin) {
                             <label class="switch-label">
                                 <span style="display: flex; flex-direction: column;">
                                     <span>Briefing matinal en Teams</span>
-                                    <small style="color: #666; font-weight: normal; font-size: 0.8em;">A las 8:00, de lunes a viernes: firmas, agenda del día, tareas y tickets. No se envía si estás de vacaciones o con respuestas automáticas activas. Escribe antes «hola» al bot en Teams.</small>
+                                    <small style="color: #666; font-weight: normal; font-size: 0.8em;">A las 8:00, de lunes a viernes: firmas, agenda del día, tareas y tickets, más un aviso 15 minutos antes de cada reunión. No se envía si estás de vacaciones o con respuestas automáticas activas. Escribe antes «hola» al bot en Teams.</small>
                                 </span>
                                 <input type="checkbox" name="bot_briefing" <?php checked($bot_briefing, 1); ?>>
                                 <span class="slider"></span>

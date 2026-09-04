@@ -196,6 +196,7 @@ class EP_Tickets
         // --- Integración con IA Bot ---
         add_filter('ep_bot_intents', array($this, 'registrar_intent_bot'));
         add_filter('ep_bot_handle_intent_tickets', array($this, 'responder_intent_bot'), 10, 5);
+        add_filter('ep_bot_action_ticket_close', array($this, 'accion_bot_cerrar_ticket'), 10, 4);
     }
 
     /**
@@ -785,37 +786,86 @@ class EP_Tickets
         return $this->tarjeta_tickets($user_id, $nombre, $bot_instance);
     }
 
-    private function tarjeta_tickets(int $user_id, string $nombre, $bot_instance): array
+    /**
+     * Botón "✔ Cerrar #id" de las tarjetas del bot de Teams (data: {a:'ticket_close', id}).
+     * Mismos permisos que el enlace de cerrar del portal: administrador, gestor
+     * con el ticket en su cola o autor del ticket.
+     */
+    public function accion_bot_cerrar_ticket($response, $data, $user_id, $bot_instance)
+    {
+        $ticket_id = intval($data['id'] ?? 0);
+        $ticket    = $ticket_id ? get_post($ticket_id) : null;
+        if (!$ticket || $ticket->post_type !== 'ep_ticket') {
+            return $bot_instance->tarjeta_simple('🔍 Ticket no encontrado', "No existe ningún ticket con el número #{$ticket_id}.", '');
+        }
+        if (!self::puede_cerrar($ticket_id, $user_id)) {
+            return $bot_instance->tarjeta_simple('🚫 Acceso Denegado', "No tienes permisos para cerrar el ticket #{$ticket_id}.", '');
+        }
+
+        if (get_post_meta($ticket_id, '_ep_ticket_status', true) === 'closed') {
+            $aviso = "ℹ️ El ticket #{$ticket_id} ya estaba cerrado.";
+        } else {
+            self::update_ticket_status($ticket_id, 'closed');
+            $aviso = "✅ Ticket #{$ticket_id} «" . mb_substr($ticket->post_title, 0, 40) . "» cerrado.";
+        }
+
+        $wp_user = get_userdata($user_id);
+        return $this->tarjeta_tickets($user_id, $wp_user ? $wp_user->display_name : 'Usuario', $bot_instance, $aviso);
+    }
+
+    public static function puede_cerrar($ticket_id, $user_id): bool
+    {
+        if (user_can($user_id, 'administrator')) return true;
+        if (self::is_ticket_owner($ticket_id, $user_id)) return true;
+        $ids = array_map('intval', wp_list_pluck(self::get_manageable_tickets_for_user($user_id), 'ID'));
+        return in_array((int)$ticket_id, $ids, true);
+    }
+
+    private function tarjeta_tickets(int $user_id, string $nombre, $bot_instance, string $aviso = ''): array
     {
         $propios = self::get_user_tickets($user_id);
         $gestion = self::get_manageable_tickets_for_user($user_id);
-        
+
         if (empty($propios) && empty($gestion)) {
-            return $bot_instance->tarjeta_simple('🎫 Tus Tickets', "No tienes tickets abiertos ni tareas pendientes. 🎉", home_url('/?view=tickets&teams=true'));
+            $texto = ($aviso !== '' ? $aviso . "\n\n" : '') . "No tienes tickets abiertos ni tareas pendientes. 🎉";
+            return $bot_instance->tarjeta_simple('🎫 Tus Tickets', $texto, home_url('/?view=tickets&teams=true'));
         }
 
-        $hechos = [];
-        
+        $hechos  = [];
+        $botones = [];
+
         // 1. Añadimos primero los que tiene que gestionar (Prioridad de trabajo)
         if (!empty($gestion)) {
             foreach (array_slice($gestion, 0, 5) as $ticket) {
                 $prio = get_post_meta($ticket->ID, '_ep_ticket_priority', true) ?: 'Normal';
-                $hechos[] = ['title' => '📥 [GESTIÓN] ' . mb_substr($ticket->post_title, 0, 30), 'value' => $prio];
+                $hechos[] = ['title' => '📥 [GESTIÓN] #' . $ticket->ID . ' ' . mb_substr($ticket->post_title, 0, 26), 'value' => $prio];
+                if (count($botones) < 2) {
+                    $botones[] = ['type' => 'Action.Submit', 'title' => '✔ Cerrar #' . $ticket->ID, 'data' => ['a' => 'ticket_close', 'id' => (int)$ticket->ID]];
+                }
             }
         }
-        
+
         // 2. Si hay hueco (hasta 6 total), añadimos los que él ha solicitado
         if (!empty($propios) && count($hechos) < 6) {
             foreach (array_slice($propios, 0, 6 - count($hechos)) as $ticket) {
                 $st = get_post_meta($ticket->ID, '_ep_ticket_status', true) ?: 'open';
-                $hechos[] = ['title' => '📤 [MI SOLICITUD] ' . mb_substr($ticket->post_title, 0, 25), 'value' => $st];
+                $hechos[] = ['title' => '📤 [MI SOLICITUD] #' . $ticket->ID . ' ' . mb_substr($ticket->post_title, 0, 22), 'value' => $st];
+                if ($st !== 'closed' && count($botones) < 4) {
+                    $botones[] = ['type' => 'Action.Submit', 'title' => '✔ Cerrar #' . $ticket->ID, 'data' => ['a' => 'ticket_close', 'id' => (int)$ticket->ID]];
+                }
             }
         }
 
-        return $bot_instance->adaptive_card([
+        $cuerpo = [
             ['type' => 'TextBlock', 'text' => "🎫 Gestión de Tickets, {$nombre}", 'weight' => 'Bolder', 'size' => 'Medium', 'wrap' => true],
-            ['type' => 'FactSet', 'facts' => $hechos],
-        ], [['type' => 'Action.OpenUrl', 'title' => '📋 Ver todos en el Portal', 'url' => home_url('/?view=tickets&teams=true')]]);
+        ];
+        if ($aviso !== '') {
+            $cuerpo[] = ['type' => 'TextBlock', 'text' => $aviso, 'wrap' => true, 'color' => 'Good'];
+        }
+        $cuerpo[]  = ['type' => 'FactSet', 'facts' => $hechos];
+        $botones[] = ['type' => 'Action.OpenUrl', 'title' => '📋 Ver todos en el Portal', 'url' => home_url('/?view=tickets&teams=true')];
+
+        return $bot_instance->adaptive_card($cuerpo, $botones);
     }
 
     private function tarjeta_ticket_individual(int $ticket_id, int $user_id, $bot_instance): array
@@ -841,7 +891,7 @@ class EP_Tickets
         $prio   = get_post_meta($ticket_id, '_ep_ticket_priority', true) ?: 'Normal';
         $desc   = mb_substr(strip_tags($ticket->post_content), 0, 150) . '...';
 
-        return $bot_instance->adaptive_card([
+        $cuerpo = [
             ['type' => 'TextBlock', 'text' => "🎫 Ticket #{$ticket_id}", 'weight' => 'Bolder', 'size' => 'Large'],
             ['type' => 'TextBlock', 'text' => "**Asunto:** {$ticket->post_title}", 'wrap' => true],
             ['type' => 'FactSet', 'facts' => [
@@ -850,9 +900,15 @@ class EP_Tickets
                 ['title' => 'Creado', 'value' => get_the_date('', $ticket_id)]
             ]],
             ['type' => 'TextBlock', 'text' => "_{$desc}_", 'wrap' => true, 'isSubtle' => true]
-        ], [
-            ['type' => 'Action.OpenUrl', 'title' => '🔍 Ver en Portal', 'url' => home_url("/?view=tickets&ticket_id={$ticket_id}")]
-        ]);
+        ];
+
+        $acciones = [];
+        if ($status !== 'closed' && self::puede_cerrar($ticket_id, $user_id)) {
+            $acciones[] = ['type' => 'Action.Submit', 'title' => '✔ Cerrar ticket', 'data' => ['a' => 'ticket_close', 'id' => (int)$ticket_id]];
+        }
+        $acciones[] = ['type' => 'Action.OpenUrl', 'title' => '🔍 Ver en Portal', 'url' => home_url("/?view=tickets&ticket_id={$ticket_id}")];
+
+        return $bot_instance->adaptive_card($cuerpo, $acciones);
     }
 
     /**

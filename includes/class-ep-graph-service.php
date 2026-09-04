@@ -297,7 +297,10 @@ class EP_Graph_Service {
         $token = $this->get_valid_token($user_id);
         if (is_wp_error($token)) return $token;
 
-        $url = "https://graph.microsoft.com/v1.0/me/todo/lists/tasks?\$filter=status ne 'completed'&\$top=5";
+        // "tasks" es el alias de la lista por defecto; /lists/tasks devuelve la
+        // lista en sí (sin 'value'), las tareas cuelgan de /lists/tasks/tasks.
+        // Con la URL antigua el bot nunca veía ninguna tarea (corregido 2026-09-04).
+        $url = "https://graph.microsoft.com/v1.0/me/todo/lists/tasks/tasks?\$filter=status ne 'completed'&\$top=10";
         $response = wp_remote_get($url, [
             'headers' => ['Authorization' => 'Bearer ' . $token],
             'timeout' => 30
@@ -309,6 +312,31 @@ class EP_Graph_Service {
 
         set_transient($cache_key, $result, 300); // 5 minutes
         return $result;
+    }
+
+    /**
+     * Marca como completada una tarea de la lista por defecto de To-Do.
+     * Devuelve true o WP_Error. Invalida la caché de get_my_tasks().
+     */
+    public function complete_task($user_id, $task_id) {
+        $token = $this->get_valid_token($user_id);
+        if (is_wp_error($token)) return $token;
+
+        $url = 'https://graph.microsoft.com/v1.0/me/todo/lists/tasks/tasks/' . rawurlencode((string)$task_id);
+        $response = wp_remote_request($url, [
+            'method'  => 'PATCH',
+            'headers' => ['Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json'],
+            'body'    => wp_json_encode(['status' => 'completed']),
+            'timeout' => 20
+        ]);
+        if (is_wp_error($response)) return $response;
+
+        $code = (int)wp_remote_retrieve_response_code($response);
+        delete_transient('ep_tasks_' . $user_id);
+        if ($code < 200 || $code >= 300) {
+            return new WP_Error('graph_task', 'Graph respondió HTTP ' . $code . ' al completar la tarea.');
+        }
+        return true;
     }
 
     /**

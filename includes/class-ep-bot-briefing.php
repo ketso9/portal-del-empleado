@@ -30,6 +30,10 @@ class EP_Bot_Briefing
     const HORA_LIMITE   = 11;
     const TZ            = 'Europe/Madrid';
 
+    /** Recordatorio de reunión: se programa en la pasada de las 8:00 para cada evento del día. */
+    const REMINDER_HOOK = 'ep_bot_meeting_reminder';
+    const REMINDER_MIN  = 15;
+
     /** Palabras que, en un evento de día completo de hoy, indican que el usuario no trabaja. */
     const PALABRAS_AUSENCIA = [
         'vacaciones', 'vacacion', 'vacation', 'holiday', 'holidays',
@@ -42,6 +46,7 @@ class EP_Bot_Briefing
         add_filter('cron_schedules', [$this, 'add_cron_schedule']);
         add_action('init', [$this, 'maybe_schedule_cron']);
         add_action(self::CRON_HOOK, [$this, 'comprobar_y_enviar']);
+        add_action(self::REMINDER_HOOK, [$this, 'enviar_recordatorio'], 10, 4);
     }
 
     public function add_cron_schedule($schedules)
@@ -95,7 +100,7 @@ class EP_Bot_Briefing
      */
     public function enviar_a_todos(string $hoy): array
     {
-        $stats = ['enviados' => 0, 'ausentes' => 0, 'sin_conversacion' => 0, 'errores' => 0];
+        $stats = ['enviados' => 0, 'ausentes' => 0, 'sin_conversacion' => 0, 'errores' => 0, 'recordatorios' => 0];
 
         $bot = class_exists('EP_Bot_Mensajeria') ? EP_Bot_Mensajeria::instance() : null;
         if (!$bot) {
@@ -127,6 +132,7 @@ class EP_Bot_Briefing
 
             if ($bot->enviar_tarjeta_a_usuario($user_id, $tarjeta)) {
                 $stats['enviados']++;
+                $stats['recordatorios'] += self::programar_recordatorios($user_id);
             } else {
                 $stats['sin_conversacion']++;
                 ep_error_log("EP Briefing: no enviado a {$u->display_name} ({$user_id}): sin conversación guardada o error de envío.");
@@ -135,6 +141,59 @@ class EP_Bot_Briefing
 
         ep_error_log("EP Briefing {$hoy}: " . wp_json_encode($stats), true);
         return $stats;
+    }
+
+    /**
+     * Programa un recordatorio 15 minutos antes de cada reunión que le queda
+     * hoy al usuario (solo eventos con hora, no de día completo). Devuelve
+     * cuántos ha programado. Los argumentos del evento cron identifican la
+     * reunión, así que WordPress no lo duplica si se llama dos veces.
+     */
+    public static function programar_recordatorios(int $user_id): int
+    {
+        if (!class_exists('EP_Graph_Service')) return 0;
+
+        $eventos = EP_Graph_Service::get_instance()->get_today_events($user_id);
+        if (is_wp_error($eventos) || empty($eventos)) return 0;
+
+        $tz = new DateTimeZone(self::TZ);
+        $n  = 0;
+        foreach ($eventos as $e) {
+            $inicio = (string)($e['start']['dateTime'] ?? '');
+            if ($inicio === '') continue;
+            try {
+                $dt = new DateTime(substr($inicio, 0, 19), $tz); // Graph ya lo da en hora de Madrid
+            } catch (Exception $ex) {
+                continue;
+            }
+
+            $cuando = $dt->getTimestamp() - self::REMINDER_MIN * 60;
+            if ($cuando <= time()) continue;
+
+            $args = [
+                $user_id,
+                mb_substr((string)($e['subject'] ?? 'Reunión'), 0, 80),
+                $dt->format('H:i'),
+                mb_substr((string)($e['location']['displayName'] ?? ''), 0, 80),
+            ];
+            if (!wp_next_scheduled(self::REMINDER_HOOK, $args)) {
+                wp_schedule_single_event($cuando, self::REMINDER_HOOK, $args);
+                $n++;
+            }
+        }
+        return $n;
+    }
+
+    /** Manejador del cron de recordatorio: manda la tarjeta al chat del usuario. */
+    public function enviar_recordatorio($user_id, $asunto, $hora, $lugar = ''): void
+    {
+        $bot = class_exists('EP_Bot_Mensajeria') ? EP_Bot_Mensajeria::instance() : null;
+        if (!$bot) return;
+
+        $texto = "Empieza a las **{$hora}**." . ($lugar !== '' ? "  📍 {$lugar}" : '');
+        $tarjeta = $bot->tarjeta_simple('⏰ En ' . self::REMINDER_MIN . " minutos: {$asunto}", $texto, home_url('/?view=calendar&teams=true'));
+        $ok = $bot->enviar_tarjeta_a_usuario((int)$user_id, $tarjeta);
+        ep_error_log("EP Briefing: recordatorio '{$asunto}' ({$hora}) a user {$user_id} → " . ($ok ? 'OK' : 'FAIL'), !$ok);
     }
 
     /**
