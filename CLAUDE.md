@@ -57,7 +57,19 @@ protocolo, hay que actualizar ambas.
   implementan obligatoriamente `interface-ep-app.php`.
 * Todo lo del empleado final se resuelve en **frontend** (shortcodes, AJAX o REST):
   el empleado no entra en `wp-admin`.
-* Mantener la compatibilidad del pipeline **FPDI 2.1.7 + TCPDF** en `ep-signature/libs/`.
+* Mantener la compatibilidad del pipeline de firma en `ep-signature/libs/`, que son
+  **tres librerías distintas** y conviene no confundirlas (comprobado 2026-09-04):
+  * `libs/fpdi/` → **FPDI 2.6.3** (`src/Fpdi.php`, `const VERSION`).
+  * `libs/pdf-mod/` → **FPDI PDF-Parser 2.1.7**, el add-on comercial de setasign
+    (`setasign/fpdi_pdf-parser`) que lee los PDF con xref comprimido. Es de aquí de
+    donde viene el "2.1.7": **no es la versión de FPDI**.
+  * `libs/tcpdf/` → **TCPDF 6.9.4**.
+  El `composer.json` del parser pide `setasign/fpdi: ^2.6.6`, pero en tiempo de
+  ejecución sólo exige `PdfString::escape`, así que funciona sobre la 2.6.3 que hay.
+  Subir FPDI está pendiente aparte porque `EP_Fpdi_V4` depende de sus interioridades.
+  Estas librerías **no viajan en el despliegue normal** (`deploy.ps1` y
+  `deploy-staging.ps1` excluyen `plugins/ep-signature/libs/*`): se suben con
+  `deploy-fpdi-parser.ps1`.
 * Seguridad: sanitización estricta, verificación de nonces y comprobación de permisos
   vía `class-ep-security.php` y `class-ep-roles.php`.
 * **Versionado:** con cada cambio se sube la versión de parche del plugin (2.0.1 → 2.0.2).
