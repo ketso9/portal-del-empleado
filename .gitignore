@@ -11,6 +11,7 @@ deploy_helper_staging.php
 deploy_prod_headless.ps1
 deploy_staging_headless_v3.ps1
 deploy_staging_php.ps1
+auto_sync_github.ps1
 ssh_helper.ps1
 read_logs.ps1
 
